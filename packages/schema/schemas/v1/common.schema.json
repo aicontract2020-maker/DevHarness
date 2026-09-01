@@ -90,13 +90,14 @@
       "required": ["id", "capability", "operation", "target", "scope", "reason", "risk", "authority", "decision"],
       "properties": {
         "id": { "$ref": "#/$defs/identifier" },
-        "capability": { "enum": ["dependency-install", "network-research", "process-execution", "container-runtime", "browser-runtime", "simulator-runtime", "database-runtime", "credential-reference", "vcs-write", "deployment", "destructive-action"] },
+        "capability": { "enum": ["dependency-install", "network-research", "agent-runtime", "process-execution", "container-runtime", "browser-runtime", "simulator-runtime", "database-runtime", "credential-reference", "vcs-write", "deployment", "destructive-action"] },
         "operation": { "type": "string", "minLength": 1 },
         "target": { "type": "string", "minLength": 1 },
         "scope": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
         "reason": { "type": "string", "minLength": 1 },
         "risk": { "enum": ["low", "medium", "high"] },
         "authority": { "enum": ["none", "explicit", "human-only"] },
+        "reversibility": { "type": "string", "minLength": 1, "maxLength": 500 },
         "decision": { "enum": ["pending", "approved", "denied", "not-needed"] }
       }
     }

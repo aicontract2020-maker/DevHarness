@@ -93,7 +93,7 @@ implementation commit must make both targeted and regression suites green.
   - Covers: `agent-runtime`, `network-research`, `alignment-answer`, reversibility and legacy approvals
   - Depends on: TASK-002
 
-- [ ] **TASK-014** [S] Add authority values without changing legacy meanings
+- [x] **TASK-014** [S] Add authority values without changing legacy meanings
   - Modifies: `packages/schema/schemas/v1/common.schema.json`, `packages/schema/schemas/v1/approval-request.schema.json`, `packages/schema/schemas/v1/approval-receipt.schema.json`
   - Plan/contract: § Compatibility and Migration; `contracts/live-alignment.md` §§ Static Advance, Answering Decisions
   - Satisfies: AC-1, AC-8, AC-9, AC-10, AC-15
