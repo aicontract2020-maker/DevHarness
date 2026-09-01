@@ -101,7 +101,7 @@ implementation commit must make both targeted and regression suites green.
 
 ### B. Portable Adapters
 
-- [ ] **TASK-015** [S] [P] Test the adapter registry and lifecycle
+- [x] **TASK-015** [S] [P] Test the adapter registry and lifecycle
   - Creates: `packages/runtime/test/agent-adapter.test.mjs`
   - Tests: AC-1, AC-2, AC-10, AC-11, AC-14, AC-15
   - Covers: probe without model call, digests, unsupported adapter, start/cancel/result and injection
