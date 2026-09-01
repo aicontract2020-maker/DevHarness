@@ -140,7 +140,7 @@ implementation commit must make both targeted and regression suites green.
 
 ### C. Durable Operation Runtime
 
-- [ ] **TASK-021** [M] [P] Test conservative reservation accounting
+- [x] **TASK-021** [M] [P] Test conservative reservation accounting
   - Creates: `packages/runtime/test/operation-accounting.test.mjs`
   - Tests: AC-10, AC-11, AC-14
   - Covers: reserve-before-action, conservative charge/release, all ceilings and accounting replay
