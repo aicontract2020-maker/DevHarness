@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://devharness.dev/schemas/v1/goal-analysis.schema.json",
+  "title": "Goal analysis and independent validation records",
+  "$ref": "#/$defs/goalAnalysis",
+  "$defs": {
+    "researchSourceRef": {
+      "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/artifactRef",
+      "properties": { "kind": { "const": "research-source" } }
+    },
+    "goalAnalysis": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "id", "invocation_id", "operation_id", "refined_outcome", "affected_areas", "claims", "assumptions", "conflicts", "boundaries", "non_goals", "questions", "acceptance_criteria", "untrusted_instructions", "research_source_refs", "research_gaps"],
+      "properties": {
+        "schema_version": { "const": 1 },
+        "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+        "invocation_id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+        "operation_id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+        "refined_outcome": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/reviewItem" },
+        "affected_areas": { "type": "array", "minItems": 9, "maxItems": 9, "items": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/areaAssessment" } },
+        "claims": { "type": "array", "minItems": 0, "maxItems": 100, "items": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/claimProposal" } },
+        "assumptions": { "type": "array", "minItems": 0, "maxItems": 50, "items": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/finding" } },
+        "conflicts": { "type": "array", "minItems": 0, "maxItems": 50, "items": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/finding" } },
+        "boundaries": { "type": "array", "minItems": 0, "maxItems": 50, "items": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/reviewItem" } },
+        "non_goals": { "type": "array", "minItems": 0, "maxItems": 50, "items": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/proposedItem" } },
+        "questions": { "type": "array", "minItems": 0, "maxItems": 20, "items": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/materialQuestion" } },
+        "acceptance_criteria": { "type": "array", "minItems": 1, "maxItems": 50, "items": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/criterionProposal" } },
+        "untrusted_instructions": { "type": "array", "minItems": 0, "maxItems": 50, "items": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/finding" } },
+        "research_source_refs": { "type": "array", "minItems": 0, "maxItems": 20, "items": { "$ref": "#/$defs/researchSourceRef" } },
+        "research_gaps": { "type": "array", "minItems": 0, "maxItems": 50, "items": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/researchGap" } }
+      }
+    },
+    "citationCheck": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "proposal_id", "source_ref", "exists", "supports", "max_supported_class", "finding_ids"],
+      "properties": { "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" }, "proposal_id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" }, "source_ref": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/sourceRef" }, "exists": { "type": "boolean" }, "supports": { "type": "boolean" }, "max_supported_class": { "enum": ["detected", "documented", "code-confirmed", "conflict", "unverified", "not-covered"] }, "finding_ids": { "type": "array", "minItems": 0, "maxItems": 10, "uniqueItems": true, "items": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" } } }
+    },
+    "areaCheck": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "area", "applicable", "covered", "conflict", "source_refs", "finding_ids"],
+      "properties": { "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" }, "area": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/systemArea" }, "applicable": { "type": "boolean" }, "covered": { "type": "boolean" }, "conflict": { "type": "boolean" }, "source_refs": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/sourceRefs" }, "finding_ids": { "type": "array", "minItems": 0, "maxItems": 10, "uniqueItems": true, "items": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" } } }
+    },
+    "questionCheck": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "question_id", "complete", "material_dimensions", "source_refs", "finding_ids"],
+      "properties": { "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" }, "question_id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" }, "complete": { "type": "boolean" }, "material_dimensions": { "type": "array", "minItems": 1, "maxItems": 11, "uniqueItems": true, "items": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/materialDimension" } }, "source_refs": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/sourceRefs" }, "finding_ids": { "type": "array", "minItems": 0, "maxItems": 10, "uniqueItems": true, "items": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" } } }
+    },
+    "goalAnalysisValidation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "id", "invocation_id", "operation_id", "producer_analysis_id", "citation_checks", "area_checks", "question_checks", "missing_items", "prompt_injection_findings", "verdict"],
+      "properties": { "schema_version": { "const": 1 }, "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" }, "invocation_id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" }, "operation_id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" }, "producer_analysis_id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" }, "citation_checks": { "type": "array", "minItems": 0, "maxItems": 100, "items": { "$ref": "#/$defs/citationCheck" } }, "area_checks": { "type": "array", "minItems": 9, "maxItems": 9, "items": { "$ref": "#/$defs/areaCheck" } }, "question_checks": { "type": "array", "minItems": 0, "maxItems": 20, "items": { "$ref": "#/$defs/questionCheck" } }, "missing_items": { "type": "array", "minItems": 0, "maxItems": 50, "items": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/finding" } }, "prompt_injection_findings": { "type": "array", "minItems": 0, "maxItems": 50, "items": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/finding" } }, "verdict": { "enum": ["valid", "conflict", "blocked"] } }
+    }
+  }
+}

@@ -1,0 +1,171 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json",
+  "title": "Shared closed types for live goal alignment",
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "text128": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "text200": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "text256": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "text500": { "type": "string", "minLength": 1, "maxLength": 500 },
+    "text1000": { "type": "string", "minLength": 1, "maxLength": 1000 },
+    "text2000": { "type": "string", "minLength": 1, "maxLength": 2000 },
+    "text4000": { "type": "string", "minLength": 1, "maxLength": 4000 },
+    "normalizedRelativeKey": { "type": "string", "minLength": 1, "maxLength": 1024, "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*//).+$" },
+    "exactHttpsOrigin": { "type": "string", "maxLength": 2048, "pattern": "^https://[A-Za-z0-9.-]+(?::[0-9]{1,5})?$" },
+    "materialDimension": {
+      "enum": ["irreversible-destructive", "security-privacy-credential", "data-schema-migration", "externally-observable-behavior", "architecture-dependency", "role-permission", "persistence-rule", "external-interface", "deployment-behavior", "acceptance-criterion", "explicit-non-goal"]
+    },
+    "systemArea": { "enum": ["repository-bootstrap", "frontend", "backend", "data", "security", "integration", "testing", "deployment", "automation"] },
+    "artifactKind": {
+      "enum": ["goal", "snapshot", "onboarding", "agent-runtime-subject", "research-query", "network-research-subject", "analysis-plan", "research-source", "research-gap", "goal-analysis", "analysis-validation", "alignment-bundle", "interaction-packet", "developer-answer", "diagnostic", "isolation-proof"]
+    },
+    "stableErrorCode": {
+      "enum": ["AGENT_AUTHORITY_REQUIRED", "AGENT_AUTHORITY_STALE", "ADAPTER_CHANGED", "ADAPTER_NOT_FOUND", "ADAPTER_INCOMPATIBLE", "AUTH_UNAVAILABLE", "ISOLATION_UNAVAILABLE", "CANCELLED", "TIMEOUT", "PROCESS_EXIT", "INVALID_OUTPUT", "RESOURCE_LIMIT", "USAGE_UNAVAILABLE", "CLEANUP_FAILED", "ANALYSIS_FAILED", "ANALYSIS_CONFLICT", "ANALYSIS_INCOMPLETE", "ATTEMPT_IN_PROGRESS", "ATTEMPT_INTEGRITY", "SCOPE_NOT_READY", "ANSWER_STALE", "ANSWER_INVALID", "RETRY_EXHAUSTED", "ALREADY_COMMITTING", "ALREADY_COMPLETED", "RESEARCH_NOT_AUTHORIZED", "ORIGIN_NOT_ALLOWED", "PRIVATE_DESTINATION", "OUTBOUND_DATA_REJECTED", "RESEARCH_TIMEOUT", "RESEARCH_CONFLICT", "RESEARCH_LIMIT"]
+    },
+    "artifactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "sha256", "media_type", "size_bytes", "storage_key"],
+      "properties": {
+        "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+        "kind": { "$ref": "#/$defs/artifactKind" },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "media_type": { "enum": ["application/json", "text/plain"] },
+        "size_bytes": { "type": "integer", "minimum": 0, "maximum": 1048576 },
+        "storage_key": { "$ref": "#/$defs/normalizedRelativeKey" }
+      }
+    },
+    "authorityRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["capability", "subject_id", "subject_sha256", "request_id", "receipt_id", "request_sha256", "receipt_sha256", "approved_at", "expires_at"],
+      "properties": {
+        "capability": { "enum": ["agent-runtime", "network-research"] },
+        "subject_id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+        "subject_sha256": { "$ref": "#/$defs/sha256" },
+        "request_id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+        "receipt_id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+        "request_sha256": { "$ref": "#/$defs/sha256" },
+        "receipt_sha256": { "$ref": "#/$defs/sha256" },
+        "approved_at": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/timestamp" },
+        "expires_at": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/timestamp" }
+      }
+    },
+    "sourceLocation": {
+      "oneOf": [
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["kind", "path", "line_start", "line_end"],
+          "properties": { "kind": { "const": "repository" }, "path": { "$ref": "#/$defs/normalizedRelativeKey" }, "line_start": { "type": "integer", "minimum": 1, "maximum": 1000000000 }, "line_end": { "type": "integer", "minimum": 1, "maximum": 1000000000 } }
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["kind", "pointer"],
+          "properties": { "kind": { "const": "json" }, "pointer": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^/" } }
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["kind", "source_id", "excerpt_sha256"],
+          "properties": { "kind": { "const": "external" }, "source_id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" }, "excerpt_sha256": { "$ref": "#/$defs/sha256" } }
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["kind", "answer_id"],
+          "properties": { "kind": { "const": "developer" }, "answer_id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" } }
+        }
+      ]
+    },
+    "sourceRef": {
+      "type": "object", "additionalProperties": false,
+      "required": ["artifact_id", "artifact_sha256", "location"],
+      "properties": { "artifact_id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" }, "artifact_sha256": { "$ref": "#/$defs/sha256" }, "location": { "$ref": "#/$defs/sourceLocation" } }
+    },
+    "sourceRefs": { "type": "array", "minItems": 1, "maxItems": 10, "items": { "$ref": "#/$defs/sourceRef" } },
+    "materialDimensions": { "type": "array", "minItems": 0, "maxItems": 11, "uniqueItems": true, "items": { "$ref": "#/$defs/materialDimension" } },
+    "finding": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "kind", "summary", "material_dimensions", "source_refs"],
+      "properties": { "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" }, "kind": { "enum": ["assumption", "conflict", "gap", "untrusted-instruction", "failure"] }, "summary": { "$ref": "#/$defs/text2000" }, "material_dimensions": { "$ref": "#/$defs/materialDimensions" }, "source_refs": { "$ref": "#/$defs/sourceRefs" } }
+    },
+    "proposedItem": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "text", "source_refs"],
+      "properties": { "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" }, "text": { "$ref": "#/$defs/text2000" }, "source_refs": { "$ref": "#/$defs/sourceRefs" } }
+    },
+    "reviewItem": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "text", "source_refs"],
+      "properties": { "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" }, "text": { "$ref": "#/$defs/text4000" }, "source_refs": { "$ref": "#/$defs/sourceRefs" } }
+    },
+    "decisionOption": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "label", "outcome", "tradeoffs", "recommended"],
+      "properties": { "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" }, "label": { "$ref": "#/$defs/text200" }, "outcome": { "$ref": "#/$defs/text1000" }, "tradeoffs": { "type": "array", "minItems": 1, "maxItems": 5, "items": { "$ref": "#/$defs/text500" } }, "recommended": { "type": "boolean" } }
+    },
+    "materialQuestion": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "question", "options", "material_dimensions", "source_refs"],
+      "properties": { "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" }, "question": { "$ref": "#/$defs/text2000" }, "options": { "type": "array", "minItems": 2, "maxItems": 3, "items": { "$ref": "#/$defs/decisionOption" } }, "material_dimensions": { "type": "array", "minItems": 1, "maxItems": 11, "uniqueItems": true, "items": { "$ref": "#/$defs/materialDimension" } }, "source_refs": { "$ref": "#/$defs/sourceRefs" } }
+    },
+    "areaAssessment": {
+      "type": "object", "additionalProperties": false,
+      "required": ["area", "proposed_status", "summary", "source_refs"],
+      "properties": { "area": { "$ref": "#/$defs/systemArea" }, "proposed_status": { "enum": ["applicable", "not-applicable", "conflict", "gap"] }, "summary": { "$ref": "#/$defs/text2000" }, "source_refs": { "$ref": "#/$defs/sourceRefs" } }
+    },
+    "claimProposal": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "area", "text", "proposed_class", "source_refs"],
+      "properties": { "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" }, "area": { "$ref": "#/$defs/systemArea" }, "text": { "$ref": "#/$defs/text2000" }, "proposed_class": { "enum": ["detected", "documented", "code-confirmed", "conflict", "unverified", "not-covered"] }, "source_refs": { "$ref": "#/$defs/sourceRefs" } }
+    },
+    "criterionProposal": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "given", "when", "then", "proof_surface", "source_refs"],
+      "properties": { "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" }, "given": { "$ref": "#/$defs/text2000" }, "when": { "$ref": "#/$defs/text2000" }, "then": { "$ref": "#/$defs/text2000" }, "proof_surface": { "enum": ["unit", "api", "browser", "simulator", "database", "deployment", "automation", "manual-observation"] }, "source_refs": { "$ref": "#/$defs/sourceRefs" } }
+    },
+    "researchTopic": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "purpose", "public_identifiers", "source_refs"],
+      "properties": { "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" }, "purpose": { "$ref": "#/$defs/text1000" }, "public_identifiers": { "type": "array", "minItems": 1, "maxItems": 10, "uniqueItems": true, "items": { "$ref": "#/$defs/text256" } }, "source_refs": { "$ref": "#/$defs/sourceRefs" } }
+    },
+    "accessPolicy": {
+      "type": "object", "additionalProperties": false,
+      "required": ["consumer", "host_read", "host_write", "supervisor_access", "consumer_environment", "provider_transport", "research_network", "backend", "profile_template_sha256", "profile_instance_sha256"],
+      "properties": {
+        "consumer": { "type": "object", "additionalProperties": false, "required": ["read", "write", "commit_sha"], "properties": { "read": { "const": true }, "write": { "const": false }, "commit_sha": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/gitCommit" } } },
+        "host_read": { "type": "array", "minItems": 3, "maxItems": 3, "prefixItems": [{ "const": "runtime-system-libraries" }, { "const": "adapter-executable" }, { "const": "provider-proxy-client" }], "items": false },
+        "host_write": { "type": "array", "minItems": 1, "maxItems": 1, "prefixItems": [{ "const": "runtime-attempt-directory" }], "items": false },
+        "supervisor_access": { "const": false },
+        "consumer_environment": { "const": false },
+        "provider_transport": { "type": "object", "additionalProperties": false, "required": ["approved", "target_descriptor_sha256", "proxy_policy_sha256"], "properties": { "approved": { "const": true }, "target_descriptor_sha256": { "$ref": "#/$defs/sha256" }, "proxy_policy_sha256": { "$ref": "#/$defs/sha256" } } },
+        "research_network": { "type": "object", "additionalProperties": false, "required": ["approved", "authority_ref"], "properties": { "approved": { "const": false }, "authority_ref": { "type": "null" } } },
+        "backend": { "const": "macos-seatbelt-v1" },
+        "profile_template_sha256": { "$ref": "#/$defs/sha256" },
+        "profile_instance_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "resourceLimits": {
+      "type": "object", "additionalProperties": false,
+      "required": ["attempt_deadline_seconds", "max_active_execution_seconds", "max_result_bytes", "max_stdout_bytes", "max_stderr_bytes", "max_retained_records", "max_retained_bytes", "max_temporary_bytes", "max_processes", "max_rss_bytes", "cleanup_deadline_seconds", "max_research_queries", "max_sources_per_query", "max_research_requests", "max_redirects_per_request", "max_research_response_bytes", "max_research_bytes", "research_request_deadline_seconds", "max_agent_attempts", "max_provider_requests", "provider_request_deadline_seconds", "max_total_tokens"],
+      "properties": {
+        "attempt_deadline_seconds": { "type": "integer", "minimum": 60, "maximum": 1800 }, "max_active_execution_seconds": { "type": "integer", "minimum": 60, "maximum": 3600 }, "max_result_bytes": { "type": "integer", "minimum": 1, "maximum": 1048576 }, "max_stdout_bytes": { "type": "integer", "minimum": 1, "maximum": 10485760 }, "max_stderr_bytes": { "type": "integer", "minimum": 1, "maximum": 10485760 }, "max_retained_records": { "type": "integer", "minimum": 1, "maximum": 20 }, "max_retained_bytes": { "type": "integer", "minimum": 1, "maximum": 20971520 }, "max_temporary_bytes": { "type": "integer", "minimum": 1, "maximum": 268435456 }, "max_processes": { "type": "integer", "minimum": 1, "maximum": 64 }, "max_rss_bytes": { "type": "integer", "minimum": 1, "maximum": 2147483648 }, "cleanup_deadline_seconds": { "type": "integer", "minimum": 1, "maximum": 30 }, "max_research_queries": { "type": "integer", "minimum": 0, "maximum": 5 }, "max_sources_per_query": { "type": "integer", "minimum": 0, "maximum": 5 }, "max_research_requests": { "type": "integer", "minimum": 0, "maximum": 25 }, "max_redirects_per_request": { "type": "integer", "minimum": 0, "maximum": 3 }, "max_research_response_bytes": { "type": "integer", "minimum": 0, "maximum": 2097152 }, "max_research_bytes": { "type": "integer", "minimum": 0, "maximum": 10485760 }, "research_request_deadline_seconds": { "type": "integer", "minimum": 0, "maximum": 30 }, "max_agent_attempts": { "type": "integer", "minimum": 1, "maximum": 6 }, "max_provider_requests": { "type": "integer", "minimum": 1, "maximum": 120 }, "provider_request_deadline_seconds": { "type": "integer", "minimum": 1, "maximum": 120 }, "max_total_tokens": { "type": "integer", "minimum": 1, "maximum": 600000 }
+      }
+    },
+    "limitObservations": {
+      "type": "object", "additionalProperties": false,
+      "required": ["wall_ms", "stdout_bytes", "stderr_bytes", "result_bytes", "retained_records", "retained_bytes", "temporary_bytes_peak", "process_peak", "rss_bytes_peak", "provider_requests", "total_tokens"],
+      "properties": { "wall_ms": { "type": "integer", "minimum": 0, "maximum": 1800000 }, "stdout_bytes": { "type": "integer", "minimum": 0, "maximum": 10485760 }, "stderr_bytes": { "type": "integer", "minimum": 0, "maximum": 10485760 }, "result_bytes": { "type": "integer", "minimum": 0, "maximum": 1048576 }, "retained_records": { "type": "integer", "minimum": 0, "maximum": 20 }, "retained_bytes": { "type": "integer", "minimum": 0, "maximum": 20971520 }, "temporary_bytes_peak": { "type": "integer", "minimum": 0, "maximum": 268435456 }, "process_peak": { "type": "integer", "minimum": 0, "maximum": 64 }, "rss_bytes_peak": { "type": "integer", "minimum": 0, "maximum": 2147483648 }, "provider_requests": { "type": "integer", "minimum": 0, "maximum": 120 }, "total_tokens": { "type": "integer", "minimum": 0, "maximum": 600000 } }
+    },
+    "cleanupProof": {
+      "oneOf": [
+        { "type": "object", "additionalProperties": false, "required": ["status", "started_at", "completed_at", "duration_ms", "remaining_processes", "temporary_paths_remaining", "proof_sha256"], "properties": { "status": { "const": "complete" }, "started_at": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/timestamp" }, "completed_at": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/timestamp" }, "duration_ms": { "type": "integer", "minimum": 0, "maximum": 30000 }, "remaining_processes": { "const": 0 }, "temporary_paths_remaining": { "const": 0 }, "proof_sha256": { "$ref": "#/$defs/sha256" } } },
+        { "type": "object", "additionalProperties": false, "required": ["status", "started_at", "completed_at", "duration_ms", "remaining_processes", "temporary_paths_remaining", "proof_sha256"], "properties": { "status": { "const": "failed" }, "started_at": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/timestamp" }, "completed_at": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/timestamp" }, "duration_ms": { "type": "integer", "minimum": 0, "maximum": 30000 }, "remaining_processes": { "type": "integer", "minimum": 0, "maximum": 64 }, "temporary_paths_remaining": { "type": "integer", "minimum": 0, "maximum": 20 }, "proof_sha256": { "$ref": "#/$defs/sha256" } } }
+      ]
+    },
+    "researchGap": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "query_id", "reason", "summary", "source_refs"],
+      "properties": { "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" }, "query_id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" }, "reason": { "enum": ["not-authorized", "denied", "expired", "timeout", "limit", "unavailable", "outcome-unknown", "conflict"] }, "summary": { "$ref": "#/$defs/text1000" }, "source_refs": { "$ref": "#/$defs/sourceRefs" } }
+    }
+  }
+}

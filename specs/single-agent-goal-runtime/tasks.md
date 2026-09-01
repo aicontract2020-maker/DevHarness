@@ -33,7 +33,7 @@ implementation commit must make both targeted and regression suites green.
   - Covers: shared ArtifactRef/AuthorityRef/SourceRef/policy/limits, descriptor, invocation, attempt, plan, analysis, validation, boundaries and provider-key rejection
   - Depends on: TASK-002
 
-- [ ] **TASK-004** [M] Implement shared types plus closed Agent and analysis schemas
+- [x] **TASK-004** [M] Implement shared types plus closed Agent and analysis schemas
   - Creates: `packages/schema/schemas/v1/live-alignment-common.schema.json`, `packages/schema/schemas/v1/agent-runtime.schema.json`, `packages/schema/schemas/v1/goal-analysis.schema.json`
   - Plan/contract: § Portable Agent contracts; `contracts/agent-adapter.md` §§ AgentDescriptor–AgentAttemptOutput
   - Satisfies: AC-2, AC-3, AC-4, AC-4a, AC-11, AC-12, AC-14, AC-15

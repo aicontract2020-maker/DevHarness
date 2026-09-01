@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://devharness.dev/schemas/v1/agent-runtime.schema.json",
+  "title": "Portable Agent runtime records",
+  "$ref": "#/$defs/agentDescriptor",
+  "$defs": {
+    "usage": {
+      "type": "object", "additionalProperties": false,
+      "required": ["input_tokens", "output_tokens", "total_tokens"],
+      "properties": { "input_tokens": { "type": "integer", "minimum": 0, "maximum": 600000 }, "output_tokens": { "type": "integer", "minimum": 0, "maximum": 600000 }, "total_tokens": { "type": "integer", "minimum": 0, "maximum": 600000 } }
+    },
+    "agentDescriptor": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "id", "version", "protocol_version", "profile_id", "model_id", "executable_version", "modes", "features", "implementation_sha256", "executable_sha256", "profile_template_sha256", "control_plane_origins", "descriptor_sha256"],
+      "properties": {
+        "schema_version": { "const": 1 },
+        "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+        "version": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/text128" },
+        "protocol_version": { "const": 1 },
+        "profile_id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+        "model_id": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/text256" },
+        "executable_version": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/text256" },
+        "modes": { "type": "array", "minItems": 3, "maxItems": 3, "prefixItems": [{ "const": "analysis-plan" }, { "const": "analysis-synthesis" }, { "const": "analysis-validation" }], "items": false },
+        "features": {
+          "type": "object", "additionalProperties": false,
+          "required": ["structured_output", "explicit_cancel", "ephemeral_session", "read_only_tool_policy", "built_in_web_disable", "trusted_usage"],
+          "properties": { "structured_output": { "const": true }, "explicit_cancel": { "const": true }, "ephemeral_session": { "const": true }, "read_only_tool_policy": { "const": true }, "built_in_web_disable": { "const": true }, "trusted_usage": { "const": true } }
+        },
+        "implementation_sha256": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/sha256" },
+        "executable_sha256": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/sha256" },
+        "profile_template_sha256": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/sha256" },
+        "control_plane_origins": { "type": "array", "minItems": 1, "maxItems": 5, "uniqueItems": true, "items": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/exactHttpsOrigin" } },
+        "descriptor_sha256": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/sha256" }
+      }
+    },
+    "agentAuthorityRef": {
+      "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/authorityRef",
+      "properties": { "capability": { "const": "agent-runtime" } }
+    },
+    "agentInvocation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "id", "operation_id", "attempt_id", "attempt_no", "phase", "execution_instance_id", "adapter", "input_artifacts", "authorities", "policy", "profile_instance_sha256", "remaining_limits", "result_contract_sha256", "created_at"],
+      "properties": {
+        "schema_version": { "const": 1 },
+        "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+        "operation_id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+        "attempt_id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+        "attempt_no": { "type": "integer", "minimum": 1, "maximum": 2 },
+        "phase": { "enum": ["analysis-plan", "analysis-synthesis", "analysis-validation"] },
+        "execution_instance_id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+        "adapter": { "$ref": "#/$defs/agentDescriptor" },
+        "input_artifacts": { "type": "array", "minItems": 3, "maxItems": 50, "uniqueItems": true, "items": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/artifactRef" } },
+        "authorities": { "type": "array", "minItems": 1, "maxItems": 1, "items": { "$ref": "#/$defs/agentAuthorityRef" } },
+        "policy": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/accessPolicy" },
+        "profile_instance_sha256": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/sha256" },
+        "remaining_limits": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/resourceLimits" },
+        "result_contract_sha256": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/sha256" },
+        "created_at": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/timestamp" }
+      }
+    },
+    "agentAttemptReservation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "id", "operation_id", "attempt_id", "attempt_no", "phase", "invocation_sha256", "reserved_active_ms", "reserved_at"],
+      "properties": { "schema_version": { "const": 1 }, "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" }, "operation_id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" }, "attempt_id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" }, "attempt_no": { "type": "integer", "minimum": 1, "maximum": 2 }, "phase": { "enum": ["analysis-plan", "analysis-synthesis", "analysis-validation"] }, "invocation_sha256": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/sha256" }, "reserved_active_ms": { "type": "integer", "minimum": 60000, "maximum": 1800000 }, "reserved_at": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/timestamp" } }
+    },
+    "agentAttempt": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "id", "operation_id", "invocation_id", "attempt_no", "phase", "execution_instance_id", "status", "started_at", "completed_at", "duration_ms", "termination_reason", "exit_code", "limit_observations", "artifacts", "cleanup", "isolation_proof_sha256", "profile_instance_sha256"],
+      "properties": {
+        "schema_version": { "const": 1 }, "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" }, "operation_id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" }, "invocation_id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" }, "attempt_no": { "type": "integer", "minimum": 1, "maximum": 2 }, "phase": { "enum": ["analysis-plan", "analysis-synthesis", "analysis-validation"] }, "execution_instance_id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" }, "status": { "enum": ["succeeded", "blocked", "failed", "cancelled", "timed-out"] }, "started_at": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/timestamp" }, "completed_at": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/timestamp" }, "duration_ms": { "type": "integer", "minimum": 0, "maximum": 1800000 }, "termination_reason": { "enum": ["completed", "authority", "unsupported", "cancelled", "timeout", "process-exit", "invalid-output", "limit", "isolation", "integrity", "cleanup"] }, "exit_code": { "oneOf": [{ "type": "integer", "minimum": -2147483648, "maximum": 2147483647 }, { "type": "null" }] }, "limit_observations": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/limitObservations" }, "artifacts": { "type": "array", "minItems": 0, "maxItems": 20, "items": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/artifactRef" } }, "cleanup": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/cleanupProof" }, "isolation_proof_sha256": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/sha256" }, "profile_instance_sha256": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/sha256" }, "result_sha256": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/sha256" }, "usage": { "$ref": "#/$defs/usage" }
+      },
+      "allOf": [
+        { "if": { "required": ["status"], "properties": { "status": { "const": "succeeded" } } }, "then": { "required": ["result_sha256"], "properties": { "termination_reason": { "const": "completed" }, "cleanup": { "properties": { "status": { "const": "complete" } } } } }, "else": { "not": { "required": ["result_sha256"] } } },
+        { "if": { "properties": { "cleanup": { "required": ["status"], "properties": { "status": { "const": "failed" } } } } }, "then": { "properties": { "status": { "const": "failed" }, "termination_reason": { "const": "cleanup" } } } }
+      ]
+    },
+    "agentAttemptOutput": {
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "started_at", "completed_at", "exit_code", "termination_reason", "result_path", "usage", "adapter_diagnostics"],
+      "properties": { "status": { "enum": ["succeeded", "blocked", "failed", "cancelled", "timed-out"] }, "started_at": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/timestamp" }, "completed_at": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/timestamp" }, "exit_code": { "oneOf": [{ "type": "integer", "minimum": -2147483648, "maximum": 2147483647 }, { "type": "null" }] }, "termination_reason": { "enum": ["completed", "authority", "unsupported", "cancelled", "timeout", "process-exit", "invalid-output", "limit", "isolation", "integrity", "cleanup"] }, "result_path": { "oneOf": [{ "type": "string", "minLength": 1, "maxLength": 4096, "pattern": "^/" }, { "type": "null" }] }, "usage": { "$ref": "#/$defs/usage" }, "adapter_diagnostics": { "type": "array", "minItems": 0, "maxItems": 20, "items": { "type": "object", "additionalProperties": false, "required": ["code", "summary"], "properties": { "code": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/stableErrorCode" }, "summary": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/text1000" } } } }
+      }
+    },
+    "analysisPlan": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "id", "invocation_id", "operation_id", "affected_areas", "claims", "assumptions", "conflicts", "questions", "untrusted_instructions", "research_topics"],
+      "properties": { "schema_version": { "const": 1 }, "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" }, "invocation_id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" }, "operation_id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" }, "affected_areas": { "type": "array", "minItems": 9, "maxItems": 9, "items": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/areaAssessment" } }, "claims": { "type": "array", "minItems": 0, "maxItems": 100, "items": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/claimProposal" } }, "assumptions": { "type": "array", "minItems": 0, "maxItems": 50, "items": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/finding" } }, "conflicts": { "type": "array", "minItems": 0, "maxItems": 50, "items": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/finding" } }, "questions": { "type": "array", "minItems": 0, "maxItems": 20, "items": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/materialQuestion" } }, "untrusted_instructions": { "type": "array", "minItems": 0, "maxItems": 50, "items": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/finding" } }, "research_topics": { "type": "array", "minItems": 0, "maxItems": 5, "items": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/researchTopic" } }
+      }
+    }
+  }
+}
