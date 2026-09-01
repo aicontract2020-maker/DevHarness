@@ -87,7 +87,7 @@ implementation commit must make both targeted and regression suites green.
   - Satisfies: AC-4a, AC-11, AC-12, AC-14
   - Depends on: TASK-011
 
-- [ ] **TASK-013** [S] Test additive authority compatibility
+- [x] **TASK-013** [S] Test additive authority compatibility
   - Creates: `packages/schema/test/live-alignment-authority-compatibility.test.mjs`
   - Tests: AC-1, AC-8, AC-9, AC-10, AC-15
   - Covers: `agent-runtime`, `network-research`, `alignment-answer`, reversibility and legacy approvals
