@@ -22,7 +22,8 @@ const promote = (value, options = {}) => promoteUntrustedOutput({
 test("valid Agent output is neutralized and only canonical sanitized bytes are promotable", () => {
   const result = promote({ summary: "<script>alert(1)</script>\u001b[31m\u0000", items: ["safe"] });
   assert.deepEqual(result.record, { items: ["safe"], summary: "&lt;script&gt;alert(1)&lt;/script&gt;[31m" });
-  assert.equal(result.canonicalBytes.toString(), JSON.stringify(result.record));
+  assert.equal(result.canonicalBytes.toString(), '{"items":["safe"],"summary":"&lt;script&gt;alert(1)&lt;/script&gt;[31m"}');
+  assert.deepEqual(JSON.parse(result.canonicalBytes), result.record);
   assert.match(result.sha256, /^[0-9a-f]{64}$/);
   assert.deepEqual(Object.keys(result).sort(), ["canonicalBytes", "record", "sha256"]);
   assert.equal(result.canonicalBytes.includes(Buffer.from("<script>")), false);

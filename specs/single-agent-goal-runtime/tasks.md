@@ -81,7 +81,7 @@ implementation commit must make both targeted and regression suites green.
   - Covers: exact credential/env matches, private-key/token patterns, controls, active markup, bounds and raw non-promotion
   - Depends on: TASK-002
 
-- [ ] **TASK-012** [M] Implement the raw-Agent-output promotion boundary
+- [x] **TASK-012** [M] Implement the raw-Agent-output promotion boundary
   - Creates: `packages/runtime/src/untrusted-output.mjs`
   - Plan/contract: § Worker boundary; `contracts/agent-adapter.md` §§ Prompt Envelope, AgentAttemptOutput
   - Satisfies: AC-4a, AC-11, AC-12, AC-14
