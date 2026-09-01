@@ -113,7 +113,7 @@ implementation commit must make both targeted and regression suites green.
   - Satisfies: AC-1, AC-2, AC-10, AC-11, AC-14, AC-15
   - Depends on: TASK-015
 
-- [ ] **TASK-017** [M] Test Codex argv, probe, cancellation and output
+- [x] **TASK-017** [M] Test Codex argv, probe, cancellation and output
   - Creates: `packages/runtime/test/codex-adapter.test.mjs`
   - Tests: AC-2, AC-3, AC-4a, AC-11, AC-12, AC-14, AC-15
   - Covers: exact argv, ignored customization, disabled tools/network, empty env, malformed output and timeout
