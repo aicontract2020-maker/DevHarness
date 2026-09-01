@@ -107,7 +107,7 @@ implementation commit must make both targeted and regression suites green.
   - Covers: probe without model call, digests, unsupported adapter, start/cancel/result and injection
   - Depends on: TASK-004, TASK-010
 
-- [ ] **TASK-016** [S] Implement the portable adapter registry
+- [x] **TASK-016** [S] Implement the portable adapter registry
   - Creates: `packages/runtime/src/agent-adapter.mjs`
   - Plan/contract: § Agent registry and adapter protocol; `contracts/agent-adapter.md` §§ Interface, Validation and Errors
   - Satisfies: AC-1, AC-2, AC-10, AC-11, AC-14, AC-15
