@@ -126,7 +126,7 @@ implementation commit must make both targeted and regression suites green.
   - Satisfies: AC-2, AC-3, AC-4a, AC-11, AC-12, AC-14, AC-15
   - Depends on: TASK-017
 
-- [ ] **TASK-019** [S] Test two adapters against identical portable invocations
+- [x] **TASK-019** [S] Test two adapters against identical portable invocations
   - Creates: `packages/runtime/test/agent-adapter-conformance.test.mjs`
   - Tests: AC-2, AC-3, AC-4, AC-10, AC-12, AC-15
   - Covers: Codex and an injected scripted adapter yield the same descriptor, invocation, normalized-attempt and error semantics
