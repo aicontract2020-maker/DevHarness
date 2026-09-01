@@ -75,7 +75,7 @@ implementation commit must make both targeted and regression suites green.
   - Satisfies: AC-1, AC-2, AC-4, AC-9, AC-10, AC-12, AC-14
   - Depends on: TASK-009
 
-- [ ] **TASK-011** [S] Test hostile-output and secret sanitization
+- [x] **TASK-011** [S] Test hostile-output and secret sanitization
   - Creates: `packages/runtime/test/untrusted-output.test.mjs`
   - Tests: AC-4a, AC-11, AC-12, AC-14
   - Covers: exact credential/env matches, private-key/token patterns, controls, active markup, bounds and raw non-promotion
