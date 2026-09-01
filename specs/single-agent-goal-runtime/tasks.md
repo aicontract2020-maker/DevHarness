@@ -15,7 +15,7 @@ implementation commit must make both targeted and regression suites green.
 
 ### A. Contract Enforcement and Portable Records
 
-- [ ] **TASK-001** [S] Test JSON Schema features required by the approved contracts
+- [x] **TASK-001** [S] Test JSON Schema features required by the approved contracts
   - Modifies: `packages/schema/test/system-contracts.test.mjs`
   - Tests: AC-2, AC-4a, AC-10, AC-12, AC-14; `data-model.md` § Normative Closed Record Dictionary
   - Covers: `oneOf`, conditions, `not`, string/object limits, fragment validation and unknown keys

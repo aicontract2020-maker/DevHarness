@@ -168,3 +168,92 @@ test("task progress records observable work without private reasoning", () => {
   progress.private_reasoning = "not allowed";
   assert.equal(valid("task-progress", progress).valid, false);
 });
+
+test("validator enforces combinators, conditions, negation, bounds, and fragments", () => {
+  const schemaId = "https://devharness.dev/schemas/v1/validator-feature-probe.schema.json";
+  const featureRegistry = new SchemaRegistry([
+    {
+      $schema: "https://json-schema.org/draft/2020-12/schema",
+      $id: schemaId,
+      $defs: {
+        shortText: { type: "string", minLength: 1, maxLength: 4 },
+        exactChoice: {
+          type: "object",
+          additionalProperties: false,
+          required: ["kind", "value"],
+          properties: {
+            kind: { enum: ["text", "count"] },
+            value: {}
+          },
+          if: {
+            required: ["kind"],
+            properties: { kind: { const: "text" } }
+          },
+          then: {
+            properties: { value: { $ref: "#/$defs/shortText" } }
+          },
+          else: {
+            properties: { value: { type: "integer", minimum: 1 } }
+          }
+        }
+      },
+      oneOf: [
+        { $ref: "#/$defs/exactChoice" },
+        {
+          type: "object",
+          additionalProperties: false,
+          maxProperties: 1,
+          required: ["cancelled"],
+          properties: { cancelled: { const: true } }
+        }
+      ],
+      not: {
+        type: "object",
+        required: ["secret"],
+        properties: { secret: {} }
+      }
+    }
+  ]);
+
+  assert.deepEqual(featureRegistry.validate(`${schemaId}#/$defs/shortText`, "safe"), { valid: true, errors: [] });
+  assert.equal(featureRegistry.validate(`${schemaId}#/$defs/shortText`, "oversized").valid, false);
+  assert.equal(featureRegistry.validate(schemaId, { kind: "text", value: "safe" }).valid, true);
+  assert.equal(featureRegistry.validate(schemaId, { kind: "text", value: "oversized" }).valid, false);
+  assert.equal(featureRegistry.validate(schemaId, { kind: "count", value: 2 }).valid, true);
+  assert.equal(featureRegistry.validate(schemaId, { kind: "count", value: "2" }).valid, false);
+  assert.equal(featureRegistry.validate(schemaId, { cancelled: true }).valid, true);
+  assert.equal(featureRegistry.validate(schemaId, { cancelled: true, extra: true }).valid, false);
+  assert.equal(featureRegistry.validate(schemaId, { kind: "text", value: "safe", secret: "no" }).valid, false);
+});
+
+test("validator requires exactly one oneOf branch and supports anyOf and allOf", () => {
+  const schemaId = "https://devharness.dev/schemas/v1/validator-combinator-probe.schema.json";
+  const featureRegistry = new SchemaRegistry([
+    {
+      $id: schemaId,
+      $defs: {
+        positiveInteger: { type: "integer", minimum: 1 },
+        smallNumber: { type: "number", maximum: 10 }
+      },
+      oneOf: [
+        { $ref: "#/$defs/positiveInteger" },
+        { $ref: "#/$defs/smallNumber" }
+      ]
+    },
+    {
+      $id: `${schemaId.replace(".schema.json", "-composition.schema.json")}`,
+      allOf: [
+        { type: "string", minLength: 2 },
+        { anyOf: [{ pattern: "^ok" }, { pattern: "^safe" }] }
+      ]
+    }
+  ]);
+
+  assert.equal(featureRegistry.validate(schemaId, 3).valid, false, "3 matches both oneOf branches");
+  assert.equal(featureRegistry.validate(schemaId, 20).valid, true);
+  assert.equal(featureRegistry.validate(schemaId, -1).valid, true);
+  const compositionId = schemaId.replace(".schema.json", "-composition.schema.json");
+  assert.equal(featureRegistry.validate(compositionId, "okay").valid, true);
+  assert.equal(featureRegistry.validate(compositionId, "safe-value").valid, true);
+  assert.equal(featureRegistry.validate(compositionId, "bad").valid, false);
+});
