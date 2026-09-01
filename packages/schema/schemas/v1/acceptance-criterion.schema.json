@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://devharness.dev/schemas/v1/acceptance-criterion.schema.json",
+  "title": "Acceptance criterion",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "id", "claim", "category", "blocking", "proof", "verdict"],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "id": {
+      "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier"
+    },
+    "claim": {
+      "type": "string",
+      "minLength": 1
+    },
+    "category": {
+      "enum": ["behavior", "quality", "security", "performance", "delivery"]
+    },
+    "blocking": {
+      "type": "boolean"
+    },
+    "proof": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pack", "driver", "recipe", "evidence_types", "independent"],
+      "properties": {
+        "pack": {
+          "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier"
+        },
+        "driver": {
+          "type": "string",
+          "minLength": 1
+        },
+        "recipe": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence_types": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "test-result",
+              "command-output",
+              "screenshot",
+              "browser-snapshot",
+              "console",
+              "network",
+              "api-response",
+              "database-state",
+              "filesystem-state",
+              "performance-measurement",
+              "review-report"
+            ]
+          }
+        },
+        "independent": {
+          "type": "boolean"
+        },
+        "required_level": {
+          "enum": ["E1", "E2", "E3", "E4"]
+        }
+      }
+    },
+    "verdict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "evidence_refs"],
+      "properties": {
+        "status": {
+          "enum": ["pending", "pass", "fail", "blocked", "not_applicable"]
+        },
+        "evidence_refs": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier"
+          }
+        },
+        "reason": {
+          "type": "string"
+        },
+        "decided_at": {
+          "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/timestamp"
+        },
+        "decided_by": {
+          "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/actor"
+        }
+      }
+    }
+  }
+}

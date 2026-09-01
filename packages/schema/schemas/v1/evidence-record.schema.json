@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://devharness.dev/schemas/v1/evidence-record.schema.json",
+  "title": "Verification evidence record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "id",
+    "run_id",
+    "criterion_ids",
+    "type",
+    "producer",
+    "captured_at",
+    "subject",
+    "observation",
+    "artifacts"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "id": {
+      "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier"
+    },
+    "run_id": {
+      "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier"
+    },
+    "criterion_ids": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier"
+      }
+    },
+    "type": {
+      "enum": [
+        "test-result",
+        "command-output",
+        "screenshot",
+        "browser-snapshot",
+        "console",
+        "network",
+        "api-response",
+        "database-state",
+        "filesystem-state",
+        "performance-measurement",
+        "review-report"
+      ]
+    },
+    "level": {
+      "enum": ["E1", "E2", "E3", "E4"]
+    },
+    "producer": {
+      "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/actor"
+    },
+    "captured_at": {
+      "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/timestamp"
+    },
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository_identity", "commit_sha"],
+      "properties": {
+        "repository_identity": {
+          "type": "string",
+          "minLength": 1
+        },
+        "commit_sha": {
+          "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/gitCommit"
+        },
+        "task_id": {
+          "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier"
+        }
+      }
+    },
+    "observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["result", "summary"],
+      "properties": {
+        "result": {
+          "enum": ["pass", "fail", "observed"]
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "data": {}
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["uri", "media_type", "sha256", "size_bytes"],
+        "properties": {
+          "uri": {
+            "type": "string",
+            "format": "uri-reference"
+          },
+          "media_type": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    }
+  }
+}

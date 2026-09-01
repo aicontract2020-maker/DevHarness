@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://devharness.dev/schemas/v1/onboarding-plan.schema.json",
+  "title": "Read-only executable onboarding plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "id", "generated_at", "repository_identity", "workspace", "mode", "verdict", "claims", "coverage", "capability_requests", "blockers", "limitations", "next_action"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+    "generated_at": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/timestamp" },
+    "repository_identity": { "type": "string", "minLength": 1 },
+    "commit_sha": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/gitCommit" },
+    "workspace": { "type": "object", "additionalProperties": false, "required": ["dirty", "changed_file_count"], "properties": { "dirty": { "type": "boolean" }, "changed_file_count": { "type": "integer", "minimum": 0 } } },
+    "mode": { "const": "read-only-plan" },
+    "verdict": { "enum": ["ready", "needs-evidence", "blocked", "unsupported"] },
+    "claims": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "object", "additionalProperties": false, "required": ["id", "domain", "status", "summary", "evidence_refs"], "properties": { "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" }, "domain": { "enum": ["repository", "runtime", "frontend", "backend", "database", "security", "strategy", "testing", "deployment", "automation"] }, "status": { "enum": ["detected", "documented", "code-confirmed", "test-confirmed", "runtime-observed", "conflict", "unverified", "not-covered"] }, "summary": { "type": "string", "minLength": 1 }, "evidence_refs": { "type": "array", "items": { "type": "string", "minLength": 1 } } } }
+    },
+    "coverage": { "type": "array", "minItems": 1, "items": { "type": "object", "additionalProperties": false, "required": ["domain", "status", "claim_ids"], "properties": { "domain": { "enum": ["repository", "runtime", "frontend", "backend", "database", "security", "strategy", "testing", "deployment", "automation"] }, "status": { "enum": ["detected", "code-confirmed", "test-confirmed", "runtime-observed", "conflict", "unverified", "not-covered", "not-applicable"] }, "claim_ids": { "type": "array", "items": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" } } } } },
+    "capability_requests": { "type": "array", "items": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/capabilityRequest" } },
+    "blockers": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["id", "summary"], "properties": { "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" }, "summary": { "type": "string", "minLength": 1 } } } },
+    "limitations": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+    "next_action": { "type": "object", "additionalProperties": false, "required": ["id", "label", "recommended"], "properties": { "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" }, "label": { "type": "string", "minLength": 1 }, "recommended": { "const": true } } }
+  }
+}

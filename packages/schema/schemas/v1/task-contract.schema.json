@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://devharness.dev/schemas/v1/task-contract.schema.json",
+  "title": "Agent task contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "id",
+    "goal",
+    "capabilities",
+    "depends_on",
+    "inputs",
+    "allowed_scope",
+    "forbidden_scope",
+    "outputs",
+    "acceptance_criteria",
+    "impacts",
+    "status"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "id": {
+      "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier"
+    },
+    "goal": {
+      "type": "string",
+      "minLength": 1
+    },
+    "owner": {
+      "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/actor"
+    },
+    "capabilities": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier"
+      }
+    },
+    "depends_on": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier"
+      }
+    },
+    "inputs": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "allowed_scope": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "forbidden_scope": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "outputs": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "acceptance_criteria": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier"
+      }
+    },
+    "impacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["database", "security", "deployment", "automation"],
+      "properties": {
+        "database": { "$ref": "#/$defs/impact" },
+        "security": { "$ref": "#/$defs/impact" },
+        "deployment": { "$ref": "#/$defs/impact" },
+        "automation": { "$ref": "#/$defs/impact" }
+      }
+    },
+    "status": {
+      "enum": ["proposed", "ready", "running", "verifying", "completed", "failed", "blocked", "cancelled"]
+    }
+  },
+  "$defs": {
+    "impact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "subjects", "required_proof", "rationale"],
+      "properties": {
+        "status": { "enum": ["affected", "not-affected", "unknown"] },
+        "subjects": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "required_proof": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "rationale": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

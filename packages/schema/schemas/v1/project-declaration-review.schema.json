@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://devharness.dev/schemas/v1/project-declaration-review.schema.json",
+  "title": "Revision-bound project declaration assessment",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "id", "repository_identity", "head_sha", "proposal_sha256", "verdict", "approval_available", "structural_coverage", "counts", "dimensions", "execution_surfaces", "blockers", "next_action"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+    "repository_identity": { "type": "string", "minLength": 1 },
+    "head_sha": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/gitCommit" },
+    "proposal_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "verdict": { "enum": ["blocked", "review-required"] },
+    "approval_available": { "type": "boolean" },
+    "structural_coverage": { "type": "integer", "minimum": 0, "maximum": 100 },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commands", "launch_commands", "configured_services", "verification_jobs", "service_bound_verifications", "blockers"],
+      "properties": {
+        "commands": { "type": "integer", "minimum": 0 },
+        "launch_commands": { "type": "integer", "minimum": 0 },
+        "configured_services": { "type": "integer", "minimum": 0 },
+        "verification_jobs": { "type": "integer", "minimum": 0 },
+        "service_bound_verifications": { "type": "integer", "minimum": 0 },
+        "blockers": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "dimensions": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "label", "earned", "possible", "status"],
+        "properties": {
+          "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+          "label": { "type": "string", "minLength": 1 },
+          "earned": { "type": "integer", "minimum": 0, "maximum": 100 },
+          "possible": { "type": "integer", "minimum": 1, "maximum": 100 },
+          "status": { "enum": ["covered", "partial", "missing"] }
+        }
+      }
+    },
+    "execution_surfaces": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "kind", "run", "source", "status"],
+        "properties": {
+          "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+          "kind": { "enum": ["launch", "verify"] },
+          "run": { "type": "string", "minLength": 1 },
+          "source": { "type": "string", "minLength": 1 },
+          "status": { "enum": ["mapped", "unmapped"] }
+        }
+      }
+    },
+    "blockers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "subject", "summary"],
+        "properties": {
+          "code": { "type": "string", "minLength": 1 },
+          "subject": { "type": "string", "minLength": 1 },
+          "summary": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "question", "reason", "evidence_refs", "required_fields"],
+      "properties": {
+        "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+        "title": { "type": "string", "minLength": 1 },
+        "question": { "type": "string", "minLength": 1 },
+        "reason": { "type": "string", "minLength": 1 },
+        "evidence_refs": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "required_fields": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "next_action": { "type": "string", "minLength": 1 }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://devharness.dev/schemas/v1/capability-request.schema.json",
+  "title": "Bounded capability and authority request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "id", "repository_identity", "created_at", "requests", "status"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+    "repository_identity": { "type": "string", "minLength": 1 },
+    "created_at": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/timestamp" },
+    "requests": {
+      "type": "array",
+      "items": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/capabilityRequest" }
+    },
+    "status": { "enum": ["pending", "partially-approved", "approved", "denied"] }
+  }
+}

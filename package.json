@@ -1,0 +1,21 @@
+{
+  "name": "devharness",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "devharness": "node packages/cli/src/cli.mjs",
+    "review-ui": "npm --prefix apps/review-ui run dev",
+    "build:review-ui": "npm --prefix apps/review-ui run build",
+    "test:review-ui": "npm --prefix apps/review-ui run test",
+    "test": "node --test packages/*/test/*.test.mjs",
+    "test:schema": "node --test packages/schema/test/*.test.mjs",
+    "test:core": "node --test packages/core/test/*.test.mjs"
+  }
+}

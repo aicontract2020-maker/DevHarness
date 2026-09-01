@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://devharness.dev/schemas/v1/task-progress.schema.json",
+  "title": "Durable long-running task progress projection",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run_id", "task_id", "head_sha", "status", "current_step", "completed_count", "total_count", "blockers", "updated_at", "next_update_at"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "run_id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+    "task_id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+    "head_sha": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/gitCommit" },
+    "status": { "enum": ["ready", "running", "verifying", "blocked", "failed", "completed"] },
+    "current_step": { "type": "string", "minLength": 1 },
+    "completed_count": { "type": "integer", "minimum": 0 },
+    "total_count": { "type": "integer", "minimum": 1 },
+    "blockers": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "updated_at": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/timestamp" },
+    "next_update_at": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/timestamp" }
+  }
+}

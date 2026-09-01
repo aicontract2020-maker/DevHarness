@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://devharness.dev/schemas/v1/verification-policy.schema.json",
+  "title": "Executable proof ladder and release readiness policy",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "id", "repository_identity", "policy_version", "work_type", "platforms", "impacts", "modules", "stages", "release_contract"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+    "repository_identity": { "type": "string", "minLength": 1 },
+    "policy_version": { "type": "integer", "minimum": 1 },
+    "work_type": { "enum": ["module", "feature", "release"] },
+    "platforms": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "enum": ["web", "api", "cli", "mobile", "desktop", "library"] } },
+    "impacts": { "type": "object", "additionalProperties": false, "required": ["database", "security", "deployment", "automation"], "properties": { "database": { "type": "boolean" }, "security": { "type": "boolean" }, "deployment": { "type": "boolean" }, "automation": { "type": "boolean" } } },
+    "modules": { "type": "array", "minItems": 1, "items": { "type": "object", "additionalProperties": false, "required": ["id", "changed"], "properties": { "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" }, "changed": { "type": "boolean" }, "unit_stage_id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" }, "not_applicable_reason": { "type": "string", "minLength": 1 } } } },
+    "stages": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "level", "required", "drivers", "evidence_types", "real_dependencies", "independent", "timeout_ms", "thresholds"],
+        "properties": {
+          "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+          "level": { "enum": ["unit", "integration", "functional", "system", "deployment", "migration", "rollback", "performance", "postdeploy"] },
+          "required": { "type": "boolean" },
+          "drivers": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+          "evidence_types": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+          "real_dependencies": { "type": "boolean" },
+          "independent": { "type": "boolean" },
+          "timeout_ms": { "type": "integer", "exclusiveMinimum": 0 },
+          "thresholds": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["metric", "operator", "value", "unit"], "properties": { "metric": { "type": "string", "minLength": 1 }, "operator": { "enum": ["lt", "lte", "gt", "gte", "eq"] }, "value": { "type": "number", "minimum": 0 }, "unit": { "type": "string", "minLength": 1 } } } }
+        }
+      }
+    },
+    "release_contract": { "type": "object", "additionalProperties": false, "required": ["deployment", "migration", "rollback", "performance", "canary"], "properties": { "deployment": { "type": "boolean" }, "migration": { "type": "boolean" }, "rollback": { "type": "boolean" }, "performance": { "type": "boolean" }, "canary": { "type": "boolean" } } }
+  }
+}

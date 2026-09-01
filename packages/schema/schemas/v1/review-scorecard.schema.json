@@ -1,0 +1,152 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://devharness.dev/schemas/v1/review-scorecard.schema.json",
+  "title": "Developer review scorecard",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "id", "run_id", "generated_at", "repository_identity",
+    "head_sha", "scope_sha256", "harness_version", "title", "summary",
+    "data_source", "verdict", "proof_coverage", "hard_gates", "acceptance_counts",
+    "evidence_level_counts", "exception_counts", "exceptions", "criteria", "integrity"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+    "run_id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+    "generated_at": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/timestamp" },
+    "repository_identity": { "type": "string", "minLength": 1 },
+    "head_sha": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/gitCommit" },
+    "scope_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "harness_version": { "type": "string", "minLength": 1 },
+    "title": { "type": "string", "minLength": 1 },
+    "summary": { "type": "string", "minLength": 1 },
+    "data_source": { "enum": ["runtime", "contract-fixture", "imported"] },
+    "verdict": { "enum": ["ready", "not-ready", "blocked"] },
+    "proof_coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["score", "dimensions"],
+      "properties": {
+        "score": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "dimensions": {
+          "type": "array", "minItems": 5, "maxItems": 5,
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["id", "label", "weight", "proved", "applicable", "weighted_score", "status"],
+            "properties": {
+              "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+              "label": { "type": "string", "minLength": 1 },
+              "weight": { "type": "integer", "minimum": 1, "maximum": 100 },
+              "proved": { "type": "integer", "minimum": 0 },
+              "applicable": { "type": "integer", "minimum": 0 },
+              "weighted_score": { "type": "integer", "minimum": 0, "maximum": 100 },
+              "status": { "enum": ["pass", "gap", "not-applicable"] }
+            }
+          }
+        }
+      }
+    },
+    "hard_gates": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["id", "label", "status", "reason", "source_refs"],
+        "properties": {
+          "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+          "label": { "type": "string", "minLength": 1 },
+          "status": { "enum": ["pass", "fail", "not-applicable"] },
+          "reason": { "type": "string" },
+          "source_refs": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }
+        }
+      }
+    },
+    "acceptance_counts": { "$ref": "#/$defs/acceptanceCounts" },
+    "evidence_level_counts": { "$ref": "#/$defs/evidenceLevelCounts" },
+    "exception_counts": { "$ref": "#/$defs/exceptionCounts" },
+    "exceptions": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["id", "severity", "type", "title", "detail", "affected_outcome", "source_refs", "required_action"],
+        "properties": {
+          "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+          "severity": { "enum": ["blocking", "high", "warning"] },
+          "type": { "enum": ["trust", "acceptance", "evidence", "security", "data-integrity", "unknown", "conflict", "traceability", "review", "scope"] },
+          "title": { "type": "string", "minLength": 1 },
+          "detail": { "type": "string", "minLength": 1 },
+          "affected_outcome": { "type": "string", "minLength": 1 },
+          "source_refs": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+          "required_action": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "criteria": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["id", "title", "priority", "required_evidence_level", "achieved_evidence_level", "status", "proof_summary", "requirement_refs", "task_refs", "change_refs", "evidence_refs", "review_refs", "replay_recipe"],
+        "properties": {
+          "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+          "title": { "type": "string", "minLength": 1 },
+          "priority": { "enum": ["must", "should", "could", "wont"] },
+          "required_evidence_level": { "enum": ["E1", "E2", "E3", "E4"] },
+          "achieved_evidence_level": { "enum": ["E0", "E1", "E2", "E3", "E4"] },
+          "status": { "enum": ["pass", "fail", "blocked", "pending", "not_applicable"] },
+          "proof_summary": { "type": "string", "minLength": 1 },
+          "requirement_refs": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+          "task_refs": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+          "change_refs": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+          "evidence_refs": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+          "review_refs": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+          "replay_recipe": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "integrity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["trusted_context", "source_artifact_count", "surfaced_item_count", "omitted_item_count"],
+      "properties": {
+        "trusted_context": { "type": "boolean" },
+        "source_artifact_count": { "type": "integer", "minimum": 0 },
+        "surfaced_item_count": { "type": "integer", "minimum": 0 },
+        "omitted_item_count": { "type": "integer", "minimum": 0 }
+      }
+    }
+  },
+  "$defs": {
+    "acceptanceCounts": {
+      "type": "object", "additionalProperties": false,
+      "required": ["total", "pass", "fail", "blocked", "pending", "not_applicable"],
+      "properties": {
+        "total": { "type": "integer", "minimum": 0 },
+        "pass": { "type": "integer", "minimum": 0 },
+        "fail": { "type": "integer", "minimum": 0 },
+        "blocked": { "type": "integer", "minimum": 0 },
+        "pending": { "type": "integer", "minimum": 0 },
+        "not_applicable": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "evidenceLevelCounts": {
+      "type": "object", "additionalProperties": false,
+      "required": ["E0", "E1", "E2", "E3", "E4"],
+      "properties": {
+        "E0": { "type": "integer", "minimum": 0 }, "E1": { "type": "integer", "minimum": 0 },
+        "E2": { "type": "integer", "minimum": 0 }, "E3": { "type": "integer", "minimum": 0 },
+        "E4": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "exceptionCounts": {
+      "type": "object", "additionalProperties": false,
+      "required": ["blocking", "unknowns", "conflicts", "unmapped_requirements", "orphan_tasks", "orphan_changes", "below_level_evidence", "stale_or_invalid_evidence", "open_security_findings", "open_data_integrity_findings", "unnecessary_questions", "late_scope_changes"],
+      "properties": {
+        "blocking": { "type": "integer", "minimum": 0 }, "unknowns": { "type": "integer", "minimum": 0 },
+        "conflicts": { "type": "integer", "minimum": 0 }, "unmapped_requirements": { "type": "integer", "minimum": 0 },
+        "orphan_tasks": { "type": "integer", "minimum": 0 }, "orphan_changes": { "type": "integer", "minimum": 0 },
+        "below_level_evidence": { "type": "integer", "minimum": 0 }, "stale_or_invalid_evidence": { "type": "integer", "minimum": 0 },
+        "open_security_findings": { "type": "integer", "minimum": 0 }, "open_data_integrity_findings": { "type": "integer", "minimum": 0 },
+        "unnecessary_questions": { "type": "integer", "minimum": 0 }, "late_scope_changes": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

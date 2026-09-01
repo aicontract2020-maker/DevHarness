@@ -1,0 +1,193 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://devharness.dev/schemas/v1/repository-snapshot.schema.json",
+  "title": "Read-only repository discovery snapshot",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "captured_at",
+    "repository",
+    "inventory",
+    "detected",
+    "commands",
+    "environment",
+    "submodules"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "captured_at": {
+      "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/timestamp"
+    },
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "root_uri", "identity", "git"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "root_uri": { "type": "string", "format": "uri" },
+        "identity": { "type": "string", "minLength": 1 },
+        "git": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["is_repository", "dirty", "changed_file_count", "remote_hosts"],
+          "properties": {
+            "is_repository": { "type": "boolean" },
+            "head_sha": {
+              "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/gitCommit"
+            },
+            "branch": { "type": "string" },
+            "dirty": { "type": "boolean" },
+            "changed_file_count": { "type": "integer", "minimum": 0 },
+            "remote_hosts": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    },
+    "inventory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file_count", "manifests", "lockfiles"],
+      "properties": {
+        "file_count": { "type": "integer", "minimum": 0 },
+        "manifests": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "lockfiles": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "detected": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "platforms",
+        "languages",
+        "frameworks",
+        "package_managers",
+        "services",
+        "test_tools",
+        "ci_files",
+        "deployment_files",
+        "agent_files"
+      ],
+      "properties": {
+        "platforms": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "enum": ["web", "api", "cli", "library", "mobile", "desktop", "unknown"] }
+        },
+        "languages": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "frameworks": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "package_managers": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "services": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "test_tools": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "ci_files": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "deployment_files": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "agent_files": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "commands": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "kind", "run", "source"],
+        "properties": {
+          "id": {
+            "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier"
+          },
+          "kind": { "enum": ["build", "test", "lint", "typecheck", "launch", "verify"] },
+          "run": { "type": "string", "minLength": 1 },
+          "source": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["example_files", "local_files", "declared_keys", "locally_set_keys", "local_files_ignored"],
+      "properties": {
+        "example_files": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "local_files": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "declared_keys": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" }
+        },
+        "locally_set_keys": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" }
+        },
+        "local_files_ignored": { "type": "boolean" }
+      }
+    },
+    "submodules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "status"],
+        "properties": {
+          "path": { "type": "string", "minLength": 1 },
+          "status": { "enum": ["initialized", "missing", "modified", "conflicted", "unknown"] },
+          "commit_sha": {
+            "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/gitCommit"
+          }
+        }
+      }
+    }
+  }
+}

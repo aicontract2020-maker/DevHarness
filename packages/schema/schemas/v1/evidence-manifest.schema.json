@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://devharness.dev/schemas/v1/evidence-manifest.schema.json",
+  "title": "Supervisor-issued evidence manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "id", "repository_identity", "commit_sha", "run_id", "criterion", "command", "harness", "driver", "recipe_sha256", "receipt", "issued_at", "outcome", "evidence_records", "issuer", "attestation"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+    "repository_identity": { "type": "string", "minLength": 1 },
+    "commit_sha": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/gitCommit" },
+    "run_id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+    "criterion": {
+      "type": "object", "additionalProperties": false, "required": ["id", "sha256"],
+      "properties": { "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" }, "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" } }
+    },
+    "command": {
+      "type": "object", "additionalProperties": false, "required": ["id", "kind", "sha256"],
+      "properties": { "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" }, "kind": { "enum": ["build", "test", "verify", "lint", "typecheck", "launch"] }, "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" } }
+    },
+    "harness": {
+      "type": "object", "additionalProperties": false, "required": ["config_sha256", "verification_sha256"],
+      "properties": { "config_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }, "verification_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" } }
+    },
+    "driver": {
+      "type": "object", "additionalProperties": false, "required": ["id", "version", "implementation_sha256"],
+      "properties": { "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" }, "version": { "type": "integer", "minimum": 1 }, "implementation_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" } }
+    },
+    "recipe_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "receipt": {
+      "type": "object", "additionalProperties": false, "required": ["id", "sha256"],
+      "properties": { "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" }, "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" } }
+    },
+    "issued_at": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/timestamp" },
+    "outcome": {
+      "type": "object", "additionalProperties": false, "required": ["status", "summary"],
+      "properties": { "status": { "enum": ["pass", "fail"] }, "summary": { "type": "string", "minLength": 1 } }
+    },
+    "evidence_records": { "type": "array", "minItems": 1, "items": { "$ref": "https://devharness.dev/schemas/v1/evidence-record.schema.json" } },
+    "issuer": {
+      "type": "object", "additionalProperties": false, "required": ["id", "fingerprint"],
+      "properties": { "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" }, "fingerprint": { "type": "string", "pattern": "^[0-9a-f]{64}$" } }
+    },
+    "attestation": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/attestation" }
+  }
+}

@@ -1,0 +1,161 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://devharness.dev/schemas/v1/goal-run.schema.json",
+  "title": "Goal run snapshot",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "id",
+    "repository",
+    "goal",
+    "state",
+    "gates",
+    "budgets",
+    "timestamps"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "id": {
+      "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier"
+    },
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["identity", "root_uri", "base_ref"],
+      "properties": {
+        "identity": {
+          "type": "string",
+          "minLength": 1
+        },
+        "root_uri": {
+          "type": "string",
+          "format": "uri"
+        },
+        "base_ref": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "goal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["original"],
+      "properties": {
+        "original": {
+          "type": "string",
+          "minLength": 1
+        },
+        "refined": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scope_version": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "state": {
+      "enum": [
+        "received",
+        "discovering",
+        "clarifying",
+        "researching",
+        "specifying",
+        "awaiting_scope_approval",
+        "planning",
+        "staffing",
+        "executing",
+        "verifying",
+        "repairing",
+        "reviewing",
+        "preparing_delivery",
+        "awaiting_delivery_approval",
+        "completed",
+        "blocked",
+        "cancelled"
+      ]
+    },
+    "gates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scope", "delivery"],
+      "properties": {
+        "scope": {
+          "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/gate"
+        },
+        "delivery": {
+          "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/gate"
+        }
+      }
+    },
+    "budgets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_agents", "max_repair_attempts", "repair_attempts_used"],
+      "properties": {
+        "max_agents": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_repair_attempts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "repair_attempts_used": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "wall_time_seconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "cost_limit": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      }
+    },
+    "current_head_sha": {
+      "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/gitCommit"
+    },
+    "timestamps": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["created_at", "updated_at"],
+      "properties": {
+        "created_at": {
+          "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/timestamp"
+        },
+        "updated_at": {
+          "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/timestamp"
+        },
+        "completed_at": {
+          "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/timestamp"
+        }
+      }
+    },
+    "blocker": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "summary"],
+      "properties": {
+        "code": {
+          "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier"
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "remediation": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}
+

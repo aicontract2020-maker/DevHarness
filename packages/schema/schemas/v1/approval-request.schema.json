@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://devharness.dev/schemas/v1/approval-request.schema.json",
+  "title": "Supervisor-issued pending human approval request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "id", "run_id", "repository_identity", "relevant_head_sha", "gate", "subject", "nonce", "requested_at", "expires_at", "status", "attestation"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+    "run_id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+    "repository_identity": { "type": "string", "minLength": 1 },
+    "relevant_head_sha": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/gitCommit" },
+    "gate": { "enum": ["capability", "strategy", "strategy-exception", "scope", "delivery"] },
+    "subject": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/approvalSubject" },
+    "nonce": { "type": "string", "minLength": 16 },
+    "requested_at": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/timestamp" },
+    "expires_at": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/timestamp" },
+    "status": { "const": "pending" },
+    "attestation": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/attestation" }
+  }
+}

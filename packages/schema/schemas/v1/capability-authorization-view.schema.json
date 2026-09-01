@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://devharness.dev/schemas/v1/capability-authorization-view.schema.json",
+  "title": "Computed current capability authorization view",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "run_id", "repository_identity", "head_sha", "generated_at", "counts", "capabilities", "next_action"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "run_id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+    "repository_identity": { "type": "string", "minLength": 1 },
+    "head_sha": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/gitCommit" },
+    "generated_at": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/timestamp" },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "unrequested", "pending", "approved", "rejected", "expired", "stale"],
+      "properties": {
+        "total": { "type": "integer", "minimum": 0 },
+        "unrequested": { "type": "integer", "minimum": 0 },
+        "pending": { "type": "integer", "minimum": 0 },
+        "approved": { "type": "integer", "minimum": 0 },
+        "rejected": { "type": "integer", "minimum": 0 },
+        "expired": { "type": "integer", "minimum": 0 },
+        "stale": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["request", "subject_sha256", "status"],
+        "properties": {
+          "request": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/capabilityRequest" },
+          "subject_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "status": { "enum": ["unrequested", "pending", "approved", "rejected", "expired", "stale"] },
+          "approval_request_id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+          "approval_receipt_id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+          "expires_at": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/timestamp" }
+        }
+      }
+    },
+    "next_action": { "type": "string", "minLength": 1 }
+  }
+}

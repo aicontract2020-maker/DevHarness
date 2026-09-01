@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://devharness.dev/schemas/v1/run-event.schema.json",
+  "title": "Append-only goal run event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "event_id", "run_id", "sequence", "at", "type", "actor", "data"],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "event_id": {
+      "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier"
+    },
+    "run_id": {
+      "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier"
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "at": {
+      "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/timestamp"
+    },
+    "type": {
+      "enum": [
+        "run.created",
+        "state.transitioned",
+        "question.asked",
+        "question.answered",
+        "research.recorded",
+        "artifact.written",
+        "interaction.published",
+        "attention.requested",
+        "attention.resolved",
+        "gate.decided",
+        "plan.proposed",
+        "team.staffed",
+        "task.dispatched",
+        "task.finished",
+        "evidence.recorded",
+        "criterion.decided",
+        "review.recorded",
+        "repair.requested",
+        "budget.consumed",
+        "run.blocked",
+        "run.cancelled",
+        "run.completed"
+      ]
+    },
+    "actor": {
+      "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/actor"
+    },
+    "data": {
+      "type": "object"
+    }
+  }
+}

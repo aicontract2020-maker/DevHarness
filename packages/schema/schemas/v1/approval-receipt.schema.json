@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://devharness.dev/schemas/v1/approval-receipt.schema.json",
+  "title": "Supervisor-attested independent human gate decision",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "id", "request_id", "request_sha256", "run_id", "repository_identity", "relevant_head_sha", "gate", "subject", "nonce", "decision", "decided_at", "decided_by", "source", "expires_at", "attestation"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+    "request_id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+    "request_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "run_id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+    "repository_identity": { "type": "string", "minLength": 1 },
+    "relevant_head_sha": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/gitCommit" },
+    "gate": { "enum": ["capability", "strategy", "strategy-exception", "scope", "delivery"] },
+    "subject": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/approvalSubject" },
+    "nonce": { "type": "string", "minLength": 16 },
+    "decision": { "enum": ["approved", "rejected"] },
+    "decided_at": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/timestamp" },
+    "decided_by": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/actor" },
+    "source": { "const": "interactive-human-gate" },
+    "expires_at": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/timestamp" },
+    "attestation": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/attestation" }
+  }
+}

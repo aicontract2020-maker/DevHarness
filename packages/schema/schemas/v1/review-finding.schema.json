@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://devharness.dev/schemas/v1/review-finding.schema.json",
+  "title": "Independent review finding",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "id",
+    "run_id",
+    "reviewer",
+    "head_sha",
+    "severity",
+    "status",
+    "claim",
+    "evidence_refs",
+    "created_at"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "id": {
+      "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier"
+    },
+    "run_id": {
+      "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier"
+    },
+    "reviewer": {
+      "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/actor"
+    },
+    "head_sha": {
+      "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/gitCommit"
+    },
+    "severity": {
+      "enum": ["blocking", "high", "medium", "low", "nit"]
+    },
+    "status": {
+      "enum": ["open", "resolved", "accepted_risk", "dismissed"]
+    },
+    "claim": {
+      "type": "string",
+      "minLength": 1
+    },
+    "evidence_refs": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier"
+      }
+    },
+    "created_at": {
+      "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/timestamp"
+    },
+    "resolution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["summary", "resolved_at", "resolved_by"],
+      "properties": {
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "resolved_at": {
+          "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/timestamp"
+        },
+        "resolved_by": {
+          "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/actor"
+        }
+      }
+    }
+  }
+}
+

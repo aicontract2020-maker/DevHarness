@@ -1,0 +1,307 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://devharness.dev/schemas/v1/verification-receipt.schema.json",
+  "title": "Revision-bound command verification receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "id",
+    "repository_identity",
+    "commit_sha",
+    "command",
+    "harness",
+    "services",
+    "workspace",
+    "environment",
+    "started_at",
+    "completed_at",
+    "duration_ms",
+    "outcome",
+    "artifacts",
+    "teardown",
+    "runtime"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "id": {
+      "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier"
+    },
+    "goal_run_id": {
+      "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier"
+    },
+    "repository_identity": { "type": "string", "minLength": 1 },
+    "commit_sha": {
+      "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/gitCommit"
+    },
+    "command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "run", "source", "sha256"],
+      "properties": {
+        "id": {
+          "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier"
+        },
+        "kind": { "enum": ["build", "test", "lint", "typecheck", "launch", "verify"] },
+        "run": { "type": "string", "minLength": 1 },
+        "source": { "type": "string", "minLength": 1 },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "harness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "config_sha256", "verification_sha256"],
+      "properties": {
+        "id": {
+          "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier"
+        },
+        "config_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "verification_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "services": {
+      "type": "array",
+      "maxItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "command", "lifecycle_sha256", "readiness", "started_at", "status", "teardown"],
+        "properties": {
+          "id": {
+            "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier"
+          },
+          "command": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "kind", "run", "source", "sha256"],
+            "properties": {
+              "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+              "kind": { "const": "launch" },
+              "run": { "type": "string", "minLength": 1 },
+              "source": { "type": "string", "minLength": 1 },
+              "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+            }
+          },
+          "lifecycle_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "readiness": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "url", "expected_statuses", "timeout_ms", "interval_ms", "status"],
+            "properties": {
+              "kind": { "const": "http" },
+              "url": { "type": "string", "format": "uri" },
+              "expected_statuses": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": { "type": "integer", "minimum": 100, "maximum": 599 }
+              },
+              "timeout_ms": { "type": "integer", "minimum": 1000, "maximum": 1800000 },
+              "interval_ms": { "type": "integer", "minimum": 100, "maximum": 5000 },
+              "status": { "enum": ["pass", "fail"] },
+              "ready_at": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/timestamp" },
+              "summary": { "type": "string", "minLength": 1 },
+              "checks": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["kind", "url", "expected_statuses", "timeout_ms", "interval_ms", "status", "summary"],
+                  "properties": {
+                    "kind": { "const": "http" },
+                    "url": { "type": "string", "format": "uri" },
+                    "expected_statuses": {
+                      "type": "array",
+                      "minItems": 1,
+                      "uniqueItems": true,
+                      "items": { "type": "integer", "minimum": 100, "maximum": 599 }
+                    },
+                    "timeout_ms": { "type": "integer", "minimum": 1000, "maximum": 1800000 },
+                    "interval_ms": { "type": "integer", "minimum": 100, "maximum": 5000 },
+                    "status": { "enum": ["pass", "fail"] },
+                    "ready_at": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/timestamp" },
+                    "summary": { "type": "string", "minLength": 1 }
+                  }
+                }
+              }
+            }
+          },
+          "started_at": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/timestamp" },
+          "status": { "enum": ["ready", "failed", "exited"] },
+          "unexpected_exit": { "type": "boolean" },
+          "exit_code": { "type": "integer" },
+          "signal": { "type": "string", "minLength": 1 },
+          "teardown": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["status", "summary", "completed_at"],
+            "properties": {
+              "status": { "enum": ["pass", "fail"] },
+              "summary": { "type": "string", "minLength": 1 },
+              "completed_at": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/timestamp" },
+              "cleanup": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["run", "timeout_ms", "status", "timed_out", "summary"],
+                "properties": {
+                  "run": { "type": "string", "minLength": 1 },
+                  "timeout_ms": { "type": "integer", "minimum": 1000, "maximum": 600000 },
+                  "status": { "enum": ["pass", "fail"] },
+                  "exit_code": { "type": "integer" },
+                  "signal": { "type": "string", "minLength": 1 },
+                  "timed_out": { "type": "boolean" },
+                  "summary": { "type": "string", "minLength": 1 }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "preparation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "summary", "submodules"],
+      "properties": {
+        "status": { "enum": ["pass", "fail", "not_required"] },
+        "summary": { "type": "string", "minLength": 1 },
+        "submodules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "commit_sha", "status", "summary"],
+            "properties": {
+              "path": { "type": "string", "minLength": 1 },
+              "commit_sha": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/gitCommit" },
+              "status": { "enum": ["materialized", "failed"] },
+              "summary": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    },
+    "warmup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "summary", "checks"],
+      "properties": {
+        "status": { "enum": ["pass", "fail", "not_required"] },
+        "summary": { "type": "string", "minLength": 1 },
+        "checks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "url", "expected_statuses", "timeout_ms", "interval_ms", "status", "summary"],
+            "properties": {
+              "kind": { "const": "http" },
+              "url": { "type": "string", "format": "uri" },
+              "expected_statuses": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "integer", "minimum": 100, "maximum": 599 } },
+              "timeout_ms": { "type": "integer", "minimum": 1000, "maximum": 1800000 },
+              "interval_ms": { "type": "integer", "minimum": 100, "maximum": 5000 },
+              "status": { "enum": ["pass", "fail"] },
+              "ready_at": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/timestamp" },
+              "summary": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    },
+    "workspace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["isolation", "root_uri", "dirty_before", "dirty_after"],
+      "properties": {
+        "isolation": { "const": "git-worktree" },
+        "root_uri": { "type": "string", "format": "uri" },
+        "dirty_before": { "type": "boolean" },
+        "dirty_after": { "type": "boolean" }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["declared_keys", "set_keys", "contract_sha256", "values_redacted"],
+      "properties": {
+        "declared_keys": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" }
+        },
+        "set_keys": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" }
+        },
+        "contract_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "values_redacted": { "const": true }
+      }
+    },
+    "started_at": {
+      "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/timestamp"
+    },
+    "completed_at": {
+      "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/timestamp"
+    },
+    "duration_ms": { "type": "integer", "minimum": 0 },
+    "outcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "timed_out", "summary"],
+      "properties": {
+        "status": { "enum": ["pass", "fail", "blocked"] },
+        "reason": { "enum": ["passed", "blocked", "preparation-failed", "service-readiness", "warmup-failed", "service-exited", "command-timeout", "workspace-dirty", "command-failed", "teardown-failed"] },
+        "exit_code": { "type": "integer" },
+        "signal": { "type": "string", "minLength": 1 },
+        "timed_out": { "type": "boolean" },
+        "summary": { "type": "string", "minLength": 1 }
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "uri", "media_type", "sha256", "size_bytes"],
+        "properties": {
+          "type": { "enum": ["stdout", "stderr", "service-stdout", "service-stderr", "result"] },
+          "subject_id": {
+            "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier"
+          },
+          "uri": { "type": "string", "format": "uri" },
+          "media_type": { "type": "string", "minLength": 1 },
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "size_bytes": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "teardown": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required", "status", "summary"],
+      "properties": {
+        "required": { "type": "boolean" },
+        "status": { "enum": ["pass", "fail", "not_required"] },
+        "summary": { "type": "string", "minLength": 1 },
+        "completed_at": {
+          "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/timestamp"
+        }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["devharness_version", "node_version", "platform", "arch"],
+      "properties": {
+        "devharness_version": { "type": "string", "minLength": 1 },
+        "node_version": { "type": "string", "minLength": 1 },
+        "platform": { "type": "string", "minLength": 1 },
+        "arch": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://devharness.dev/schemas/v1/verification-review.schema.json",
+  "title": "Compact verification review projection",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "repository_identity", "current_head_sha", "counts", "latest", "verifications"],
+  "$defs": {
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "commit_sha", "current_revision", "command", "started_at", "completed_at", "duration_ms", "outcome", "readiness", "workspace_clean", "teardown_status", "artifact_count", "achieved_evidence_level"],
+      "properties": {
+        "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+        "goal_run_id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+        "commit_sha": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/gitCommit" },
+        "current_revision": { "type": "boolean" },
+        "command": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "kind"],
+          "properties": {
+            "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+            "kind": { "enum": ["build", "test", "lint", "typecheck", "verify"] }
+          }
+        },
+        "started_at": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/timestamp" },
+        "completed_at": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/timestamp" },
+        "duration_ms": { "type": "integer", "minimum": 0 },
+        "outcome": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "reason", "summary"],
+          "properties": {
+            "status": { "enum": ["pass", "fail", "blocked"] },
+            "reason": { "enum": ["passed", "blocked", "service-readiness", "warmup-failed", "service-exited", "command-timeout", "workspace-dirty", "command-failed", "teardown-failed"] },
+            "summary": { "type": "string", "minLength": 1 }
+          }
+        },
+        "readiness": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "passed", "total"],
+          "properties": {
+            "status": { "enum": ["pass", "fail", "not-required"] },
+            "passed": { "type": "integer", "minimum": 0 },
+            "total": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "workspace_clean": { "type": "boolean" },
+        "teardown_status": { "enum": ["pass", "fail", "not_required"] },
+        "artifact_count": { "type": "integer", "minimum": 0 },
+        "achieved_evidence_level": { "enum": ["E0", "E2"] }
+      }
+    }
+  },
+  "properties": {
+    "schema_version": { "const": 1 },
+    "repository_identity": { "type": "string", "minLength": 1 },
+    "current_head_sha": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/gitCommit" },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "pass", "fail", "blocked", "current", "stale"],
+      "properties": {
+        "total": { "type": "integer", "minimum": 0 },
+        "pass": { "type": "integer", "minimum": 0 },
+        "fail": { "type": "integer", "minimum": 0 },
+        "blocked": { "type": "integer", "minimum": 0 },
+        "current": { "type": "integer", "minimum": 0 },
+        "stale": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "latest": { "anyOf": [{ "$ref": "#/$defs/summary" }, { "type": "null" }] },
+    "verifications": { "type": "array", "maxItems": 20, "items": { "$ref": "#/$defs/summary" } }
+  }
+}

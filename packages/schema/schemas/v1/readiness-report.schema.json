@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://devharness.dev/schemas/v1/readiness-report.schema.json",
+  "title": "Deterministic repository readiness report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "evaluated_at", "repository_identity", "overall", "capabilities", "biggest_blockers"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "evaluated_at": {
+      "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/timestamp"
+    },
+    "repository_identity": { "type": "string", "minLength": 1 },
+    "overall": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["verdict", "score", "level"],
+      "properties": {
+        "verdict": { "enum": ["ready", "needs_work", "unsupported"] },
+        "score": { "type": "integer", "minimum": 0 },
+        "level": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "capabilities": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "category", "weight", "status", "blocking", "summary", "evidence", "remediation"],
+        "properties": {
+          "id": {
+            "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier"
+          },
+          "category": { "enum": ["repository", "bootstrap", "test", "verification", "isolation", "delivery"] },
+          "weight": { "type": "integer", "minimum": 0 },
+          "status": { "enum": ["pass", "warn", "fail", "not_applicable"] },
+          "blocking": { "type": "boolean" },
+          "summary": { "type": "string", "minLength": 1 },
+          "evidence": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "remediation": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
+    "biggest_blockers": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier"
+      }
+    }
+  }
+}
+

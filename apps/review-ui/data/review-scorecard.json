@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "id": "scorecard-DH-184",
+  "run_id": "DH-184",
+  "generated_at": "2026-08-31T14:00:00.000Z",
+  "repository_identity": "example/password-reset-app",
+  "head_sha": "8b10f9d000000000000000000000000000000000",
+  "scope_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "harness_version": "harness-v1",
+  "title": "Password reset cannot be approved yet",
+  "summary": "The implementation is traceable and automated tests pass, but real-user proof and the Supervisor trust boundary are incomplete.",
+  "data_source": "contract-fixture",
+  "verdict": "blocked",
+  "proof_coverage": {
+    "score": 81,
+    "dimensions": [
+      { "id": "acceptance-definition", "label": "Acceptance definition", "weight": 20, "proved": 8, "applicable": 8, "weighted_score": 20, "status": "pass" },
+      { "id": "system-understanding", "label": "System understanding", "weight": 20, "proved": 6, "applicable": 7, "weighted_score": 17, "status": "gap" },
+      { "id": "delivery-traceability", "label": "Delivery traceability", "weight": 20, "proved": 7, "applicable": 8, "weighted_score": 18, "status": "gap" },
+      { "id": "verification-sufficiency", "label": "Verification sufficiency", "weight": 30, "proved": 5, "applicable": 8, "weighted_score": 19, "status": "gap" },
+      { "id": "review-closure", "label": "Independent review and closure", "weight": 10, "proved": 4, "applicable": 6, "weighted_score": 7, "status": "gap" }
+    ]
+  },
+  "hard_gates": [
+    { "id": "gate-supervisor-isolation", "label": "Supervisor isolation", "status": "fail", "reason": "A worker running as the same OS user can still access signing material.", "source_refs": ["SEC-04"] },
+    { "id": "gate-real-browser", "label": "Real user surface", "status": "fail", "reason": "The complete password-reset journey was not observed in a browser.", "source_refs": ["AC-07"] }
+  ],
+  "acceptance_counts": { "total": 4, "pass": 3, "fail": 0, "blocked": 1, "pending": 0, "not_applicable": 0 },
+  "evidence_level_counts": { "E0": 1, "E1": 0, "E2": 1, "E3": 2, "E4": 0 },
+  "exception_counts": { "blocking": 2, "unknowns": 0, "conflicts": 0, "unmapped_requirements": 0, "orphan_tasks": 0, "orphan_changes": 0, "below_level_evidence": 1, "stale_or_invalid_evidence": 0, "open_security_findings": 1, "open_data_integrity_findings": 0, "unnecessary_questions": 0, "late_scope_changes": 0 },
+  "exceptions": [
+    { "id": "SEC-04", "severity": "blocking", "type": "trust", "title": "Supervisor isolation is not proved", "detail": "A worker running as the same OS user can still access signing material.", "affected_outcome": "Delivery approval", "source_refs": ["supervisor-review"], "required_action": "Separate the worker from the Supervisor signing boundary and independently prove the isolation." },
+    { "id": "AC-07", "severity": "blocking", "type": "evidence", "title": "Real browser behavior has no E3 evidence", "detail": "Unit tests passed, but the complete password-reset journey was not observed.", "affected_outcome": "Reset password", "source_refs": ["AC-07", "TASK-21"], "required_action": "Run the approved browser proof recipe and attest the current-revision result." }
+  ],
+  "criteria": [
+    { "id": "AC-01", "title": "Request a reset email", "priority": "must", "required_evidence_level": "E3", "achieved_evidence_level": "E3", "status": "pass", "proof_summary": "Browser and captured-email evidence passed.", "requirement_refs": ["REQ-02"], "task_refs": ["TASK-12"], "change_refs": ["auth/reset-request.ts"], "evidence_refs": ["EV-2381"], "review_refs": ["review-1"], "replay_recipe": "Open browser, submit a known user, and inspect the captured email." },
+    { "id": "AC-02", "title": "Reject unknown or expired token", "priority": "must", "required_evidence_level": "E2", "achieved_evidence_level": "E2", "status": "pass", "proof_summary": "Twelve current-revision contract cases passed.", "requirement_refs": ["REQ-02"], "task_refs": ["TASK-14"], "change_refs": ["auth/reset-token.ts"], "evidence_refs": ["EV-2384"], "review_refs": ["review-1"], "replay_recipe": "Run the revision-bound token contract suite." },
+    { "id": "AC-03", "title": "Update credential atomically", "priority": "must", "required_evidence_level": "E3", "achieved_evidence_level": "E3", "status": "pass", "proof_summary": "API result and persisted database state were observed.", "requirement_refs": ["REQ-02"], "task_refs": ["TASK-18"], "change_refs": ["db/user-credentials.ts"], "evidence_refs": ["EV-2390"], "review_refs": ["review-1"], "replay_recipe": "Redeem a token, then inspect the transaction and persisted credential version." },
+    { "id": "AC-07", "title": "Complete the user journey", "priority": "must", "required_evidence_level": "E3", "achieved_evidence_level": "E0", "status": "blocked", "proof_summary": "Browser proof is missing.", "requirement_refs": ["REQ-02"], "task_refs": ["TASK-21"], "change_refs": ["app/reset-password/page.tsx"], "evidence_refs": [], "review_refs": [], "replay_recipe": "Run the complete reset journey in a browser after the verification driver is available." }
+  ],
+  "integrity": { "trusted_context": false, "source_artifact_count": 14, "surfaced_item_count": 6, "omitted_item_count": 8 }
+}

@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://devharness.dev/schemas/v1/review-run-index.schema.json",
+  "title": "Bounded developer review run index",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "generated_at", "repository_identity", "runs"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "generated_at": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/timestamp" },
+    "repository_identity": { "type": "string", "minLength": 1 },
+    "runs": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["run_id", "title", "state", "updated_at", "head_sha", "verdict", "proof_score", "blocking_count", "scorecard_url"],
+        "properties": {
+          "run_id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+          "title": { "type": "string", "minLength": 1 },
+          "state": { "enum": ["received", "discovering", "clarifying", "researching", "specifying", "awaiting_scope_approval", "planning", "staffing", "executing", "verifying", "repairing", "reviewing", "preparing_delivery", "awaiting_delivery_approval", "completed", "blocked", "cancelled"] },
+          "updated_at": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/timestamp" },
+          "head_sha": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/gitCommit" },
+          "verdict": { "enum": ["ready", "not-ready", "blocked"] },
+          "proof_score": { "type": "integer", "minimum": 0, "maximum": 100 },
+          "blocking_count": { "type": "integer", "minimum": 0 },
+          "scorecard_url": { "type": "string", "pattern": "^/api/review/runs/[A-Za-z][A-Za-z0-9._:-]{0,127}/scorecard$" },
+          "interaction_url": { "type": "string", "pattern": "^/api/review/runs/[A-Za-z][A-Za-z0-9._:-]{0,127}/interaction$" },
+          "capabilities_url": { "type": "string", "pattern": "^/api/review/runs/[A-Za-z][A-Za-z0-9._:-]{0,127}/capabilities$" }
+        }
+      }
+    }
+  }
+}

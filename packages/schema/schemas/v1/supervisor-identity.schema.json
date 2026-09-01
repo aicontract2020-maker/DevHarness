@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://devharness.dev/schemas/v1/supervisor-identity.schema.json",
+  "title": "Pinned DevHarness Supervisor identity",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "id", "algorithm", "fingerprint", "public_key", "created_at"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+    "algorithm": { "const": "Ed25519" },
+    "fingerprint": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "public_key": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["format", "value"],
+      "properties": {
+        "format": { "const": "spki-pem" },
+        "value": { "type": "string", "minLength": 32 }
+      }
+    },
+    "created_at": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/timestamp" }
+  }
+}
