@@ -27,7 +27,7 @@ implementation commit must make both targeted and regression suites green.
   - Satisfies: AC-2, AC-4a, AC-10, AC-12, AC-14
   - Depends on: TASK-001
 
-- [ ] **TASK-003** [M] Test shared types plus closed Agent and analysis records
+- [x] **TASK-003** [M] Test shared types plus closed Agent and analysis records
   - Creates: `packages/schema/test/agent-alignment-contracts.test.mjs`
   - Tests: AC-2, AC-3, AC-4, AC-4a, AC-11, AC-12, AC-14, AC-15
   - Covers: shared ArtifactRef/AuthorityRef/SourceRef/policy/limits, descriptor, invocation, attempt, plan, analysis, validation, boundaries and provider-key rejection
