@@ -57,7 +57,7 @@ implementation commit must make both targeted and regression suites green.
   - Covers: authority epochs, URL recipes, source/gap terminals, immutable answers and material decisions
   - Depends on: TASK-004
 
-- [ ] **TASK-008** [M] Implement closed research and result schemas
+- [x] **TASK-008** [M] Implement closed research and result schemas
   - Creates: `packages/schema/schemas/v1/research-records.schema.json`, `packages/schema/schemas/v1/developer-answer.schema.json`, `packages/schema/schemas/v1/alignment-bundle.schema.json`
   - Plan/contract: §§ Controlled research gateway, Independent validator/projector; `contracts/isolation-and-research.md` §§ Research Request–Research Result
   - Satisfies: AC-3, AC-4, AC-4a, AC-5, AC-6, AC-7, AC-8, AC-9, AC-12
