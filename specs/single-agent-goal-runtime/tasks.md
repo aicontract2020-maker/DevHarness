@@ -132,7 +132,7 @@ implementation commit must make both targeted and regression suites green.
   - Covers: Codex and an injected scripted adapter yield the same descriptor, invocation, normalized-attempt and error semantics
   - Depends on: TASK-018
 
-- [ ] **TASK-020** [S] Implement the injected conformance test adapter
+- [x] **TASK-020** [S] Implement the injected conformance test adapter
   - Creates: `packages/runtime/test/fixtures/scripted-agent-adapter.mjs`
   - Plan/contract: § Agent registry and adapter protocol; `contracts/agent-adapter.md` § Interface
   - Satisfies: AC-2, AC-3, AC-4, AC-10, AC-12, AC-15
