@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdtemp, readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -10,6 +11,7 @@ import {
   replayOperationAccounting,
   withPublishedReservation
 } from "../src/operation-accounting.mjs";
+import { canonicalJson } from "../src/canonical-records.mjs";
 
 const hash = "a".repeat(64);
 const limits = { max_active_execution_seconds: 3600, max_agent_attempts: 6, max_provider_requests: 120, max_total_tokens: 600000, max_research_requests: 25, max_research_bytes: 10485760, max_retained_records: 20, max_retained_bytes: 20971520 };
@@ -62,11 +64,13 @@ test("every aggregate ceiling is enforced before accepting another reservation",
 
 test("accounting records are create-only and conflicting publication cannot replace durable bytes", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "devharness-accounting-"));
-  const entry = { storage_key: "outbound/provider/1/reservation.json", sha256: hash, record: providerReservation };
+  const sha256 = createHash("sha256").update(canonicalJson(providerReservation)).digest("hex");
+  const entry = { storage_key: "outbound/provider/1/reservation.json", sha256, record: providerReservation };
   await publishAccountingEntry(root, entry);
+  await publishAccountingEntry(root, { ...entry, storage_key: "outbound/provider/120/reservation.json" });
   const target = path.join(root, entry.storage_key);
   const before = await readFile(target, "utf8");
-  await assert.rejects(() => publishAccountingEntry(root, { ...entry, record: { ...providerReservation, reserved_tokens: 999 } }), /already exists/);
+  await assert.rejects(() => publishAccountingEntry(root, { ...entry, record: { ...providerReservation, reserved_tokens: 999 } }), /already exists|digest/);
   assert.equal(await readFile(target, "utf8"), before);
   await assert.rejects(() => publishAccountingEntry(root, { ...entry, storage_key: "../escape.json" }), /unsafe|unlisted/);
 });

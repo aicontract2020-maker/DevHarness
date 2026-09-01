@@ -146,7 +146,7 @@ implementation commit must make both targeted and regression suites green.
   - Covers: reserve-before-action, conservative charge/release, all ceilings and accounting replay
   - Depends on: TASK-006, TASK-010
 
-- [ ] **TASK-022** [M] Implement create-only operation accounting
+- [x] **TASK-022** [M] Implement create-only operation accounting
   - Creates: `packages/runtime/src/operation-accounting.mjs`
   - Plan/contract: § Worker boundary; `contracts/isolation-and-research.md` §§ Resource Limits, Operation Budget and Ownership
   - Satisfies: AC-10, AC-11, AC-14

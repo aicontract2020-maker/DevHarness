@@ -4,7 +4,8 @@ const SHA256 = /^[0-9a-f]{64}$/;
 const DOMAIN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const ACCOUNTING_PATHS = [
   /^attempts\/(?:analysis-plan|analysis-synthesis|analysis-validation)\/[12]\/(?:reservation|attempt)\.json$/,
-  /^outbound\/(?:provider|research)\/(?:[1-9]|1\d|2[0-5])\/reservation\.json$/,
+  /^outbound\/provider\/(?:[1-9]|[1-9]\d|1[01]\d|120)\/reservation\.json$/,
+  /^outbound\/research\/(?:[1-9]|1\d|2[0-5])\/reservation\.json$/,
   /^outbound\/provider\/(?:[1-9]|[1-9]\d|1[01]\d|120)\/receipt\.json$/,
   /^outbound\/research\/(?:[1-9]|1\d|2[0-5])\/terminal\/(?:manifest|receipt|source|gap)\.json$/
 ];
