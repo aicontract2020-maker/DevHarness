@@ -63,7 +63,7 @@ implementation commit must make both targeted and regression suites green.
   - Satisfies: AC-3, AC-4, AC-4a, AC-5, AC-6, AC-7, AC-8, AC-9, AC-12
   - Depends on: TASK-007
 
-- [ ] **TASK-009** [S] Test canonical digests and cross-record integrity
+- [x] **TASK-009** [S] Test canonical digests and cross-record integrity
   - Creates: `packages/runtime/test/alignment-integrity.test.mjs`
   - Tests: AC-1, AC-2, AC-4, AC-9, AC-10, AC-12, AC-14
   - Covers: domain separation, exclusions, accounting-head paths, ID/hash/authority/revision joins and unsafe entries
