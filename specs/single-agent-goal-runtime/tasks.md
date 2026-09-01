@@ -69,7 +69,7 @@ implementation commit must make both targeted and regression suites green.
   - Covers: domain separation, exclusions, accounting-head paths, ID/hash/authority/revision joins and unsafe entries
   - Depends on: TASK-004, TASK-006, TASK-008
 
-- [ ] **TASK-010** [M] Implement canonical records and cross-record validation
+- [x] **TASK-010** [M] Implement canonical records and cross-record validation
   - Creates: `packages/runtime/src/canonical-records.mjs`, `packages/runtime/src/alignment-integrity.mjs`
   - Plan/contract: § Persistence; `data-model.md` §§ canonical digest, Integrity and Secret Handling
   - Satisfies: AC-1, AC-2, AC-4, AC-9, AC-10, AC-12, AC-14
