@@ -158,7 +158,7 @@ implementation commit must make both targeted and regression suites green.
   - Covers: variants, sequence/CAS, no-replace/fsync, corruption, unsafe entries and replay
   - Depends on: TASK-006, TASK-010
 
-- [ ] **TASK-024** [M] Implement the operation journal store
+- [x] **TASK-024** [M] Implement the operation journal store
   - Creates: `packages/runtime/src/operation-journal-store.mjs`
   - Plan/contract: § Persistence; `contracts/live-alignment.md` § Idempotency and Recovery
   - Satisfies: AC-10, AC-11, AC-12
