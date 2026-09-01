@@ -45,7 +45,7 @@ implementation commit must make both targeted and regression suites green.
   - Covers: journal variants, attempts, reservations, receipts, fences, manifests, commit records and lease owners
   - Depends on: TASK-004
 
-- [ ] **TASK-006** [M] Implement closed operation and accounting schemas
+- [x] **TASK-006** [M] Implement closed operation and accounting schemas
   - Creates: `packages/schema/schemas/v1/alignment-operation.schema.json`, `packages/schema/schemas/v1/operation-journal-record.schema.json`, `packages/schema/schemas/v1/operation-accounting.schema.json`
   - Plan/contract: § Persistence; `contracts/live-alignment.md` § Idempotency and Recovery
   - Satisfies: AC-2, AC-10, AC-11, AC-14

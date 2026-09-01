@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://devharness.dev/schemas/v1/operation-accounting.schema.json",
+  "title": "Bounded operation accounting records",
+  "$ref": "https://devharness.dev/schemas/v1/alignment-operation.schema.json#/$defs/operationStatus",
+  "$defs": {
+    "agentAttemptReservation": { "$ref": "https://devharness.dev/schemas/v1/agent-runtime.schema.json#/$defs/agentAttemptReservation" },
+    "accountingEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["storage_key", "sha256"],
+      "properties": {
+        "storage_key": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/normalizedRelativeKey" },
+        "sha256": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/sha256" }
+      }
+    }
+  }
+}

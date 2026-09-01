@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://devharness.dev/schemas/v1/operation-journal-record.schema.json",
+  "title": "Closed live-alignment operation journal record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "id", "operation_id", "sequence", "previous_sha256", "type", "occurred_at", "data", "actor"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+    "operation_id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+    "sequence": { "type": "integer", "minimum": 1, "maximum": 100 },
+    "previous_sha256": { "oneOf": [{ "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/sha256" }, { "type": "null" }] },
+    "type": { "enum": ["operation-created", "phase-started", "phase-finished", "agent-authority-paused", "agent-authority-attached", "research-subject-created", "research-authority-attached", "research-authority-denied", "research-gap-recorded", "cancellation-fenced", "result-prepared", "result-committed", "operation-failed"] },
+    "occurred_at": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/timestamp" },
+    "data": { "oneOf": [{ "$ref": "#/$defs/operationCreated" }, { "$ref": "#/$defs/phaseStarted" }, { "$ref": "#/$defs/phaseFinished" }, { "$ref": "#/$defs/researchSubjectCreated" }, { "$ref": "#/$defs/agentAuthorityPaused" }, { "$ref": "#/$defs/agentAuthorityAttached" }, { "$ref": "#/$defs/researchAuthorityAttached" }, { "$ref": "#/$defs/researchAuthorityDenied" }, { "$ref": "#/$defs/researchGapRecorded" }, { "$ref": "#/$defs/cancellationFenced" }, { "$ref": "#/$defs/resultPrepared" }, { "$ref": "#/$defs/resultCommitted" }, { "$ref": "#/$defs/operationFailed" }] },
+    "actor": { "enum": ["runtime", "supervisor-verified-foreground-human"] }
+  },
+  "allOf": [
+    { "if": { "properties": { "type": { "const": "operation-created" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/operationCreated" } } } },
+    { "if": { "properties": { "type": { "const": "phase-started" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/phaseStarted" } } } },
+    { "if": { "properties": { "type": { "const": "phase-finished" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/phaseFinished" } } } },
+    { "if": { "properties": { "type": { "const": "research-subject-created" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/researchSubjectCreated" } } } },
+    { "if": { "properties": { "type": { "const": "agent-authority-paused" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/agentAuthorityPaused" } } } },
+    { "if": { "properties": { "type": { "const": "agent-authority-attached" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/agentAuthorityAttached" } } } },
+    { "if": { "properties": { "type": { "const": "research-authority-attached" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/researchAuthorityAttached" } } } },
+    { "if": { "properties": { "type": { "const": "research-authority-denied" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/researchAuthorityDenied" } } } },
+    { "if": { "properties": { "type": { "const": "research-gap-recorded" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/researchGapRecorded" } } } },
+    { "if": { "properties": { "type": { "const": "cancellation-fenced" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/cancellationFenced" } } } },
+    { "if": { "properties": { "type": { "const": "result-prepared" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/resultPrepared" } } } },
+    { "if": { "properties": { "type": { "const": "result-committed" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/resultCommitted" } } } },
+    { "if": { "properties": { "type": { "const": "operation-failed" } } }, "then": { "properties": { "data": { "$ref": "#/$defs/operationFailed" } } } }
+  ],
+  "$defs": {
+    "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+    "sha": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/sha256" },
+    "time": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/timestamp" },
+    "phase": { "enum": ["analysis-plan", "analysis-synthesis", "analysis-validation"] },
+    "operationCreated": { "type": "object", "additionalProperties": false, "required": ["operation_sha256"], "properties": { "operation_sha256": { "$ref": "#/$defs/sha" } } },
+    "phaseStarted": { "type": "object", "additionalProperties": false, "required": ["phase", "attempt_id", "attempt_no", "invocation_sha256"], "properties": { "phase": { "$ref": "#/$defs/phase" }, "attempt_id": { "$ref": "#/$defs/id" }, "attempt_no": { "type": "integer", "minimum": 1, "maximum": 2 }, "invocation_sha256": { "$ref": "#/$defs/sha" } } },
+    "phaseFinished": { "type": "object", "additionalProperties": false, "required": ["phase", "attempt_id", "attempt_no", "attempt_sha256", "status"], "properties": { "phase": { "$ref": "#/$defs/phase" }, "attempt_id": { "$ref": "#/$defs/id" }, "attempt_no": { "type": "integer", "minimum": 1, "maximum": 2 }, "attempt_sha256": { "$ref": "#/$defs/sha" }, "status": { "enum": ["succeeded", "blocked", "failed", "cancelled", "timed-out"] } } },
+    "researchSubjectCreated": { "type": "object", "additionalProperties": false, "required": ["subject_id", "subject_sha256", "query_set_sha256"], "properties": { "subject_id": { "$ref": "#/$defs/id" }, "subject_sha256": { "$ref": "#/$defs/sha" }, "query_set_sha256": { "$ref": "#/$defs/sha" } } },
+    "agentAuthorityPaused": { "type": "object", "additionalProperties": false, "required": ["subject_sha256", "phase", "prior_receipt_sha256", "expired_at"], "properties": { "subject_sha256": { "$ref": "#/$defs/sha" }, "phase": { "$ref": "#/$defs/phase" }, "prior_receipt_sha256": { "$ref": "#/$defs/sha" }, "expired_at": { "$ref": "#/$defs/time" } } },
+    "agentAuthorityAttached": { "type": "object", "additionalProperties": false, "required": ["subject_sha256", "phase", "request_id", "request_sha256", "receipt_id", "receipt_sha256", "expires_at"], "properties": { "subject_sha256": { "$ref": "#/$defs/sha" }, "phase": { "$ref": "#/$defs/phase" }, "request_id": { "$ref": "#/$defs/id" }, "request_sha256": { "$ref": "#/$defs/sha" }, "receipt_id": { "$ref": "#/$defs/id" }, "receipt_sha256": { "$ref": "#/$defs/sha" }, "expires_at": { "$ref": "#/$defs/time" } } },
+    "researchAuthorityAttached": { "type": "object", "additionalProperties": false, "required": ["subject_sha256", "epoch", "request_id", "request_sha256", "receipt_id", "receipt_sha256", "expires_at"], "properties": { "subject_sha256": { "$ref": "#/$defs/sha" }, "epoch": { "type": "integer", "minimum": 1, "maximum": 20 }, "request_id": { "$ref": "#/$defs/id" }, "request_sha256": { "$ref": "#/$defs/sha" }, "receipt_id": { "$ref": "#/$defs/id" }, "receipt_sha256": { "$ref": "#/$defs/sha" }, "expires_at": { "$ref": "#/$defs/time" } } },
+    "researchAuthorityDenied": { "type": "object", "additionalProperties": false, "required": ["subject_sha256", "request_id", "request_sha256", "receipt_id", "receipt_sha256", "decided_at"], "properties": { "subject_sha256": { "$ref": "#/$defs/sha" }, "request_id": { "$ref": "#/$defs/id" }, "request_sha256": { "$ref": "#/$defs/sha" }, "receipt_id": { "$ref": "#/$defs/id" }, "receipt_sha256": { "$ref": "#/$defs/sha" }, "decided_at": { "$ref": "#/$defs/time" } } },
+    "researchGapRecorded": { "type": "object", "additionalProperties": false, "required": ["gap_id", "gap_sha256", "query_id", "reason"], "properties": { "gap_id": { "$ref": "#/$defs/id" }, "gap_sha256": { "$ref": "#/$defs/sha" }, "query_id": { "$ref": "#/$defs/id" }, "reason": { "enum": ["not-authorized", "denied", "expired", "timeout", "limit", "unavailable", "outcome-unknown", "conflict"] } } },
+    "cancellationFenced": { "type": "object", "additionalProperties": false, "required": ["fence_sequence", "requested_by", "requested_at"], "properties": { "fence_sequence": { "type": "integer", "minimum": 1, "maximum": 100 }, "requested_by": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/actor" }, "requested_at": { "$ref": "#/$defs/time" } } },
+    "resultPrepared": { "type": "object", "additionalProperties": false, "required": ["transaction_id", "prepared_manifest_sha256", "expected_current_sha256", "target_checkpoint_sha256"], "properties": { "transaction_id": { "$ref": "#/$defs/id" }, "prepared_manifest_sha256": { "$ref": "#/$defs/sha" }, "expected_current_sha256": { "$ref": "#/$defs/sha" }, "target_checkpoint_sha256": { "$ref": "#/$defs/sha" } } },
+    "resultCommitted": { "type": "object", "additionalProperties": false, "required": ["transaction_id", "committed_receipt_sha256", "checkpoint_sha256"], "properties": { "transaction_id": { "$ref": "#/$defs/id" }, "committed_receipt_sha256": { "$ref": "#/$defs/sha" }, "checkpoint_sha256": { "$ref": "#/$defs/sha" } } },
+    "operationFailed": { "type": "object", "additionalProperties": false, "required": ["code"], "properties": { "code": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/stableErrorCode" }, "phase": { "$ref": "#/$defs/phase" }, "attempt_id": { "$ref": "#/$defs/id" }, "diagnostic_sha256": { "$ref": "#/$defs/sha" } } }
+  }
+}

@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://devharness.dev/schemas/v1/alignment-operation.schema.json",
+  "title": "Durable live-alignment operation records",
+  "$ref": "#/$defs/alignmentOperation",
+  "$defs": {
+    "identifier": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+    "sha256": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/sha256" },
+    "timestamp": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/timestamp" },
+    "nullableIdentifier": { "oneOf": [{ "$ref": "#/$defs/identifier" }, { "type": "null" }] },
+    "nullableSha256": { "oneOf": [{ "$ref": "#/$defs/sha256" }, { "type": "null" }] },
+    "nullableArtifactRef": { "oneOf": [{ "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/artifactRef" }, { "type": "null" }] },
+    "goalRef": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/artifactRef", "properties": { "kind": { "const": "goal" } } },
+    "answerRef": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/artifactRef", "properties": { "kind": { "const": "developer-answer" } } },
+    "snapshotRef": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/artifactRef", "properties": { "kind": { "const": "snapshot" } } },
+    "onboardingRef": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/artifactRef", "properties": { "kind": { "const": "onboarding" } } },
+    "alignmentOperation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "id", "run_id", "repository_identity", "commit_sha", "input_checkpoint_sha256", "original_goal", "developer_answers", "snapshot", "onboarding", "agent_descriptor", "agent_authority_subject", "result_contract_sha256", "limits"],
+      "properties": {
+        "schema_version": { "const": 1 }, "id": { "$ref": "#/$defs/identifier" }, "run_id": { "$ref": "#/$defs/identifier" },
+        "repository_identity": { "type": "string", "minLength": 1, "maxLength": 2048 }, "commit_sha": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/gitCommit" },
+        "input_checkpoint_sha256": { "$ref": "#/$defs/sha256" }, "original_goal": { "$ref": "#/$defs/goalRef" },
+        "developer_answers": { "type": "array", "minItems": 0, "maxItems": 20, "uniqueItems": true, "items": { "$ref": "#/$defs/answerRef" } },
+        "snapshot": { "$ref": "#/$defs/snapshotRef" }, "onboarding": { "$ref": "#/$defs/onboardingRef" },
+        "agent_descriptor": { "$ref": "https://devharness.dev/schemas/v1/agent-runtime.schema.json" },
+        "agent_authority_subject": { "type": "object", "additionalProperties": false, "required": ["id", "sha256"], "properties": { "id": { "$ref": "#/$defs/identifier" }, "sha256": { "$ref": "#/$defs/sha256" } } },
+        "result_contract_sha256": { "$ref": "#/$defs/sha256" }, "limits": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/resourceLimits" }
+      }
+    },
+    "operationStatus": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "operation_id", "status", "active_phase", "current_attempt_id", "active_execution_ms", "agent_attempts", "provider_requests", "total_tokens", "retained_records", "retained_bytes", "analysis_plan_ref", "research_subject_ref", "research_authority_epoch", "result_bundle_ref", "checkpoint_sha256", "terminal_error", "journal_head_sha256", "accounting_head_sha256"],
+      "properties": {
+        "schema_version": { "const": 1 }, "operation_id": { "$ref": "#/$defs/identifier" },
+        "status": { "enum": ["planned", "waiting-agent-authority", "waiting-research-authority", "running", "question-blocked", "ready", "failed", "cancelled", "timed-out"] },
+        "active_phase": { "oneOf": [{ "enum": ["analysis-plan", "analysis-synthesis", "analysis-validation"] }, { "type": "null" }] },
+        "current_attempt_id": { "$ref": "#/$defs/nullableIdentifier" }, "active_execution_ms": { "type": "integer", "minimum": 0, "maximum": 3600000 },
+        "agent_attempts": { "type": "integer", "minimum": 0, "maximum": 6 }, "provider_requests": { "type": "integer", "minimum": 0, "maximum": 120 },
+        "total_tokens": { "type": "integer", "minimum": 0, "maximum": 600000 }, "retained_records": { "type": "integer", "minimum": 0, "maximum": 20 },
+        "retained_bytes": { "type": "integer", "minimum": 0, "maximum": 20971520 }, "analysis_plan_ref": { "$ref": "#/$defs/nullableArtifactRef" },
+        "research_subject_ref": { "$ref": "#/$defs/nullableArtifactRef" }, "research_authority_epoch": { "type": "integer", "minimum": 0, "maximum": 20 },
+        "result_bundle_ref": { "$ref": "#/$defs/nullableArtifactRef" }, "checkpoint_sha256": { "$ref": "#/$defs/nullableSha256" },
+        "terminal_error": { "oneOf": [{ "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/stableErrorCode" }, { "type": "null" }] },
+        "journal_head_sha256": { "$ref": "#/$defs/sha256" }, "accounting_head_sha256": { "$ref": "#/$defs/sha256" }
+      }
+    },
+    "operationLease": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "operation_id", "owner_id", "boot_id", "pid", "process_birth_id", "acquired_at", "wall_expires_at", "heartbeat_sequence", "heartbeat_at"],
+      "properties": { "schema_version": { "const": 1 }, "operation_id": { "$ref": "#/$defs/identifier" }, "owner_id": { "$ref": "#/$defs/identifier" }, "boot_id": { "type": "string", "minLength": 1, "maxLength": 256 }, "pid": { "type": "integer", "minimum": 1, "maximum": 2147483647 }, "process_birth_id": { "type": "string", "minLength": 1, "maxLength": 256 }, "acquired_at": { "$ref": "#/$defs/timestamp" }, "wall_expires_at": { "$ref": "#/$defs/timestamp" }, "heartbeat_sequence": { "type": "integer", "minimum": 0, "maximum": 1000000 }, "heartbeat_at": { "$ref": "#/$defs/timestamp" } }
+    },
+    "manifestFile": {
+      "type": "object", "additionalProperties": false, "required": ["storage_key", "sha256", "size_bytes"],
+      "properties": { "storage_key": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/normalizedRelativeKey" }, "sha256": { "$ref": "#/$defs/sha256" }, "size_bytes": { "type": "integer", "minimum": 0, "maximum": 20971520 } }
+    },
+    "preparedManifest": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "id", "transaction_id", "operation_id", "expected_current_sequence", "expected_current_sha256", "target_sequence", "target_checkpoint_sha256", "files", "total_size_bytes", "created_at"],
+      "properties": { "schema_version": { "const": 1 }, "id": { "$ref": "#/$defs/identifier" }, "transaction_id": { "$ref": "#/$defs/identifier" }, "operation_id": { "$ref": "#/$defs/identifier" }, "expected_current_sequence": { "type": "integer", "minimum": 1, "maximum": 1000000 }, "expected_current_sha256": { "$ref": "#/$defs/sha256" }, "target_sequence": { "type": "integer", "minimum": 2, "maximum": 1000001 }, "target_checkpoint_sha256": { "$ref": "#/$defs/sha256" }, "files": { "type": "array", "minItems": 1, "maxItems": 1000000, "items": { "$ref": "#/$defs/manifestFile" } }, "total_size_bytes": { "type": "integer", "minimum": 1, "maximum": 1073741824 }, "created_at": { "$ref": "#/$defs/timestamp" } }
+    },
+    "commitIntent": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "id", "operation_id", "transaction_id", "prepared_manifest_sha256", "expected_current_sequence", "expected_current_sha256", "target_sequence", "target_checkpoint_sha256", "intent_at"],
+      "properties": { "schema_version": { "const": 1 }, "id": { "$ref": "#/$defs/identifier" }, "operation_id": { "$ref": "#/$defs/identifier" }, "transaction_id": { "$ref": "#/$defs/identifier" }, "prepared_manifest_sha256": { "$ref": "#/$defs/sha256" }, "expected_current_sequence": { "type": "integer", "minimum": 1, "maximum": 1000000 }, "expected_current_sha256": { "$ref": "#/$defs/sha256" }, "target_sequence": { "type": "integer", "minimum": 2, "maximum": 1000001 }, "target_checkpoint_sha256": { "$ref": "#/$defs/sha256" }, "intent_at": { "$ref": "#/$defs/timestamp" } }
+    },
+    "committedReceipt": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "id", "operation_id", "transaction_id", "commit_intent_sha256", "checkpoint_sha256", "current_pointer_sha256", "committed_at"],
+      "properties": { "schema_version": { "const": 1 }, "id": { "$ref": "#/$defs/identifier" }, "operation_id": { "$ref": "#/$defs/identifier" }, "transaction_id": { "$ref": "#/$defs/identifier" }, "commit_intent_sha256": { "$ref": "#/$defs/sha256" }, "checkpoint_sha256": { "$ref": "#/$defs/sha256" }, "current_pointer_sha256": { "$ref": "#/$defs/sha256" }, "committed_at": { "$ref": "#/$defs/timestamp" } }
+    },
+    "runtimeActor": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/actor", "properties": { "kind": { "const": "runtime" } } },
+    "terminalFence": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "id", "operation_id", "kind", "created_at", "expected_journal_head_sha256", "prepared_manifest_sha256", "requested_by"],
+      "properties": { "schema_version": { "const": 1 }, "id": { "$ref": "#/$defs/identifier" }, "operation_id": { "$ref": "#/$defs/identifier" }, "kind": { "enum": ["cancel", "commit"] }, "created_at": { "$ref": "#/$defs/timestamp" }, "expected_journal_head_sha256": { "$ref": "#/$defs/sha256" }, "prepared_manifest_sha256": { "$ref": "#/$defs/nullableSha256" }, "requested_by": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/actor" } },
+      "if": { "required": ["kind"], "properties": { "kind": { "const": "cancel" } } },
+      "then": { "properties": { "prepared_manifest_sha256": { "type": "null" } } },
+      "else": { "properties": { "prepared_manifest_sha256": { "$ref": "#/$defs/sha256" }, "requested_by": { "$ref": "#/$defs/runtimeActor" } } }
+    }
+  }
+}
