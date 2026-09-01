@@ -152,7 +152,7 @@ implementation commit must make both targeted and regression suites green.
   - Satisfies: AC-10, AC-11, AC-14
   - Depends on: TASK-021
 
-- [ ] **TASK-023** [S] Test append-only journal publication and replay
+- [x] **TASK-023** [S] Test append-only journal publication and replay
   - Creates: `packages/runtime/test/operation-journal-store.test.mjs`
   - Tests: AC-10, AC-11, AC-12
   - Covers: variants, sequence/CAS, no-replace/fsync, corruption, unsafe entries and replay
