@@ -51,7 +51,7 @@ implementation commit must make both targeted and regression suites green.
   - Satisfies: AC-2, AC-10, AC-11, AC-14
   - Depends on: TASK-005
 
-- [ ] **TASK-007** [M] Test closed research, answer and bundle records
+- [x] **TASK-007** [M] Test closed research, answer and bundle records
   - Creates: `packages/schema/test/alignment-result-contracts.test.mjs`
   - Tests: AC-3, AC-4, AC-4a, AC-5, AC-6, AC-7, AC-8, AC-9, AC-12
   - Covers: authority epochs, URL recipes, source/gap terminals, immutable answers and material decisions
