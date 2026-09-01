@@ -104,6 +104,16 @@ export class AgentAdapterRegistry {
     return validateDescriptor(name, descriptor, options.profileId);
   }
 
+  async probeApproved(name, options, approvedDescriptor) {
+    const current = await this.probe(name, options);
+    if (!approvedDescriptor || current.descriptor_sha256 !== approvedDescriptor.descriptor_sha256
+      || current.executable_sha256 !== approvedDescriptor.executable_sha256
+      || current.profile_template_sha256 !== approvedDescriptor.profile_template_sha256) {
+      throw new AgentAdapterError("ADAPTER_CHANGED", "Agent adapter no longer matches the approved descriptor and execution profile.");
+    }
+    return current;
+  }
+
   async start(name, { invocation, executionContext, signal, onStatus } = {}) {
     const adapter = this.#resolve(name);
     let output;

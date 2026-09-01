@@ -119,7 +119,7 @@ implementation commit must make both targeted and regression suites green.
   - Covers: exact argv, ignored customization, disabled tools/network, empty env, malformed output and timeout
   - Depends on: TASK-012, TASK-016
 
-- [ ] **TASK-018** [M] Implement the Codex v1 adapter
+- [x] **TASK-018** [M] Implement the Codex v1 adapter
   - Creates: `adapters/agents/codex/index.mjs`, `adapters/agents/index.mjs`
   - Modifies: `packages/runtime/src/agent-adapter.mjs`
   - Plan/contract: § Codex adapter; `contracts/agent-adapter.md` §§ Prompt Envelope, AgentAttemptOutput, Codex v1 Invocation
