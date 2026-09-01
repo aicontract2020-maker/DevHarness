@@ -39,7 +39,7 @@ implementation commit must make both targeted and regression suites green.
   - Satisfies: AC-2, AC-3, AC-4, AC-4a, AC-11, AC-12, AC-14, AC-15
   - Depends on: TASK-003
 
-- [ ] **TASK-005** [M] Test closed operation, journal, lease and accounting records
+- [x] **TASK-005** [M] Test closed operation, journal, lease and accounting records
   - Creates: `packages/schema/test/alignment-operation-contracts.test.mjs`
   - Tests: AC-2, AC-10, AC-11, AC-14
   - Covers: journal variants, attempts, reservations, receipts, fences, manifests, commit records and lease owners
