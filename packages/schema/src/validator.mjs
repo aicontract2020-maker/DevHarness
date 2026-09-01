@@ -1,4 +1,7 @@
 function typeMatches(expected, value) {
+  if (Array.isArray(expected)) {
+    return expected.some((candidate) => typeMatches(candidate, value));
+  }
   switch (expected) {
     case "object":
       return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -12,6 +15,8 @@ function typeMatches(expected, value) {
       return typeof value === "string";
     case "boolean":
       return typeof value === "boolean";
+    case "null":
+      return value === null;
     default:
       return true;
   }
@@ -118,21 +123,68 @@ export class SchemaRegistry {
   }
 
   validate(schemaId, value) {
-    const schema = this.schemas.get(schemaId);
-    if (!schema) {
-      throw new Error(`Unknown schema id: ${schemaId}`);
-    }
+    const resolved = this.resolve(schemaId, schemaId.split("#", 1)[0]);
 
     const errors = [];
-    this.validateNode(schema, value, "$", schemaId, errors);
+    this.validateNode(resolved.schema, value, "$", resolved.schemaId, errors);
     return { valid: errors.length === 0, errors };
   }
 
   validateNode(schema, value, path, currentSchemaId, errors) {
+    if (schema === true) return;
+    if (schema === false) {
+      errors.push({ path, message: "is not allowed" });
+      return;
+    }
+
     if (schema.$ref) {
       const resolved = this.resolve(schema.$ref, currentSchemaId);
       this.validateNode(resolved.schema, value, path, resolved.schemaId, errors);
-      return;
+    }
+
+    if (schema.allOf) {
+      for (const branch of schema.allOf) {
+        this.validateNode(branch, value, path, currentSchemaId, errors);
+      }
+    }
+
+    if (schema.anyOf) {
+      const matches = schema.anyOf.filter((branch) => {
+        const branchErrors = [];
+        this.validateNode(branch, value, path, currentSchemaId, branchErrors);
+        return branchErrors.length === 0;
+      });
+      if (matches.length === 0) {
+        errors.push({ path, message: "must match at least one anyOf branch" });
+      }
+    }
+
+    if (schema.oneOf) {
+      const matches = schema.oneOf.filter((branch) => {
+        const branchErrors = [];
+        this.validateNode(branch, value, path, currentSchemaId, branchErrors);
+        return branchErrors.length === 0;
+      });
+      if (matches.length !== 1) {
+        errors.push({ path, message: `must match exactly one oneOf branch; matched ${matches.length}` });
+      }
+    }
+
+    if (schema.not !== undefined) {
+      const branchErrors = [];
+      this.validateNode(schema.not, value, path, currentSchemaId, branchErrors);
+      if (branchErrors.length === 0) {
+        errors.push({ path, message: "must not match the forbidden schema" });
+      }
+    }
+
+    if (schema.if !== undefined) {
+      const conditionErrors = [];
+      this.validateNode(schema.if, value, path, currentSchemaId, conditionErrors);
+      const selected = conditionErrors.length === 0 ? schema.then : schema.else;
+      if (selected !== undefined) {
+        this.validateNode(selected, value, path, currentSchemaId, errors);
+      }
     }
 
     if (Object.hasOwn(schema, "const") && value !== schema.const) {
@@ -148,7 +200,7 @@ export class SchemaRegistry {
       return;
     }
 
-    if (schema.type === "object") {
+    if (value !== null && typeof value === "object" && !Array.isArray(value)) {
       const properties = schema.properties ?? {};
       for (const required of schema.required ?? []) {
         if (!Object.hasOwn(value, required)) {
@@ -164,6 +216,14 @@ export class SchemaRegistry {
         }
       }
 
+      if (schema.minProperties !== undefined && Object.keys(value).length < schema.minProperties) {
+        errors.push({ path, message: `must contain at least ${schema.minProperties} properties` });
+      }
+
+      if (schema.maxProperties !== undefined && Object.keys(value).length > schema.maxProperties) {
+        errors.push({ path, message: `must contain at most ${schema.maxProperties} properties` });
+      }
+
       for (const [key, propertySchema] of Object.entries(properties)) {
         if (Object.hasOwn(value, key)) {
           this.validateNode(propertySchema, value[key], `${path}.${key}`, currentSchemaId, errors);
@@ -171,7 +231,7 @@ export class SchemaRegistry {
       }
     }
 
-    if (schema.type === "array") {
+    if (Array.isArray(value)) {
       if (schema.minItems !== undefined && value.length < schema.minItems) {
         errors.push({ path, message: `must contain at least ${schema.minItems} items` });
       }
@@ -187,16 +247,28 @@ export class SchemaRegistry {
         }
       }
 
-      if (schema.items) {
-        value.forEach((item, index) => {
+      const prefixCount = schema.prefixItems?.length ?? 0;
+      schema.prefixItems?.forEach((itemSchema, index) => {
+        if (index < value.length) {
+          this.validateNode(itemSchema, value[index], `${path}[${index}]`, currentSchemaId, errors);
+        }
+      });
+
+      if (schema.items !== undefined) {
+        value.slice(prefixCount).forEach((item, offset) => {
+          const index = prefixCount + offset;
           this.validateNode(schema.items, item, `${path}[${index}]`, currentSchemaId, errors);
         });
       }
     }
 
-    if (schema.type === "string") {
-      if (schema.minLength !== undefined && value.length < schema.minLength) {
+    if (typeof value === "string") {
+      const scalarLength = [...value].length;
+      if (schema.minLength !== undefined && scalarLength < schema.minLength) {
         errors.push({ path, message: `must contain at least ${schema.minLength} characters` });
+      }
+      if (schema.maxLength !== undefined && scalarLength > schema.maxLength) {
+        errors.push({ path, message: `must contain at most ${schema.maxLength} characters` });
       }
       if (schema.pattern && !new RegExp(schema.pattern).test(value)) {
         errors.push({ path, message: `must match ${schema.pattern}` });
@@ -206,7 +278,7 @@ export class SchemaRegistry {
       }
     }
 
-    if (schema.type === "integer" || schema.type === "number") {
+    if (typeof value === "number" && Number.isFinite(value)) {
       if (schema.minimum !== undefined && value < schema.minimum) {
         errors.push({ path, message: `must be at least ${schema.minimum}` });
       }

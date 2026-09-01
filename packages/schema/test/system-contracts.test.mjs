@@ -177,6 +177,17 @@ test("validator enforces combinators, conditions, negation, bounds, and fragment
       $id: schemaId,
       $defs: {
         shortText: { type: "string", minLength: 1, maxLength: 4 },
+        exactModes: {
+          type: "array",
+          minItems: 3,
+          maxItems: 3,
+          prefixItems: [
+            { const: "analysis-plan" },
+            { const: "analysis-synthesis" },
+            { const: "analysis-validation" }
+          ],
+          items: false
+        },
         exactChoice: {
           type: "object",
           additionalProperties: false,
@@ -217,6 +228,8 @@ test("validator enforces combinators, conditions, negation, bounds, and fragment
 
   assert.deepEqual(featureRegistry.validate(`${schemaId}#/$defs/shortText`, "safe"), { valid: true, errors: [] });
   assert.equal(featureRegistry.validate(`${schemaId}#/$defs/shortText`, "oversized").valid, false);
+  assert.equal(featureRegistry.validate(`${schemaId}#/$defs/exactModes`, ["analysis-plan", "analysis-synthesis", "analysis-validation"]).valid, true);
+  assert.equal(featureRegistry.validate(`${schemaId}#/$defs/exactModes`, ["analysis-validation", "analysis-synthesis", "analysis-plan"]).valid, false);
   assert.equal(featureRegistry.validate(schemaId, { kind: "text", value: "safe" }).valid, true);
   assert.equal(featureRegistry.validate(schemaId, { kind: "text", value: "oversized" }).valid, false);
   assert.equal(featureRegistry.validate(schemaId, { kind: "count", value: 2 }).valid, true);

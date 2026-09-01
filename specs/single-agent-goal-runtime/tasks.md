@@ -21,7 +21,7 @@ implementation commit must make both targeted and regression suites green.
   - Covers: `oneOf`, conditions, `not`, string/object limits, fragment validation and unknown keys
   - Depends on: none
 
-- [ ] **TASK-002** [M] Implement the missing validator semantics
+- [x] **TASK-002** [M] Implement the missing validator semantics
   - Modifies: `packages/schema/src/validator.mjs`
   - Plan/contract: § Portable Agent contracts; `data-model.md` § Normative Closed Record Dictionary
   - Satisfies: AC-2, AC-4a, AC-10, AC-12, AC-14
