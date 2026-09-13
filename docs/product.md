@@ -24,6 +24,20 @@ The first user is an individual developer or small engineering team already usin
 
 > When I have a well-scoped software outcome, help me turn it into a trustworthy pull request while I handle only meaningful product decisions and exceptions.
 
+## Existing-project engagement (three phases)
+
+For repositories that already exist, DevHarness must not jump straight to feature goals.
+Engagement is ordered:
+
+1. **Understand** the project (goals, stack, architecture, test map) — including environment
+   setup and bounded capability approvals as prerequisites, not as the whole of onboarding.
+2. **Test and fix bugs** until the baseline is stable enough to build on.
+3. **Only then** autonomously develop new features from goals (Gate 1 → implement/verify → Gate 2).
+
+Skipping ahead is an anti-pattern: a wired harness plus one smoke receipt is not phase-3
+readiness. See [existing-project-onboarding-phases.md](./existing-project-onboarding-phases.md).
+
+
 ## Default autonomy policy
 
 Before accepting a goal, DevHarness onboards the repository. It produces a compact,

@@ -1,6 +1,19 @@
 # Executable onboarding and repository understanding
 
+## Where this sits in the three-phase engagement model
+
+Taking on an **existing** project is ordered work:
+
+1. **Understand** (this document, `doctor`, `onboard`, harness, capabilities).
+2. **Test and fix bugs** (stabilize the baseline with revision-bound evidence).
+3. **Then** goal-driven feature development.
+
+Environment configuration and capability approvals belong in phase 1 as prerequisites. They
+do not complete understanding by themselves, and they do not authorize skipping phase 2.
+Full methodology: [existing-project-onboarding-phases.md](./existing-project-onboarding-phases.md).
+
 ## The front door
+
 
 `onboard` is the first command for an existing repository:
 
@@ -109,8 +122,12 @@ still cannot emit an approved understanding baseline by itself.
 The default brief shows only:
 
 - Overall verdict and bound revision.
-- Confirmed versus total claim count.
-- Highest-priority coverage gaps and conflicts.
+- Quantified understanding summary: proved, unresolved and conflict counts.
+- Claim-status and coverage-status breakdowns.
+- Domain knownness for database, frontend and backend, showing known versus unknown counts.
+- Subdomain knownness for database schema/migrations/constraints/queries/ownership,
+  frontend routes/state/user flows, and backend API contracts/orchestration/failure paths.
+- Highest-priority coverage gaps and conflicts, with database and security first.
 - Grouped capabilities requiring authority.
 - Exactly one recommended next action.
 

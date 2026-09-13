@@ -10,6 +10,20 @@ DevHarness is in an executable local-first prototype phase. The first consumer i
 
 Milestones 0 and the first repository-readiness/runtime slices are executable: versioned contracts, durable event-backed Goal Run intake, discovery, proof-led onboarding, doctor, external project-harness compilation, isolated verification, owned local-service lifecycle, signed Supervisor provenance, foreground human approvals, a live local review surface, verification-ladder policy, and safe scheduling policy live under `packages/`.
 
+## 30-second card
+
+If you are a developer using DevHarness for a repo, the flow is:
+
+```text
+1. Give it one goal.
+2. Read the compact brief.
+3. Approve only the exact missing boundary.
+4. Let it plan, split, implement, and verify.
+5. Review the evidence-backed delivery brief.
+```
+
+In plain language: DevHarness is for “tell the agent what you want, inspect the brief, approve the smallest needed authority, and review proof instead of raw file dumps.”
+
 ## Intended experience
 
 ```bash
@@ -46,6 +60,31 @@ npm run devharness -- build --repo ../AIedu_demo --config ./local-projects/aiedu
 Explicit external configs use the same validated contract and remain bound to the consumer's clean
 Git commit. A `--config` path inside the consumer repository is rejected. Omitting `--config`
 preserves the normal tracked `devharness.yaml` workflow.
+
+### Generate `devharness.yaml` for a new project
+
+```bash
+# Dry-run proposal (writes nothing)
+npm run devharness -- init --repo /path/to/your-project
+
+# Write a tracked declaration into the consumer repo (fails if the file already exists)
+npm run devharness -- init --repo /path/to/your-project --write
+
+# Or keep the declaration outside the consumer and pass it explicitly
+mkdir -p ./local-projects/my-project
+# save the reviewed proposal as ./local-projects/my-project/devharness.yaml
+npm run devharness -- doctor --repo /path/to/your-project \
+  --config ./local-projects/my-project/devharness.yaml
+npm run devharness -- build --repo /path/to/your-project \
+  --config ./local-projects/my-project/devharness.yaml
+npm run devharness -- build --repo /path/to/your-project \
+  --config ./local-projects/my-project/devharness.yaml --write
+```
+
+`init` discovers platforms, quality commands, and (when possible) Playwright loopback readiness
+bindings. Review and hand-edit launch/readiness details before relying on them; `init` does not
+invent health routes or ports. See [docs/devharness-quickstart.md](./docs/devharness-quickstart.md)
+for the full new-project flow.
 
 `onboard` performs read-only understanding and capability planning; its optional `--write` stores only the plan in external DevHarness state. `init` and `build` are dry runs unless `--write` is explicitly supplied. `verify` does not run processes unless `--execute` is supplied, and public execution also requires a Goal Run plus every current signed capability required by the exact command. A passing configured test becomes trusted test evidence only with `--attest`; generic receipts never promote readiness. `goal` creates a real external, event-backed run at a clean committed revision. `advance` now records the first static understanding checkpoint and publishes an Alignment Brief. `request-capability` can then derive one exact bounded browser, database, service or other capability from that checkpoint and create a signed pending request; it still does not execute consumer code.
 
@@ -119,6 +158,10 @@ goal
 
 DevHarness keeps durable engineering artifacts, decisions, evidence, progress, and blockers, but does not make them all required reading. Developers normally interact through four compact, traceable packets: Alignment Brief, Decision Queue, Progress Pulse, and Delivery Brief. DevHarness does not expose or depend on a model's private chain of thought.
 
+For the bounded v0 walkthrough, see [specs/single-agent-goal-runtime/walkthrough.md](./specs/single-agent-goal-runtime/walkthrough.md).
+
+For a one-page developer-facing overview, see [docs/devharness-quickstart.md](./docs/devharness-quickstart.md).
+
 ## Product boundaries
 
 DevHarness is:
@@ -162,6 +205,8 @@ docs/           product, architecture, decisions, and roadmap
 
 ## Design documents
 
+- [Principles (中文)](docs/devharness-principles-zh.md)
+- [Existing-project three phases](docs/existing-project-onboarding-phases.md)
 - [Product definition](docs/product.md)
 - [Architecture](docs/architecture.md)
 - [Runtime contracts](docs/contracts.md)
