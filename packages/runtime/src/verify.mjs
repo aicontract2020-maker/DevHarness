@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { execFileSync, spawn } from "node:child_process";
-import { createWriteStream } from "node:fs";
+import { copyFileSync, createWriteStream, existsSync, mkdirSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
@@ -296,7 +296,7 @@ function delay(milliseconds) {
 
 export async function probeHttpReadiness(readiness, timeoutMs, fetchImplementation = fetch) {
   const response = await fetchImplementation(readiness.url, {
-    redirect: "error",
+    redirect: "manual",
     signal: AbortSignal.timeout(timeoutMs)
   });
   await response.body?.cancel().catch(() => {});
@@ -366,6 +366,46 @@ async function waitForReadiness(handle, readinessProbe) {
     checks: results
   };
 }
+
+
+function prepareDependencies(plan, hostEnvironment) {
+  const workspace = plan.paths.workspace;
+  const lockfile = path.join(workspace, "package-lock.json");
+  const manifest = path.join(workspace, "package.json");
+  if (!existsSync(lockfile) || !existsSync(manifest)) {
+    return { status: "not_required", summary: "No npm lockfile is present in the verification worktree." };
+  }
+  try {
+    execFileSync("npm", ["ci", "--no-fund", "--no-audit"], {
+      cwd: workspace,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+      env: allowedProcessEnvironment(plan, hostEnvironment),
+      maxBuffer: 32 * 1024 * 1024
+    });
+    materializeLocalConfigFiles(plan);
+    return { status: "pass", summary: "Installed npm dependencies from the committed lockfile." };
+  } catch (error) {
+    const detail = (error.stderr?.toString?.() || error.stdout?.toString?.() || error.message || "").trim();
+    const tail = detail.split("\n").slice(-8).join(" ").trim();
+    return { status: "fail", summary: `npm ci failed: ${tail || error.message}` };
+  }
+}
+
+function materializeLocalConfigFiles(plan) {
+  const workspace = plan.paths.workspace;
+  const sourceRoot = plan.repository_root;
+  const target = path.join(workspace, "data", "config.js");
+  if (existsSync(target)) return;
+  for (const sourceRel of ["data/config.js", "data/testing.config.js"]) {
+    const source = path.join(sourceRoot, sourceRel);
+    if (!existsSync(source)) continue;
+    mkdirSync(path.dirname(target), { recursive: true });
+    copyFileSync(source, target);
+    return;
+  }
+}
+
 
 function prepareSubmodules(plan) {
   if (plan.submodules.length === 0) {
@@ -539,6 +579,17 @@ export async function executeVerificationPlan(plan, {
     worktreeCreated = true;
     preparation = prepareSubmodules(plan);
     if (preparation.status === "fail") throw new Error(preparation.summary);
+    const dependencyPreparation = prepareDependencies(plan, environment);
+    if (dependencyPreparation.status === "fail") throw new Error(dependencyPreparation.summary);
+    if (dependencyPreparation.status === "pass") {
+      preparation = {
+        ...preparation,
+        summary: preparation.status === "not_required"
+          ? dependencyPreparation.summary
+          : `${preparation.summary} ${dependencyPreparation.summary}`,
+        status: preparation.status === "fail" ? "fail" : "pass"
+      };
+    }
     dirtyBefore = gitDirty(plan.paths.workspace);
     for (const service of plan.services) {
       const handle = startOwnedService(plan, service, environment);

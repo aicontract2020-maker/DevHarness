@@ -2,7 +2,7 @@ const CAPABILITY_ORDER = ["dependency-install", "service-runtime", "browser-runt
 
 export function requiredCapabilityIdsForVerification(plan) {
   const required = new Set(["service-runtime"]);
-  if ((plan?.submodules ?? []).length > 0) required.add("dependency-install");
+  if ((plan?.submodules ?? []).length > 0 || (plan?.services ?? []).length > 0) required.add("dependency-install");
   const commandText = `${plan?.command?.id ?? ""}\n${plan?.command?.run ?? ""}\n${plan?.command?.source ?? ""}`;
   const serviceText = (plan?.services ?? []).map((service) => `${service?.command?.run ?? ""}\n${service?.command?.source ?? ""}`).join("\n");
   if (/playwright|cypress|browser/i.test(commandText)) required.add("browser-runtime");
