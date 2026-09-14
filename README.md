@@ -207,6 +207,7 @@ docs/           product, architecture, decisions, and roadmap
 
 - [Principles (中文)](docs/devharness-principles-zh.md)
 - [Existing-project three phases](docs/existing-project-onboarding-phases.md)
+- [Sunrise CMS verification recipe (dogfood)](docs/dogfood/sunrise-cms-verification-recipe.md)
 - [Product definition](docs/product.md)
 - [Architecture](docs/architecture.md)
 - [Runtime contracts](docs/contracts.md)

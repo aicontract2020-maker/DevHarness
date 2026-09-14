@@ -100,6 +100,22 @@ v0 is incomplete: onboarding still returns `needs-evidence` until richer drivers
 CLI live alignment does not fully replace human-led phase 1 depth. The **methodology still
 holds** — implementers and operators must not jump to phase 3 because a smoke verify passed.
 
+
+## When the consumer cannot be patched
+
+Phase 2 sometimes finds **test-order or missing-seed coupling** (a suite assumes data
+another suite created). Ideal fix is consumer-side self-sufficient seeds. When policy is
+**harness-only** (do not modify the consumer):
+
+1. Keep using the consumer’s full verify command when it already encodes a safe order.
+2. Otherwise declare a **DevHarness-owned verification recipe** in the external project
+   config (ordered `--spec` lists, harness-owned seed scripts under `local-projects/`, or
+   documented Phase-2 runbooks) — never invent an ad-hoc folder order in chat.
+3. Treat failures only under an unsafe order as recipe bugs, not product bugs, until they
+   reproduce under the declared safe recipe.
+
+Dogfood example: [sunrise-cms-verification-recipe.md](./dogfood/sunrise-cms-verification-recipe.md).
+
 ## Anti-patterns
 
 - Treating harness wiring + one Cypress pass as "ready for autonomous features."
@@ -107,6 +123,7 @@ holds** — implementers and operators must not jump to phase 3 because a smoke 
   nested browser suites or environment coupling.
 - Asking for blank-check credentials instead of bounded capabilities tied to a recipe.
 - Starting feature goals while database / auth / critical user flows remain `unknown`.
+- Declaring a consumer folder “red” after running it in an order that skips required seeds, then patching the consumer when a harness-owned recipe would suffice.
 
 ## Related docs
 

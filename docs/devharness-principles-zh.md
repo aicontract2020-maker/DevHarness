@@ -72,6 +72,17 @@ DevHarness 被设计成 **LLM 自主开发任意项目** 的工程运行时：�
 只有前两步扎实之后，才接受「增加或改变行为」的产品 goal：对齐（Gate 1）→ 实现 / 审查 / 验证 / 返修 → 交付（Gate 2）。  
 若第 1 步了解很薄，或第 2 步基线仍红 / 未知，则 **阻塞第 3 步**。
 
+
+### 当不能改消费者仓库时
+
+Phase 2 常会撞上 **测试顺序 / 缺 seed**（A 套件假定 B 套件已造好数据）。理想是消费者侧自给自足；若约束是 **只改 DevHarness**：
+
+1. 优先用消费者已安全的全量 verify（例如 sunrise 的 `npm run cy:run`）；
+2. 否则在 **外部** project 配置 / dogfood 配方里声明有序 `--spec` 或 harness 自有 seed，不要在对话里临时发明跑序；
+3. 只有「在声明过的安全配方下仍失败」才按产品 bug 升级。
+
+示例：[sunrise-cms-verification-recipe.md](./dogfood/sunrise-cms-verification-recipe.md)。
+
 ### 与当前命令的对应（v0）
 
 | 步骤 | 今日常见表面 |
