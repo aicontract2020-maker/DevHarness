@@ -21,6 +21,9 @@ Stabilize multi-hour Alignment / goal loops without touching consumer repos
 - Default TTL: **`agent-runtime` → 720 minutes (12h)**, **`network-research` → 480 (8h)**, others **60**.
 - Override anytime with `--expires-minutes N` (1–1440).
 - Expired approve errors and `next_action` point at the renew command (Goal Run preserved).
+- **Batch approve**: `approve --request a --request b` or `approve --run RUN --pending` (one TTY phrase).
+- **TTL reuse**: `request-capability` reattaches an unexpired approved grant (or existing pending id) instead of forcing another TTY.
+- **Packet answers**: repeated `--decision/--option` pairs share one APPROVE confirmation.
 
 ## Preconditions
 
@@ -76,6 +79,45 @@ $DH approve --repo "$REPO" --config "$CONFIG" --request approval-request-…
 ```
 
 JSON / pipes are refused by design.
+
+#### Batch approve (less TTY friction)
+
+One foreground session can approve many pending requests for the same run:
+
+```bash
+# Explicit ids (repeat --request):
+$DH approve --repo "$REPO" --config "$CONFIG"   --request approval-request-aaa --request approval-request-bbb
+# Type exactly (space-separated, same order):
+#   APPROVE approval-request-aaa approval-request-bbb
+
+# Or approve every pending request for the run:
+$DH approve --repo "$REPO" --config "$CONFIG" --run "$RUN_ID" --pending
+# Type APPROVE <id1> <id2> … as listed in the prompt
+```
+
+Still requires a real TTY. Never silently auto-approves never-approved capabilities.
+
+#### TTL reuse (no second approve for a live grant)
+
+If `agent-runtime` / `network-research` / `service-runtime` / `dependency-install` /
+`research-task-*` (or any capability) is **already approved and unexpired** for this
+repository + run + subject, `request-capability` **reuses** that grant instead of
+creating a new pending request:
+
+```bash
+$DH request-capability --repo "$REPO" --config "$CONFIG" --run "$RUN_ID" --capability agent-runtime
+# → "Capability already approved within TTL" + existing receipt (no approve needed)
+```
+
+Re-requesting while **pending** returns the same pending request id (no duplicate).
+Rejected / expired / stale still require an explicit renew + TTY approve.
+
+#### Packet answers (one confirm for many decisions)
+
+```bash
+$DH answer --repo "$REPO" --config "$CONFIG" --run "$RUN_ID"   --decision decision-a --option option-1   --decision decision-b --option option-2
+# One APPROVE phrase naming every alignment-answer request id
+```
 
 ### 4. Exercise Alignment / status (no sunrise edits)
 
@@ -227,7 +269,7 @@ $DH approve --repo "$REPO" --config "$CONFIG" --request <new-request-id>
 
 ```bash
 cd /Users/kaimaplespark/GAC/git/film-making/DevHarness
-node --test packages/runtime/test/capability-authorization.test.mjs packages/runtime/test/live-alignment-authority.test.mjs packages/runtime/test/live-alignment-continue.test.mjs packages/runtime/test/post-scope-advance.test.mjs packages/cli/test/cli.test.mjs
+node --test packages/runtime/test/capability-authorization.test.mjs packages/runtime/test/supervisor-approval-batch.test.mjs packages/runtime/test/alignment-answer.test.mjs packages/runtime/test/live-alignment-authority.test.mjs packages/runtime/test/live-alignment-continue.test.mjs packages/runtime/test/post-scope-advance.test.mjs packages/cli/test/cli.test.mjs
 # scope gate + post-scope regression:
 node --test --test-name-pattern "request-scope then approve|post-scope advance" packages/cli/test/cli.test.mjs packages/runtime/test/post-scope-advance.test.mjs
 ```

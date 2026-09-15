@@ -476,7 +476,7 @@ test("help documents init's explicit write boundary", async () => {
   const output = capture();
   assert.equal(await runCli(["--help"], output.io), 0);
   assert.match(output.lines.join("\n"), /Does not write unless --write is present/);
-  assert.match(output.lines.join("\n"), /approve --request ID \[--repo PATH\] \[--data-dir PATH\]/);
+  assert.match(output.lines.join("\n"), /approve \(--request ID \[--request ID \.\.\.\] \| --run ID --pending\)/);
   assert.match(output.lines.join("\n"), /request-scope --run ID/);
   assert.match(output.lines.join("\n"), /retry --run ID --operation ID/);
   assert.match(output.lines.join("\n"), /cancel --run ID --operation ID/);
@@ -1377,4 +1377,89 @@ test("post-scope advance after scope approval writes external summary and prepar
     ),
     /capability authority|service-runtime/i
   );
+});
+
+
+test("batch approve --pending records multiple capability receipts with one TTY phrase", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "devharness-cli-batch-approve-repo-"));
+  const dataRoot = await mkdtemp(path.join(os.tmpdir(), "devharness-cli-batch-approve-data-"));
+  const supervisorRoot = await mkdtemp(path.join(os.tmpdir(), "devharness-cli-batch-approve-supervisor-"));
+  t.after(() => Promise.all([
+    rm(root, { recursive: true, force: true }),
+    rm(dataRoot, { recursive: true, force: true }),
+    rm(supervisorRoot, { recursive: true, force: true })
+  ]));
+  await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "batch-approve-fixture", dependencies: { next: "15.0.0", pg: "8.0.0" }, scripts: { test: "node --test" } }));
+  await writeFile(path.join(root, "package-lock.json"), "{}\n");
+  execFileSync("git", ["-C", root, "init", "-b", "main"]);
+  execFileSync("git", ["-C", root, "config", "user.email", "devharness@example.invalid"]);
+  execFileSync("git", ["-C", root, "config", "user.name", "DevHarness Tests"]);
+  execFileSync("git", ["-C", root, "add", "."]);
+  execFileSync("git", ["-C", root, "commit", "-m", "fixture"]);
+
+  assert.equal(await runCli(
+    ["goal", "--repo", root, "--data-dir", dataRoot, "--goal", "Batch approve dogfood", "--format", "json"],
+    capture().io,
+    { newRunId: () => "run-batch-approve-1", now: () => "2026-08-31T16:00:00.000Z", supervisorRoot }
+  ), 0);
+  assert.equal(await runCli(
+    ["advance", "--repo", root, "--data-dir", dataRoot, "--run", "run-batch-approve-1", "--format", "json"],
+    capture().io,
+    { supervisorRoot, now: () => "2026-08-31T16:05:00.000Z" }
+  ), 2);
+
+  const firstOut = capture();
+  assert.equal(await runCli(
+    ["request-capability", "--repo", root, "--data-dir", dataRoot, "--run", "run-batch-approve-1", "--capability", "browser-runtime", "--format", "json"],
+    firstOut.io,
+    { supervisorRoot, now: () => "2026-08-31T16:10:00.000Z" }
+  ), 0);
+  const first = JSON.parse(firstOut.lines.join("\n"));
+  const secondOut = capture();
+  assert.equal(await runCli(
+    ["request-capability", "--repo", root, "--data-dir", dataRoot, "--run", "run-batch-approve-1", "--capability", "network-research", "--format", "json"],
+    secondOut.io,
+    { supervisorRoot, now: () => "2026-08-31T16:11:00.000Z" }
+  ), 0);
+  const second = JSON.parse(secondOut.lines.join("\n"));
+
+  const reuseOut = capture();
+  assert.equal(await runCli(
+    ["request-capability", "--repo", root, "--data-dir", dataRoot, "--run", "run-batch-approve-1", "--capability", "browser-runtime", "--format", "json"],
+    reuseOut.io,
+    { supervisorRoot, now: () => "2026-08-31T16:12:00.000Z" }
+  ), 0);
+  const reused = JSON.parse(reuseOut.lines.join("\n"));
+  assert.equal(reused.reused, true);
+  assert.equal(reused.reuse_kind, "pending-request");
+  assert.equal(reused.request.id, first.request.id);
+
+  const approveOut = capture();
+  assert.equal(await runCli(
+    ["approve", "--repo", root, "--data-dir", dataRoot, "--run", "run-batch-approve-1", "--pending"],
+    approveOut.io,
+    {
+      supervisorRoot,
+      now: () => "2026-08-31T16:15:00.000Z",
+      approveResponse: async (prompt) => {
+        const match = prompt.match(/Type APPROVE (.+) or REJECT/);
+        assert.ok(match, `missing APPROVE clause in prompt: ${prompt}`);
+        return `APPROVE ${match[1]}`;
+      }
+    }
+  ), 0);
+  assert.match(approveOut.lines.join("\n"), /Decision recorded: approved/);
+  assert.match(approveOut.lines.join("\n"), new RegExp(first.request.id));
+  assert.match(approveOut.lines.join("\n"), new RegExp(second.request.id));
+
+  const grantOut = capture();
+  assert.equal(await runCli(
+    ["request-capability", "--repo", root, "--data-dir", dataRoot, "--run", "run-batch-approve-1", "--capability", "browser-runtime", "--format", "json"],
+    grantOut.io,
+    { supervisorRoot, now: () => "2026-08-31T16:20:00.000Z" }
+  ), 0);
+  const grant = JSON.parse(grantOut.lines.join("\n"));
+  assert.equal(grant.reused, true);
+  assert.equal(grant.reuse_kind, "approved-grant");
+  assert.equal(grant.request.id, first.request.id);
 });

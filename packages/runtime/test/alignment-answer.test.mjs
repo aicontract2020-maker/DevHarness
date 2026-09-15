@@ -23,7 +23,7 @@ import {
 } from "../src/live-alignment.mjs";
 import { appendGoalRunCheckpoint, createStoredGoalRun } from "../src/goal-run-store.mjs";
 import { initializeSupervisorIdentity } from "../src/supervisor-store.mjs";
-import { recordAlignmentAnswer } from "../src/alignment-answer.mjs";
+import { recordAlignmentAnswer, recordAlignmentAnswers } from "../src/alignment-answer.mjs";
 
 const repositoryIdentity = "example/alignment-answer-project";
 const originalGoal = "Add password reset";
@@ -338,4 +338,39 @@ test("alignment answers reject stale packets, invalid options, and non-interacti
     }),
     /TTY/i
   );
+});
+
+
+test("batch alignment answers use one confirmation phrase for a packet", async (t) => {
+  const fixture = await createRepoFixture(t);
+  const decisions = fixture.bundle.interactionPacket.decisions;
+  assert.ok(decisions.length >= 1);
+  // If the fixture packet only has one decision, still exercise the batch API shape.
+  const answers = decisions.map((decision) => {
+    const option = decision.options.find((candidate) => candidate.recommended) ?? decision.options[0];
+    return { decisionId: decision.id, optionId: option.id };
+  });
+  const prompts = [];
+  const result = await recordAlignmentAnswers({
+    dataRoot: fixture.dataRoot,
+    supervisorRoot: fixture.supervisorRoot,
+    repositoryIdentity: fixture.repositoryIdentity,
+    runId: fixture.run.id,
+    packetSha256: fixture.packetSha256,
+    answers,
+    responseProvider: async (prompt) => {
+      prompts.push(prompt);
+      const ids = [...prompt.matchAll(/approval-request-[0-9a-f]+/g)].map((match) => match[0]);
+      // Deduplicate while preserving order from the APPROVE clause
+      const unique = [...new Set(ids)];
+      return `APPROVE ${unique.join(" ")}`;
+    },
+    now: () => new Date(currentTime)
+  });
+  assert.equal(prompts.length, 1);
+  assert.equal(result.answers.length, answers.length);
+  assert.equal(result.receipts.length, answers.length);
+  assert.ok(result.receipts.every((receipt) => receipt.decision === "approved"));
+  const stored = await loadLiveAlignmentOperationBundle(fixture.dataRoot, fixture.repositoryIdentity, fixture.operation.id);
+  assert.equal(stored.developerAnswers.length, answers.length);
 });

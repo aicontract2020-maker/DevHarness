@@ -197,10 +197,47 @@ export async function requestCapabilityAuthorization({
   const capability = aliasCapability;
   if (!capability) throw new Error(`Current Goal Run did not request capability: ${capabilityId}`);
   const existing = view.capabilities.find((item) => item.request.id === capability.id);
-  if (existing.status !== "unrequested" && existing.status !== "expired" && existing.status !== "stale") {
+  const resolvedExpiresInMinutes = resolveCapabilityExpiresInMinutes(capability, expiresInMinutes);
+
+  // TTL reuse: an unexpired approved grant (or current pending request) for the same
+  // repository/run/subject must not force another TTY approve or duplicate pending request.
+  // Never silently invent approval for never-approved / rejected / expired / stale subjects.
+  if (existing?.status === "approved") {
+    const receipts = await listVerifiedApprovalReceipts(supervisorRoot, repositoryIdentity, { now: current });
+    const requests = await listVerifiedApprovalRequests(supervisorRoot, repositoryIdentity, { now: current, includeExpired: true });
+    const receipt = receipts.find((candidate) => candidate.id === existing.approval_receipt_id)
+      ?? receipts.find((candidate) => candidate.request_id === existing.approval_request_id && candidate.decision === "approved");
+    const request = requests.find((candidate) => candidate.id === existing.approval_request_id)
+      ?? (receipt ? requests.find((candidate) => candidate.id === receipt.request_id) : null);
+    if (!request || !receipt) {
+      throw new Error(`Capability ${capability.id} is marked approved but its Supervisor grant could not be loaded.`);
+    }
+    return {
+      request,
+      receipt,
+      capability,
+      expires_in_minutes: resolvedExpiresInMinutes,
+      reused: true,
+      reuse_kind: "approved-grant"
+    };
+  }
+  if (existing?.status === "pending") {
+    const requests = await listVerifiedApprovalRequests(supervisorRoot, repositoryIdentity, { now: current });
+    const request = requests.find((candidate) => candidate.id === existing.approval_request_id);
+    if (!request) {
+      throw new Error(`Capability ${capability.id} is marked pending but its approval request could not be loaded.`);
+    }
+    return {
+      request,
+      capability,
+      expires_in_minutes: resolvedExpiresInMinutes,
+      reused: true,
+      reuse_kind: "pending-request"
+    };
+  }
+  if (existing && existing.status !== "unrequested" && existing.status !== "expired" && existing.status !== "stale") {
     throw new Error(`Capability ${capability.id} already has status ${existing.status}.`);
   }
-  const resolvedExpiresInMinutes = resolveCapabilityExpiresInMinutes(capability, expiresInMinutes);
   const request = await createSupervisorApprovalRequest({
     supervisorRoot,
     repositoryIdentity,
@@ -211,7 +248,7 @@ export async function requestCapabilityAuthorization({
     expiresInMinutes: resolvedExpiresInMinutes,
     now: () => current
   });
-  return { request, capability, expires_in_minutes: resolvedExpiresInMinutes };
+  return { request, capability, expires_in_minutes: resolvedExpiresInMinutes, reused: false };
 }
 
 export async function resolveCapabilityApprovalContext({ dataRoot, supervisorRoot, repositoryIdentity, requestId, now = new Date() }) {

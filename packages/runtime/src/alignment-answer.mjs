@@ -9,7 +9,7 @@ import {
 } from "./live-alignment.mjs";
 import {
   createSupervisorApprovalRequest,
-  recordInteractiveApprovalDecision
+  recordInteractiveApprovalDecisions
 } from "./supervisor-approval.mjs";
 import {
   initializeSupervisorIdentity,
@@ -123,17 +123,34 @@ async function loadCheckpointArtifacts(dataRoot, repositoryIdentity, runId, pack
   return artifacts;
 }
 
-export async function recordAlignmentAnswer({
+export async function recordAlignmentAnswers({
   dataRoot,
   supervisorRoot,
   repositoryIdentity,
   runId,
   packetSha256 = null,
-  decisionId,
-  optionId,
+  answers,
   responseProvider = null,
   now = () => new Date()
 }) {
+  if (!Array.isArray(answers) || answers.length === 0) {
+    throw alignmentAnswerError("ANSWER_INVALID", "At least one decision/option pair is required.");
+  }
+  const normalized = [];
+  const seenDecisions = new Set();
+  for (const entry of answers) {
+    const decisionId = entry?.decisionId ?? entry?.decision_id;
+    const optionId = entry?.optionId ?? entry?.option_id;
+    if (!decisionId || !optionId) {
+      throw alignmentAnswerError("ANSWER_INVALID", "Each answer requires decisionId and optionId.");
+    }
+    if (seenDecisions.has(decisionId)) {
+      throw alignmentAnswerError("ANSWER_INVALID", `Duplicate decision id in answer packet: ${decisionId}`);
+    }
+    seenDecisions.add(decisionId);
+    normalized.push({ decisionId, optionId });
+  }
+
   const run = await loadGoalRun(dataRoot, repositoryIdentity, runId);
   const currentBundle = await findLiveAlignmentOperationBundleByRun(dataRoot, repositoryIdentity, runId, run.current_head_sha);
   if (!currentBundle) {
@@ -155,21 +172,38 @@ export async function recordAlignmentAnswer({
     throw alignmentAnswerError("ANSWER_STALE", "Reload the current packet before answering.");
   }
 
-  const { decision, option } = selectDecision(bundle.interactionPacket, decisionId, optionId);
-  const existingAnswer = (bundle.developerAnswers ?? []).find((answer) => answer.decision_id === decisionId);
-  if (existingAnswer) {
-    if (existingAnswer.option_id !== optionId) {
-      throw alignmentAnswerError("ANSWER_INVALID", "A different answer for the same decision is not allowed in v1.");
+  const existingByDecision = new Map((bundle.developerAnswers ?? []).map((answer) => [answer.decision_id, answer]));
+  const pending = [];
+  const replayed = [];
+  for (const entry of normalized) {
+    const { decision, option } = selectDecision(bundle.interactionPacket, entry.decisionId, entry.optionId);
+    const existingAnswer = existingByDecision.get(entry.decisionId);
+    if (existingAnswer) {
+      if (existingAnswer.option_id !== entry.optionId) {
+        throw alignmentAnswerError("ANSWER_INVALID", "A different answer for the same decision is not allowed in v1.");
+      }
+      if (existingAnswer.packet_sha256 !== currentPacketSha256) {
+        throw alignmentAnswerError("ANSWER_STALE", "Reload the current packet before answering.");
+      }
+      const linked = await loadApprovalArtifacts(
+        supervisorRoot,
+        repositoryIdentity,
+        existingAnswer.decision_ref.request_id,
+        existingAnswer.decision_ref.receipt_id
+      );
+      replayed.push({
+        decision,
+        option,
+        answer: existingAnswer,
+        request: linked.request,
+        receipt: linked.receipt
+      });
+      continue;
     }
-    if (existingAnswer.packet_sha256 !== currentPacketSha256) {
-      throw alignmentAnswerError("ANSWER_STALE", "Reload the current packet before answering.");
-    }
-    const linked = await loadApprovalArtifacts(
-      supervisorRoot,
-      repositoryIdentity,
-      existingAnswer.decision_ref.request_id,
-      existingAnswer.decision_ref.receipt_id
-    );
+    pending.push({ decision, option, decisionId: entry.decisionId, optionId: entry.optionId });
+  }
+
+  if (pending.length === 0) {
     return {
       run,
       operation: bundle.operation,
@@ -177,96 +211,128 @@ export async function recordAlignmentAnswer({
       status: bundle.status,
       lease: bundle.lease,
       fence: bundle.fence,
-      request: linked.request,
-      receipt: linked.receipt,
-      answer: existingAnswer,
+      answers: replayed.map((item) => item.answer),
+      answer: replayed[0]?.answer ?? null,
+      receipts: replayed.map((item) => item.receipt),
+      receipt: replayed[0]?.receipt ?? null,
+      requests: replayed.map((item) => item.request),
+      request: replayed[0]?.request ?? null,
       replayed: true,
       next_action: nextLiveAction(bundle.status)
     };
   }
 
   await initializeSupervisorIdentity(supervisorRoot, { now });
-  const subject = alignmentAnswerSubject({
-    operation: bundle.operation,
-    packetSha256: currentPacketSha256,
-    decisionId,
-    optionId
-  });
-  const request = await createSupervisorApprovalRequest({
+  const prepared = [];
+  for (const item of pending) {
+    const subject = alignmentAnswerSubject({
+      operation: bundle.operation,
+      packetSha256: currentPacketSha256,
+      decisionId: item.decisionId,
+      optionId: item.optionId
+    });
+    const request = await createSupervisorApprovalRequest({
+      supervisorRoot,
+      repositoryIdentity,
+      relevantHeadSha: bundle.operation.commit_sha,
+      runId: bundle.operation.run_id,
+      gate: "alignment-answer",
+      subject,
+      expiresInMinutes: 60,
+      now
+    });
+    prepared.push({
+      ...item,
+      request,
+      details: promptDetails(bundle.interactionPacket, item.decision, item.option)
+    });
+  }
+
+  const requestIds = prepared.map((item) => item.request.id);
+  const detailsByRequestId = Object.fromEntries(prepared.map((item) => [item.request.id, item.details]));
+  const batch = await recordInteractiveApprovalDecisions({
     supervisorRoot,
     repositoryIdentity,
-    relevantHeadSha: bundle.operation.commit_sha,
-    runId: bundle.operation.run_id,
-    gate: "alignment-answer",
-    subject,
-    expiresInMinutes: 60,
-    now
-  });
-  const receipt = await recordInteractiveApprovalDecision({
-    supervisorRoot,
-    repositoryIdentity,
-    requestId: request.id,
+    requestIds,
     humanId: "developer",
-    details: promptDetails(bundle.interactionPacket, decision, option),
+    detailsByRequestId,
     responseProvider,
     emitPrompt: true,
     now
   });
-  const answer = buildLiveAlignmentDeveloperAnswer({
-    operation: bundle.operation,
-    packet: bundle.interactionPacket,
-    decision,
-    option,
-    request,
-    receipt
-  }).answer;
-  const storedAnswer = await writeAlignmentDeveloperAnswer(dataRoot, repositoryIdentity, bundle.operation.id, answer);
-  const checkpointPacket = buildAnswerCheckpointPacket(bundle.interactionPacket, answer, now);
-  const checkpointArtifacts = await loadCheckpointArtifacts(dataRoot, repositoryIdentity, runId, checkpointPacket, bundle.analysisPlan, answer);
-  const currentPointer = JSON.parse(await readFile(runStoragePaths(dataRoot, repositoryIdentity, runId).current, "utf8"));
-  const nextSequence = Number.isInteger(currentPointer?.sequence) ? currentPointer.sequence + 1 : 2;
-  await appendGoalRunCheckpoint({
-    dataRoot,
-    repositoryIdentity,
-    runId,
-    events: [{
-      schema_version: 1,
-      event_id: `event-${hashContract({
+  if (batch.decision !== "approved") {
+    throw alignmentAnswerError("ANSWER_INVALID", "Alignment answers were rejected; no developer answers were recorded.");
+  }
+
+  const receiptByRequestId = new Map(batch.receipts.map((receipt) => [receipt.request_id, receipt]));
+  const writtenAnswers = [];
+  let workingBundle = bundle;
+  for (const item of prepared) {
+    const receipt = receiptByRequestId.get(item.request.id);
+    const answer = buildLiveAlignmentDeveloperAnswer({
+      operation: workingBundle.operation,
+      packet: workingBundle.interactionPacket,
+      decision: item.decision,
+      option: item.option,
+      request: item.request,
+      receipt
+    }).answer;
+    await writeAlignmentDeveloperAnswer(dataRoot, repositoryIdentity, workingBundle.operation.id, answer);
+    const checkpointPacket = buildAnswerCheckpointPacket(workingBundle.interactionPacket, answer, now);
+    const checkpointArtifacts = await loadCheckpointArtifacts(dataRoot, repositoryIdentity, runId, checkpointPacket, workingBundle.analysisPlan, answer);
+    const currentPointer = JSON.parse(await readFile(runStoragePaths(dataRoot, repositoryIdentity, runId).current, "utf8"));
+    const nextSequence = Number.isInteger(currentPointer?.sequence) ? currentPointer.sequence + 1 : 2;
+    const liveRun = await loadGoalRun(dataRoot, repositoryIdentity, runId);
+    await appendGoalRunCheckpoint({
+      dataRoot,
+      repositoryIdentity,
+      runId,
+      events: [{
+        schema_version: 1,
+        event_id: `event-${hashContract({
+          run_id: runId,
+          packet_sha256: currentPacketSha256,
+          decision_id: item.decision.id,
+          option_id: item.option.id,
+          answer_id: answer.id
+        }).slice(0, 24)}`,
         run_id: runId,
-        packet_sha256: currentPacketSha256,
-        decision_id: decision.id,
-        option_id: option.id,
-        answer_id: answer.id
-      }).slice(0, 24)}`,
-      run_id: runId,
-      sequence: nextSequence,
-      at: now().toISOString(),
-      type: "question.answered",
-      actor: { id: "runtime", kind: "runtime", role: "orchestrator" },
-      data: {
-        packet_id: bundle.interactionPacket.id,
-        packet_sha256: currentPacketSha256,
-        decision_id: decision.id,
-        option_id: option.id,
-        answer_id: answer.id,
-        answer_sha256: hashContract(answer)
-      }
-    }],
-    nextRun: (() => {
-      const nextRun = structuredClone(run);
-      nextRun.timestamps.updated_at = now().toISOString();
-      return nextRun;
-    })(),
-    scorecard: await loadRunScorecard(dataRoot, repositoryIdentity, runId),
-    packet: checkpointPacket,
-    artifacts: checkpointArtifacts
-  });
-  const remainingQuestions = Math.max(0, bundle.interactionPacket.decisions.length - 1 - (bundle.developerAnswers?.length ?? 0));
+        sequence: nextSequence,
+        at: now().toISOString(),
+        type: "question.answered",
+        actor: { id: "runtime", kind: "runtime", role: "orchestrator" },
+        data: {
+          packet_id: workingBundle.interactionPacket.id,
+          packet_sha256: currentPacketSha256,
+          decision_id: item.decision.id,
+          option_id: item.option.id,
+          answer_id: answer.id,
+          answer_sha256: hashContract(answer)
+        }
+      }],
+      nextRun: (() => {
+        const nextRun = structuredClone(liveRun);
+        nextRun.timestamps.updated_at = now().toISOString();
+        return nextRun;
+      })(),
+      scorecard: await loadRunScorecard(dataRoot, repositoryIdentity, runId),
+      packet: checkpointPacket,
+      artifacts: checkpointArtifacts
+    });
+    writtenAnswers.push({ answer, request: item.request, receipt });
+  }
+
+  const totalAnswered = (bundle.developerAnswers?.length ?? 0) + writtenAnswers.length;
+  const remainingQuestions = Math.max(0, bundle.interactionPacket.decisions.length - totalAnswered);
   const nextStatus = remainingQuestions > 0
     ? { ...bundle.status, status: "question-blocked", active_phase: bundle.status?.active_phase ?? "analysis-plan" }
     : { ...bundle.status, status: "waiting-agent-authority", active_phase: "analysis-plan" };
   await writeAlignmentOperationStatus(dataRoot, repositoryIdentity, nextStatus);
   const refreshed = await loadLiveAlignmentOperationBundle(dataRoot, repositoryIdentity, bundle.operation.id);
+  const allAnswers = [
+    ...replayed.map((item) => item.answer),
+    ...writtenAnswers.map((item) => item.answer)
+  ];
   return {
     run,
     operation: refreshed.operation,
@@ -274,11 +340,51 @@ export async function recordAlignmentAnswer({
     status: refreshed.status,
     lease: refreshed.lease,
     fence: refreshed.fence,
-    request,
-    receipt,
-    answer,
-    storedAnswer,
-    replayed: false,
+    answers: allAnswers,
+    answer: allAnswers.length === 1 ? allAnswers[0] : allAnswers[allAnswers.length - 1],
+    receipts: [
+      ...replayed.map((item) => item.receipt),
+      ...writtenAnswers.map((item) => item.receipt)
+    ],
+    receipt: writtenAnswers.length > 0
+      ? writtenAnswers[writtenAnswers.length - 1].receipt
+      : replayed[replayed.length - 1]?.receipt ?? null,
+    requests: [
+      ...replayed.map((item) => item.request),
+      ...writtenAnswers.map((item) => item.request)
+    ],
+    request: writtenAnswers.length > 0
+      ? writtenAnswers[writtenAnswers.length - 1].request
+      : replayed[replayed.length - 1]?.request ?? null,
+    storedAnswer: writtenAnswers.length > 0 ? writtenAnswers[writtenAnswers.length - 1].answer : null,
+    replayed: writtenAnswers.length === 0,
     next_action: nextLiveAction(refreshed.status)
   };
+}
+
+export async function recordAlignmentAnswer({
+  dataRoot,
+  supervisorRoot,
+  repositoryIdentity,
+  runId,
+  packetSha256 = null,
+  decisionId,
+  optionId,
+  answers = null,
+  responseProvider = null,
+  now = () => new Date()
+}) {
+  const packet = Array.isArray(answers) && answers.length > 0
+    ? answers
+    : [{ decisionId, optionId }];
+  return recordAlignmentAnswers({
+    dataRoot,
+    supervisorRoot,
+    repositoryIdentity,
+    runId,
+    packetSha256,
+    answers: packet,
+    responseProvider,
+    now
+  });
 }

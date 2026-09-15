@@ -44,7 +44,7 @@ import { loadResearchRecipesForContinue } from "../../runtime/src/research-recip
 import { createLocalReadonlyAnalysisAdapter, LOCAL_READONLY_ADAPTER_ID } from "../../../adapters/agents/local-readonly/index.mjs";
 import { recordAlignmentAnswer } from "../../runtime/src/alignment-answer.mjs";
 import { issueCommandSystemEvidence, issueCommandTestEvidence } from "../../runtime/src/supervisor-evidence.mjs";
-import { createSupervisorApprovalRequest, recordInteractiveApprovalDecision } from "../../runtime/src/supervisor-approval.mjs";
+import { createSupervisorApprovalRequest, listPendingApprovalRequestsForRun, recordInteractiveApprovalDecisions } from "../../runtime/src/supervisor-approval.mjs";
 import { applyRunGateFromApprovalReceipt, reconcileRunGatesFromApprovals } from "../../runtime/src/run-gate-approval.mjs";
 import { initializeSupervisorIdentity } from "../../runtime/src/supervisor-store.mjs";
 import { loadCapabilityAuthorizationView, requestCapabilityAuthorization, resolveCapabilityApprovalContext } from "../../runtime/src/capability-authorization.mjs";
@@ -62,12 +62,12 @@ Usage:
   devharness supervisor-init [--format text|json]
   devharness request-approval --run ID --gate GATE --subject ID --subject-sha SHA [--repo PATH]
   devharness request-capability --run ID --capability ID [--expires-minutes N] [--repo PATH] [--data-dir PATH]
-  devharness approve --request ID [--repo PATH] [--data-dir PATH]
+  devharness approve (--request ID [--request ID ...] | --run ID --pending) [--repo PATH] [--data-dir PATH]
   devharness verify --command ID [--repo PATH] [--config PATH] [--data-dir PATH] [--run ID --execute] [--attest] [--timeout-seconds N] [--format text|json]
   devharness goal --goal TEXT [--repo PATH] [--data-dir PATH] [--format text|json]
   devharness advance --run ID [--repo PATH] [--data-dir PATH] [--artifact-dir PATH] [--command ID] [--format text|json]
   devharness align --run ID [--continue|--tick] [--agent ID] [--agent-profile ID] [--research-recipes PATH] [--repo PATH] [--data-dir PATH] [--format text|json]
-  devharness answer --run ID --decision ID [--option ID] [--packet SHA] [--repo PATH] [--data-dir PATH] [--format text|json]
+  devharness answer --run ID --decision ID --option ID [--decision ID --option ID ...] [--packet SHA] [--repo PATH] [--data-dir PATH] [--format text|json]
   devharness request-scope --run ID [--repo PATH] [--data-dir PATH] [--format text|json]
   devharness retry --run ID --operation ID [--repo PATH] [--data-dir PATH] [--format text|json]
   devharness cancel --run ID --operation ID [--repo PATH] [--data-dir PATH] [--format text|json]
@@ -83,7 +83,7 @@ Commands:
   request-approval Create a signed, revision-bound pending request; this does not approve it.
   request-capability Request exactly one bounded capability from the current Alignment Brief.
              Defaults: agent-runtime 720m, network-research 480m, others 60m (max 1440). Re-request expired/stale without losing the Goal Run.
-  approve    Record a decision only through an exact foreground TTY confirmation. JSON and pipes are refused; independent human authentication is pending.
+  approve    Record one or more decisions in a single foreground TTY confirmation (--request repeated, or --run + --pending). JSON and pipes are refused; never silently auto-approves.
   verify    Plan an isolated command. Execution requires a Goal Run and its current signed capabilities.
   goal      Create a durable Goal Run at the current committed revision. Does not execute an agent.
   advance   Perform the next safe Goal Run step: static understanding from received, or post-scope plan→change→verify prep after gates.scope approval.
@@ -121,6 +121,9 @@ function parseArguments(argv) {
     subjectSha256: null,
     operationId: null,
     requestId: null,
+    requestIds: [],
+    pending: false,
+    answerPairs: [],
     capabilityId: null,
     configPath: null,
     expiresInMinutes: null,
@@ -160,11 +163,17 @@ function parseArguments(argv) {
       options.agentProfileId = argv[++index];
       if (!options.agentProfileId) throw new Error("--agent-profile requires an agent profile id");
     } else if (argument === "--decision") {
-      options.decisionId = argv[++index];
-      if (!options.decisionId) throw new Error("--decision requires a decision id");
+      const decisionId = argv[++index];
+      if (!decisionId) throw new Error("--decision requires a decision id");
+      options.decisionId = decisionId;
+      options.answerPairs.push({ decisionId, optionId: null });
     } else if (argument === "--option") {
-      options.optionId = argv[++index];
-      if (!options.optionId) throw new Error("--option requires an option id");
+      const optionId = argv[++index];
+      if (!optionId) throw new Error("--option requires an option id");
+      options.optionId = optionId;
+      const open = [...options.answerPairs].reverse().find((pair) => pair.optionId == null);
+      if (!open) throw new Error("--option requires a preceding --decision");
+      open.optionId = optionId;
     } else if (argument === "--packet") {
       options.packetSha256 = argv[++index];
       if (!options.packetSha256) throw new Error("--packet requires a packet digest");
@@ -178,8 +187,12 @@ function parseArguments(argv) {
       options.subjectSha256 = argv[++index];
       if (!options.subjectSha256) throw new Error("--subject-sha requires a canonical SHA-256 hash");
     } else if (argument === "--request") {
-      options.requestId = argv[++index];
-      if (!options.requestId) throw new Error("--request requires an approval request id");
+      const requestId = argv[++index];
+      if (!requestId) throw new Error("--request requires an approval request id");
+      options.requestIds.push(requestId);
+      if (!options.requestId) options.requestId = requestId;
+    } else if (argument === "--pending") {
+      options.pending = true;
     } else if (argument === "--operation") {
       options.operationId = argv[++index];
       if (!options.operationId) throw new Error("--operation requires an operation id");
@@ -735,6 +748,11 @@ export async function runCli(argv, io = console, services = {}) {
 
   if (options.command === "answer") {
     if (!options.runId) throw new Error("answer requires --run ID");
+    const answerPairs = options.answerPairs.length > 0
+      ? options.answerPairs
+      : (options.decisionId && options.optionId ? [{ decisionId: options.decisionId, optionId: options.optionId }] : []);
+    if (answerPairs.length === 0) throw new Error("answer requires --decision ID --option ID (repeatable as pairs)");
+    if (answerPairs.some((pair) => !pair.optionId)) throw new Error("each --decision requires a matching --option");
     const { dataRoot } = resolveExternalDataRoot(snapshot.repository.root_uri, options.dataRoot);
     const bundleInput = await loadCurrentLiveAlignmentBundle(dataRoot, snapshot.repository.identity, options.runId, {
       agentId: options.agentId ?? "devharness-cli-local-agent",
@@ -748,8 +766,9 @@ export async function runCli(argv, io = console, services = {}) {
       repositoryIdentity: snapshot.repository.identity,
       runId: options.runId,
       packetSha256: options.packetSha256 ?? null,
-      decisionId: options.decisionId,
-      optionId: options.optionId,
+      decisionId: answerPairs[0].decisionId,
+      optionId: answerPairs[0].optionId,
+      answers: answerPairs,
       responseProvider: services.answerResponse,
       now: () => new Date()
     });
@@ -768,9 +787,13 @@ export async function runCli(argv, io = console, services = {}) {
       receipt: answerResult.receipt,
       next_action: nextLiveAction(refreshed.status)
     };
+    const answerSummary = (answerResult.answers ?? [answerResult.answer]).filter(Boolean)
+      .map((answer) => `${answer.decision_id} → ${answer.option_id}`).join("; ");
+    const receiptSummary = (answerResult.receipts ?? [answerResult.receipt]).filter(Boolean)
+      .map((receipt) => receipt.id).join(" ") || "replayed";
     io.log(options.format === "json"
       ? JSON.stringify(result, null, 2)
-      : `Answered: ${answerResult.answer.decision_id} → ${answerResult.answer.option_id}\nReceipt: ${answerResult.receipt?.id ?? "replayed"}\nState: ${refreshed.status.status}\nNext: ${result.next_action}`);
+      : `Answered: ${answerSummary}\nReceipt: ${receiptSummary}\nState: ${refreshed.status.status}\nNext: ${result.next_action}`);
     return refreshed.status.status === "ready" ? 0 : 2;
   }
 
@@ -1174,40 +1197,80 @@ export async function runCli(argv, io = console, services = {}) {
       expiresInMinutes: options.expiresInMinutes,
       now: () => new Date(services.now?.() ?? Date.now())
     });
-    io.log(options.format === "json" ? JSON.stringify(result, null, 2) : `Capability approval requested: ${result.capability.id}\nOperation: ${result.capability.operation}\nTarget: ${result.capability.target}\nScope: ${result.capability.scope.join(", ")}\nRisk: ${result.capability.risk}\nRequest: ${result.request.id}\nExpires: ${result.request.expires_at} (${result.expires_in_minutes} minutes)\nNext: devharness approve --repo ${fileURLToPath(snapshot.repository.root_uri)} --data-dir ${dataRoot} --request ${result.request.id}`);
+    if (options.format === "json") {
+      io.log(JSON.stringify(result, null, 2));
+    } else if (result.reused && result.reuse_kind === "approved-grant") {
+      io.log(`Capability already approved within TTL: ${result.capability.id}\nOperation: ${result.capability.operation}\nTarget: ${result.capability.target}\nRequest: ${result.request.id}\nReceipt: ${result.receipt.id}\nExpires: ${result.receipt.expires_at}\nNext: no new TTY approve required for this grant`);
+    } else if (result.reused && result.reuse_kind === "pending-request") {
+      io.log(`Capability already pending: ${result.capability.id}\nOperation: ${result.capability.operation}\nTarget: ${result.capability.target}\nRequest: ${result.request.id}\nExpires: ${result.request.expires_at} (${result.expires_in_minutes} minutes)\nNext: devharness approve --repo ${fileURLToPath(snapshot.repository.root_uri)} --data-dir ${dataRoot} --request ${result.request.id}`);
+    } else {
+      io.log(`Capability approval requested: ${result.capability.id}\nOperation: ${result.capability.operation}\nTarget: ${result.capability.target}\nScope: ${result.capability.scope.join(", ")}\nRisk: ${result.capability.risk}\nRequest: ${result.request.id}\nExpires: ${result.request.expires_at} (${result.expires_in_minutes} minutes)\nNext: devharness approve --repo ${fileURLToPath(snapshot.repository.root_uri)} --data-dir ${dataRoot} --request ${result.request.id}`);
+    }
     return 0;
   }
 
   if (options.command === "approve") {
-    if (!options.requestId) throw new Error("approve requires --request ID");
     if (options.format === "json") throw new Error("Approval is unavailable in JSON mode; use the authenticated foreground TTY.");
     const { dataRoot } = resolveExternalDataRoot(snapshot.repository.root_uri, options.dataRoot);
     const supervisorRoot = services.supervisorRoot ?? defaultSupervisorRoot();
-    const capability = await resolveCapabilityApprovalContext({ dataRoot, supervisorRoot, repositoryIdentity: snapshot.repository.identity, requestId: options.requestId, now: new Date(services.now?.() ?? Date.now()) });
-    const receipt = await recordInteractiveApprovalDecision({
+    const now = () => new Date(services.now?.() ?? Date.now());
+    let requestIds = [...options.requestIds];
+    if (options.pending) {
+      if (!options.runId) throw new Error("approve --pending requires --run ID");
+      const pending = await listPendingApprovalRequestsForRun({
+        supervisorRoot,
+        repositoryIdentity: snapshot.repository.identity,
+        runId: options.runId,
+        now: now()
+      });
+      if (pending.length === 0) throw new Error(`No pending approval requests for run ${options.runId}.`);
+      const pendingIds = pending.map((request) => request.id);
+      requestIds = requestIds.length > 0
+        ? requestIds.filter((id) => pendingIds.includes(id))
+        : pendingIds;
+      if (requestIds.length === 0) throw new Error("None of the supplied --request ids are pending for that run.");
+    }
+    if (requestIds.length === 0) {
+      throw new Error("approve requires --request ID (repeatable) or --run ID --pending");
+    }
+    const capabilitiesByRequestId = {};
+    for (const requestId of requestIds) {
+      const capability = await resolveCapabilityApprovalContext({
+        dataRoot,
+        supervisorRoot,
+        repositoryIdentity: snapshot.repository.identity,
+        requestId,
+        now: now()
+      });
+      if (capability) capabilitiesByRequestId[requestId] = capability;
+    }
+    const batch = await recordInteractiveApprovalDecisions({
       supervisorRoot,
       repositoryIdentity: snapshot.repository.identity,
-      requestId: options.requestId,
-      capability,
+      requestIds,
+      capabilitiesByRequestId,
       responseProvider: services.approveResponse ?? null,
-      now: () => new Date(services.now?.() ?? Date.now())
+      now
     });
-    let gateApplication = null;
-    if (["scope", "delivery"].includes(receipt.gate)) {
-      gateApplication = await applyRunGateFromApprovalReceipt({
+    const gateLines = [];
+    for (const receipt of batch.receipts) {
+      if (!["scope", "delivery"].includes(receipt.gate)) continue;
+      const gateApplication = await applyRunGateFromApprovalReceipt({
         dataRoot,
         repositoryIdentity: snapshot.repository.identity,
         receipt,
-        now: () => new Date(services.now?.() ?? Date.now())
+        now
       });
+      if (gateApplication?.applied) {
+        gateLines.push(`Goal Run gate: ${receipt.gate}=${gateApplication.run.gates[receipt.gate].status}`);
+      } else if (gateApplication?.reason === "already-applied") {
+        gateLines.push(`Goal Run gate: ${receipt.gate} already ${gateApplication.run.gates[receipt.gate].status}`);
+      }
     }
-    const gateLine = gateApplication?.applied
-      ? `\nGoal Run gate: ${receipt.gate}=${gateApplication.run.gates[receipt.gate].status}`
-      : gateApplication?.reason === "already-applied"
-        ? `\nGoal Run gate: ${receipt.gate} already ${gateApplication.run.gates[receipt.gate].status}`
-        : "";
-    io.log(`Decision recorded: ${receipt.decision}\nReceipt: ${receipt.id}\nIssuer: ${receipt.attestation.issuer_fingerprint}${gateLine}`);
-    return receipt.decision === "approved" ? 0 : 2;
+    const receiptLines = batch.receipts.map((receipt) => `Receipt: ${receipt.id} (${receipt.request_id})`).join("\n");
+    const gateBlock = gateLines.length ? `\n${gateLines.join("\n")}` : "";
+    io.log(`Decision recorded: ${batch.decision}\nRequests: ${batch.request_ids.join(" ")}\n${receiptLines}\nIssuer: ${batch.receipts[0].attestation.issuer_fingerprint}${gateBlock}`);
+    return batch.decision === "approved" ? 0 : 2;
   }
 
   if (options.command === "onboard") {

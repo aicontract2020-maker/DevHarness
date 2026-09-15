@@ -112,13 +112,89 @@ export function formatForegroundApproval(request, identity, capability = null, d
   ].join("");
 }
 
-export async function recordInteractiveApprovalDecision({
+export function formatForegroundApprovalBatch(entries, identity) {
+  if (!Array.isArray(entries) || entries.length === 0) {
+    throw new Error("Batch approval requires at least one pending request.");
+  }
+  if (entries.length === 1) {
+    const only = entries[0];
+    return formatForegroundApproval(only.request, identity, only.capability ?? null, only.details ?? null);
+  }
+  const blocks = entries.map((entry, index) => {
+    const { request, capability = null, details = null } = entry;
+    const capabilityLines = capability ? [
+      `  Capability: ${capability.capability}`,
+      `  Operation: ${capability.operation}`,
+      `  Target: ${capability.target}`,
+      `  Scope: ${capability.scope.join(", ")}`,
+      `  Risk: ${capability.risk}`
+    ] : [];
+    const detailLines = details ? details.map((line) => `  ${line}`) : [];
+    return [
+      `[${index + 1}/${entries.length}] ${request.id}`,
+      `  Gate: ${request.gate}`,
+      ...capabilityLines,
+      ...detailLines,
+      `  Run: ${request.run_id}`,
+      `  Subject: ${request.subject.id}`,
+      `  Subject hash: ${request.subject.artifact_sha256}`,
+      `  Expires: ${request.expires_at}`
+    ].join("\n");
+  });
+  return [
+    "\nDevHarness foreground batch approval\n",
+    `Supervisor: ${identity.fingerprint}\n`,
+    `Pending requests: ${entries.length}\n\n`,
+    blocks.join("\n\n"),
+    "\n\n"
+  ].join("");
+}
+
+function uniqueRequestIds(requestIds) {
+  if (!Array.isArray(requestIds) || requestIds.length === 0) {
+    throw new Error("Approval requires at least one request id.");
+  }
+  const seen = new Set();
+  const ordered = [];
+  for (const requestId of requestIds) {
+    if (typeof requestId !== "string" || !requestId.trim()) {
+      throw new Error("Approval request ids must be non-empty strings.");
+    }
+    if (seen.has(requestId)) continue;
+    seen.add(requestId);
+    ordered.push(requestId);
+  }
+  return ordered;
+}
+
+export async function listPendingApprovalRequestsForRun({
   supervisorRoot,
   repositoryIdentity,
-  requestId,
+  runId,
+  now = new Date()
+}) {
+  if (!runId) throw new Error("Listing pending approvals requires a run id.");
+  const current = typeof now === "function" ? now() : now;
+  const requests = await listVerifiedApprovalRequests(supervisorRoot, repositoryIdentity, { now: current });
+  const receipts = await listVerifiedApprovalReceipts(supervisorRoot, repositoryIdentity, { now: current });
+  const decided = new Set(receipts.map((receipt) => receipt.request_id));
+  return requests
+    .filter((request) => request.run_id === runId && !decided.has(request.id))
+    .sort((left, right) => left.requested_at.localeCompare(right.requested_at) || left.id.localeCompare(right.id));
+}
+
+/**
+ * Record one or more approval decisions in a single foreground TTY session.
+ * Confirmation must name every request id exactly (APPROVE id1 id2 … / REJECT …).
+ * Piped / JSON decisions remain refused unless a test responseProvider is supplied.
+ */
+export async function recordInteractiveApprovalDecisions({
+  supervisorRoot,
+  repositoryIdentity,
+  requestIds,
   humanId = "developer",
-  capability = null,
-  details = null,
+  capabilitiesByRequestId = null,
+  detailsByRequestId = null,
   responseProvider = null,
   emitPrompt = true,
   now = () => new Date()
@@ -128,21 +204,36 @@ export async function recordInteractiveApprovalDecision({
   if (!responseProvider && (!interactiveInput.isTTY || !interactiveOutput.isTTY)) {
     throw new Error("Approval requires the foreground Supervisor TTY; piped and JSON decisions are refused. Independent human authentication is not yet implemented.");
   }
+  const orderedIds = uniqueRequestIds(requestIds);
   const current = now();
   const requests = await listVerifiedApprovalRequests(supervisorRoot, repositoryIdentity, { now: current });
-  const request = requests.find((candidate) => candidate.id === requestId);
-  if (!request) throw new Error("No current verified pending approval request exists with that id.");
   const decisions = await listVerifiedApprovalReceipts(supervisorRoot, repositoryIdentity, { now: current });
-  if (decisions.some((receipt) => receipt.request_id === request.id)) throw new Error("This approval request already has an immutable decision.");
-  if (request.gate === "capability") {
-    if (!capability || capability.id !== request.subject.id || hashContract(capability) !== request.subject.artifact_sha256) {
-      throw new Error("Capability approval requires the exact current bounded capability context.");
+  const decided = new Set(decisions.map((receipt) => receipt.request_id));
+  const byId = new Map(requests.map((request) => [request.id, request]));
+  const entries = [];
+  for (const requestId of orderedIds) {
+    const request = byId.get(requestId);
+    if (!request) throw new Error(`No current verified pending approval request exists with id ${requestId}.`);
+    if (decided.has(request.id)) throw new Error(`Approval request ${request.id} already has an immutable decision.`);
+    const capability = capabilitiesByRequestId?.[requestId] ?? null;
+    if (request.gate === "capability") {
+      if (!capability || capability.id !== request.subject.id || hashContract(capability) !== request.subject.artifact_sha256) {
+        throw new Error(`Capability approval for ${request.id} requires the exact current bounded capability context.`);
+      }
     }
+    entries.push({
+      request,
+      capability,
+      details: detailsByRequestId?.[requestId] ?? null
+    });
   }
 
   const identity = await loadSupervisorIdentity(supervisorRoot);
-  if (emitPrompt) interactiveOutput.write(formatForegroundApproval(request, identity, capability, details));
-  const prompt = `Type APPROVE ${request.id} or REJECT ${request.id}: `;
+  if (emitPrompt) interactiveOutput.write(formatForegroundApprovalBatch(entries, identity));
+  const idPhrase = orderedIds.join(" ");
+  const prompt = orderedIds.length === 1
+    ? `Type APPROVE ${idPhrase} or REJECT ${idPhrase}: `
+    : `Type APPROVE ${idPhrase} or REJECT ${idPhrase} (all ${orderedIds.length} ids, space-separated): `;
   const terminal = responseProvider
     ? null
     : createInterface({ input: interactiveInput, output: interactiveOutput, terminal: true });
@@ -156,14 +247,47 @@ export async function recordInteractiveApprovalDecision({
   } finally {
     terminal?.close();
   }
-  const approve = `APPROVE ${request.id}`;
-  const reject = `REJECT ${request.id}`;
-  if (answer !== approve && answer !== reject) throw new Error("Approval was not recorded because the exact confirmation phrase was not entered.");
-  return issueDecision({
+  const approve = `APPROVE ${idPhrase}`;
+  const reject = `REJECT ${idPhrase}`;
+  if (answer !== approve && answer !== reject) {
+    throw new Error("Approval was not recorded because the exact confirmation phrase was not entered.");
+  }
+  const decision = answer === approve ? "approved" : "rejected";
+  const decidedAt = current.toISOString();
+  const receipts = [];
+  for (const entry of entries) {
+    receipts.push(await issueDecision({
+      supervisorRoot,
+      request: entry.request,
+      decision,
+      humanId,
+      decidedAt
+    }));
+  }
+  return { decision, receipts, request_ids: orderedIds };
+}
+
+export async function recordInteractiveApprovalDecision({
+  supervisorRoot,
+  repositoryIdentity,
+  requestId,
+  humanId = "developer",
+  capability = null,
+  details = null,
+  responseProvider = null,
+  emitPrompt = true,
+  now = () => new Date()
+}) {
+  const batch = await recordInteractiveApprovalDecisions({
     supervisorRoot,
-    request,
-    decision: answer === approve ? "approved" : "rejected",
+    repositoryIdentity,
+    requestIds: [requestId],
     humanId,
-    decidedAt: current.toISOString()
+    capabilitiesByRequestId: capability ? { [requestId]: capability } : null,
+    detailsByRequestId: details ? { [requestId]: details } : null,
+    responseProvider,
+    emitPrompt,
+    now
   });
+  return batch.receipts[0];
 }

@@ -398,3 +398,65 @@ test("network-research authority is built from capability receipts without a sub
 
   assert.equal(buildNetworkResearchAuthorityFromReceipt({ ...receipt, decision: "rejected" }), null);
 });
+
+
+test("TTL reuse returns the live approved grant without a new pending request", async (t) => {
+  const fixture = await setup(t, { capabilities: [capability("agent-runtime"), capability("browser-runtime")] });
+  const evaluationTime = new Date("2026-08-31T17:10:00.000Z");
+  const issued = await requestCapabilityAuthorization({
+    ...fixture,
+    repositoryIdentity,
+    runId: fixture.run.id,
+    capabilityId: "agent-runtime",
+    now: () => evaluationTime
+  });
+  const receipt = await attestApprovalReceipt(fixture.supervisorRoot, {
+    schema_version: 1,
+    id: "approval-receipt-agent-ttl-1",
+    request_id: issued.request.id,
+    request_sha256: approvalRequestHash(issued.request),
+    run_id: issued.request.run_id,
+    repository_identity: issued.request.repository_identity,
+    relevant_head_sha: issued.request.relevant_head_sha,
+    gate: "capability",
+    subject: structuredClone(issued.request.subject),
+    nonce: issued.request.nonce,
+    decision: "approved",
+    decided_at: "2026-08-31T17:15:00.000Z",
+    decided_by: { id: "developer", kind: "human" },
+    source: "interactive-human-gate",
+    expires_at: issued.request.expires_at
+  });
+  await writeApprovalReceipt(fixture.supervisorRoot, repositoryIdentity, receipt);
+
+  const reused = await requestCapabilityAuthorization({
+    ...fixture,
+    repositoryIdentity,
+    runId: fixture.run.id,
+    capabilityId: "agent-runtime",
+    now: () => new Date("2026-08-31T18:00:00.000Z")
+  });
+  assert.equal(reused.reused, true);
+  assert.equal(reused.reuse_kind, "approved-grant");
+  assert.equal(reused.request.id, issued.request.id);
+  assert.equal(reused.receipt.id, receipt.id);
+
+  const pendingReuse = await requestCapabilityAuthorization({
+    ...fixture,
+    repositoryIdentity,
+    runId: fixture.run.id,
+    capabilityId: "browser-runtime",
+    now: () => evaluationTime
+  });
+  assert.equal(pendingReuse.reused, false);
+  const samePending = await requestCapabilityAuthorization({
+    ...fixture,
+    repositoryIdentity,
+    runId: fixture.run.id,
+    capabilityId: "browser-runtime",
+    now: () => new Date("2026-08-31T17:20:00.000Z")
+  });
+  assert.equal(samePending.reused, true);
+  assert.equal(samePending.reuse_kind, "pending-request");
+  assert.equal(samePending.request.id, pendingReuse.request.id);
+});
