@@ -4,6 +4,7 @@ import test from "node:test";
 import { createInitialGoalRun } from "../../core/src/goal-run.mjs";
 import { evaluateInteractionPacket } from "../../core/src/interaction-policy.mjs";
 import { createGoalUnderstandingCheckpoint } from "../src/alignment.mjs";
+import { formatRepositoryUnderstandingBrief } from "../src/onboard.mjs";
 
 const head = "a".repeat(40);
 const now = "2026-08-31T18:00:00.000Z";
@@ -43,6 +44,71 @@ function fixture() {
     workspace: { dirty: false, changed_file_count: 0 },
     mode: "read-only-plan",
     verdict: "needs-evidence",
+    summary: {
+      total_claims: 3,
+      proved_claims: 1,
+      unresolved_claims: 2,
+      conflict_claims: 0,
+      domain_knownness: {
+        database: {
+          total_claims: 5,
+          known_claims: 0,
+          unknown_claims: 4,
+          conflict_claims: 0,
+          subdomains: {
+            schema: { total_claims: 1, known_claims: 0, unknown_claims: 1, conflict_claims: 0 },
+            migrations: { total_claims: 1, known_claims: 0, unknown_claims: 1, conflict_claims: 0 },
+            constraints: { total_claims: 1, known_claims: 0, unknown_claims: 1, conflict_claims: 0 },
+            queries: { total_claims: 1, known_claims: 0, unknown_claims: 1, conflict_claims: 0 },
+            ownership: { total_claims: 1, known_claims: 0, unknown_claims: 0, conflict_claims: 0 }
+          }
+        },
+        frontend: {
+          total_claims: 4,
+          known_claims: 1,
+          unknown_claims: 2,
+          conflict_claims: 0,
+          subdomains: {
+            routes: { total_claims: 2, known_claims: 1, unknown_claims: 1, conflict_claims: 0 },
+            state: { total_claims: 1, known_claims: 0, unknown_claims: 1, conflict_claims: 0 },
+            user_flows: { total_claims: 1, known_claims: 0, unknown_claims: 0, conflict_claims: 0 }
+          }
+        },
+        backend: {
+          total_claims: 0,
+          known_claims: 0,
+          unknown_claims: 0,
+          conflict_claims: 0,
+          subdomains: {
+            api_contracts: { total_claims: 0, known_claims: 0, unknown_claims: 0, conflict_claims: 0 },
+            orchestration: { total_claims: 0, known_claims: 0, unknown_claims: 0, conflict_claims: 0 },
+            failure_paths: { total_claims: 0, known_claims: 0, unknown_claims: 0, conflict_claims: 0 }
+          }
+        }
+      },
+      claim_status_counts: {
+        "code-confirmed": 1,
+        "test-confirmed": 0,
+        "runtime-observed": 0,
+        detected: 1,
+        documented: 0,
+        conflict: 0,
+        unverified: 0,
+        "not-covered": 1
+      },
+      coverage_status_counts: {
+        "code-confirmed": 1,
+        "test-confirmed": 0,
+        "runtime-observed": 0,
+        detected: 1,
+        documented: 0,
+        conflict: 0,
+        unverified: 0,
+        "not-covered": 1,
+        "not-applicable": 7
+      },
+      priority_domains: ["database=detected", "security=not-covered"]
+    },
     claims: [
       { id: "repository-inventory", domain: "repository", status: "code-confirmed", summary: "Committed inventory inspected.", evidence_refs: [head] },
       { id: "database-surface", domain: "database", status: "detected", summary: "Database detected but not exercised.", evidence_refs: ["PostgreSQL"] },
@@ -75,7 +141,28 @@ test("static understanding compiles a traceable, non-approvable Alignment Brief"
   assert.equal(result.packet.verdict, "action-required");
   assert.equal(result.packet.actions.some((action) => action.kind === "approve"), false);
   assert.deepEqual(result.packet.attention.reasons, ["verification-blocker"]);
-  assert.equal(result.packet.sections.length <= 4, true);
+  assert.equal(result.packet.sections.length <= 5, true);
+  assert.equal(result.packet.sections[1].items.some((item) => item.id === "alignment-understanding-summary"), true);
+  assert.equal(result.packet.sections[1].items.some((item) => item.id === "alignment-domain-knownness"), true);
+  assert.equal(result.packet.sections[1].items.some((item) => item.id === "alignment-progress-summary"), true);
+  assert.equal(result.packet.sections[1].items.some((item) => item.id === "alignment-plan-crew"), true);
+  assert.equal(result.packet.sections[1].items.some((item) => item.id === "alignment-plan-checkpoints"), true);
+  assert.equal(result.packet.sections[1].items.some((item) => item.id === "alignment-plan-acceptance"), true);
+  assert.equal(result.packet.sections[1].items.some((item) => item.id === "alignment-stage-gates"), true);
+  assert.equal(result.packet.sections[1].items.some((item) => item.id === "alignment-stage-implement"), true);
+  assert.equal(result.packet.sections[1].items.some((item) => item.id === "alignment-stage-verify"), true);
+  assert.equal(result.packet.sections[1].items.some((item) => item.id === "alignment-stage-deliver"), true);
+  assert.equal(result.packet.sections.some((section) => section.title === "Execution graph"), true);
+  assert.equal(result.packet.sections.find((section) => section.title === "Execution graph")?.items.some((item) => item.id === "alignment-execution-graph-summary"), true);
+  assert.match(result.packet.sections.find((section) => section.title === "Confirmed project facts")?.items.find((item) => item.id === "alignment-plan-preflight")?.text ?? "", /Preflight path:/i);
+  assert.match(result.packet.sections.find((section) => section.title === "Confirmed project facts")?.items.find((item) => item.id === "alignment-plan-preflight")?.text ?? "", /Clarification queue:/i);
+  assert.match(formatRepositoryUnderstandingBrief(plan), /Plan sketch:/i);
+  assert.match(formatRepositoryUnderstandingBrief(plan), /Likely crew:/i);
+  assert.match(formatRepositoryUnderstandingBrief(plan), /Preflight path:/i);
+  assert.match(formatRepositoryUnderstandingBrief(plan), /Acceptance checkpoints:/i);
+  assert.match(formatRepositoryUnderstandingBrief(plan), /Execution graph:/i);
+  assert.match(formatRepositoryUnderstandingBrief(plan), /Execution waves:/i);
+  assert.match(formatRepositoryUnderstandingBrief(plan), /Critical path:/i);
   assert.equal(result.packet.sections.flatMap((section) => section.items).filter((item) => item.severity === "blocking").length > 0, true);
   assert.deepEqual(evaluateInteractionPacket(result.packet), { valid: true, reasons: [] });
   assert.equal(result.artifacts.length, 3);

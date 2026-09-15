@@ -11,8 +11,8 @@ function dimension(id, label, earned, possible) {
   };
 }
 
-export async function createProjectDeclarationReview(snapshot, config) {
-  const harness = await compileProjectHarness(snapshot, config);
+export async function createProjectDeclarationReview(snapshot, config, options = {}) {
+  const harness = await compileProjectHarness(snapshot, config, options);
   const interactive = config.platforms.some((platform) => ["web", "mobile", "desktop"].includes(platform));
   const launchCommands = harness.commands.filter((command) => command.kind === "launch");
   const verificationCommands = harness.commands.filter((command) => command.kind === "verify");

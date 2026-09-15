@@ -194,7 +194,8 @@ const analysisPlan = {
   conflicts: [],
   questions: [question],
   untrusted_instructions: [finding("instruction-1", "untrusted-instruction")],
-  research_topics: [{ id: "topic-1", purpose: "Check framework guidance.", public_identifiers: ["framework-v1"], source_refs: [sourceRef] }]
+  research_topics: [{ id: "topic-1", purpose: "Check framework guidance.", public_identifiers: ["framework-v1"], source_refs: [sourceRef] }],
+  research_tasks: [{ id: "research-task-1", topic_id: "topic-1", query: "Check framework guidance.", owner: "frontend", priority: 2, approval_capability: "network-research", status: "pending-approval", expected_outcome: "Confirm current framework guidance.", basis: ["framework-v1"] }]
 };
 
 const goalAnalysis = {

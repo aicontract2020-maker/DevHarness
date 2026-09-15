@@ -488,6 +488,74 @@ test("HTTP readiness driver records status without exposing response bodies", as
   assert.equal(cancelled, true);
 });
 
+
+test("configured command env_keys are allowlisted into the isolated process", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "devharness-envkeys-repo-"));
+  const dataRoot = await mkdtemp(path.join(os.tmpdir(), "devharness-envkeys-data-"));
+  t.after(() => Promise.all([
+    rm(root, { recursive: true, force: true }),
+    rm(dataRoot, { recursive: true, force: true })
+  ]));
+
+  await writeFile(
+    path.join(root, "package.json"),
+    JSON.stringify({
+      name: "envkeys-fixture",
+      scripts: {
+        test: "node -e \"console.log(process.env.DEVHARNESS_READINESS_SUMMARY || 'missing')\""
+      }
+    }, null, 2)
+  );
+  // No package-lock.json: skip npm ci so this unit test stays focused on env allowlisting.
+  git(root, ["init", "-b", "main"]);
+  git(root, ["config", "user.email", "devharness@example.invalid"]);
+  git(root, ["config", "user.name", "DevHarness Tests"]);
+  git(root, ["add", "."]);
+  git(root, ["commit", "-m", "fixture"]);
+
+  let snapshot = await discoverRepository(root);
+  await initializeProject(snapshot, { write: true });
+  const { config: baseConfig } = await readProjectConfig(root);
+  const config = structuredClone(baseConfig);
+  const command = config.quality.commands.find((item) => item.kind === "test");
+  assert.ok(command);
+  command.id = "docs-readiness-summary";
+  command.run = "node -e \"console.log(process.env.DEVHARNESS_READINESS_SUMMARY || 'missing'); console.log(process.env.UNDECLARED_SECRET || 'redacted')\"";
+  command.env_keys = ["DEVHARNESS_READINESS_SUMMARY"];
+  command.source = "external docs-only probe";
+  config.quality.commands = [command];
+  await writeFile(path.join(root, "devharness.yaml"), `${JSON.stringify(config, null, 2)}\n`);
+  git(root, ["add", "devharness.yaml"]);
+  git(root, ["commit", "-m", "configure env_keys command"]);
+  snapshot = await discoverRepository(root);
+
+  const plan = await createVerificationPlan({
+    snapshot,
+    config,
+    commandId: "docs-readiness-summary",
+    dataRoot
+  });
+  assert.equal(plan.environment.declared_keys.includes("DEVHARNESS_READINESS_SUMMARY"), true);
+  assert.deepEqual(plan.command.env_keys, ["DEVHARNESS_READINESS_SUMMARY"]);
+
+  const summaryPath = path.join(dataRoot, "readiness-summary.md");
+  await writeFile(summaryPath, "Readiness summary\n");
+  const receipt = await executeVerificationPlan(plan, {
+    environment: {
+      ...process.env,
+      DEVHARNESS_READINESS_SUMMARY: summaryPath,
+      UNDECLARED_SECRET: "must-not-reach-command"
+    }
+  });
+
+  assert.equal(receipt.outcome.status, "pass");
+  assert.equal(receipt.environment.set_keys.includes("DEVHARNESS_READINESS_SUMMARY"), true);
+  const stdout = await readFile(plan.paths.stdout, "utf8");
+  assert.match(stdout, new RegExp(summaryPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  assert.match(stdout, /redacted/);
+  assert.equal(stdout.includes("must-not-reach-command"), false);
+});
+
 test("a passing command produces an intact current-revision receipt", async (t) => {
   const fixture = await createRepository(t);
   const plan = await createVerificationPlan({

@@ -259,6 +259,7 @@ const fixtures = {
             text: "A user can securely reset a forgotten password by email.",
             confidence: "confirmed",
             severity: "info",
+            basis: ["understanding", "acceptance"],
             source_refs: ["requirements"]
           }
         ]
@@ -529,6 +530,53 @@ test("interaction packets enforce the developer decision budget", () => {
   assert.ok(result.errors.some((error) => error.path === "$.decisions" && /at most 3/.test(error.message)));
 });
 
+test("interaction packets enforce the section bound", () => {
+  const packet = structuredClone(fixtures["interaction-packet.schema.json"]);
+  packet.sections = Array.from({ length: 10 }, (_, index) => ({
+    ...structuredClone(packet.sections[0]),
+    id: `section-${index + 1}`,
+    items: packet.sections[0].items.map((item) => ({ ...structuredClone(item), id: `${item.id}-${index + 1}` }))
+  }));
+  packet.traceability = packet.sections.flatMap((section) => section.items.map((item) => ({ item_id: item.id, source_refs: item.source_refs })));
+  packet.compression.surfaced_item_count = packet.sections.flatMap((section) => section.items).length + packet.decisions.length;
+
+  const result = validator("interaction-packet.schema.json")(packet);
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.some((error) => error.path === "$.sections" && /at most 9/.test(error.message)));
+});
+
+test("interaction packet items can include evidence bases", () => {
+  const packet = structuredClone(fixtures["interaction-packet.schema.json"]);
+  packet.sections[0].items[0].metrics = { known_claims: 3, total_claims: 5, unknown_claims: 2, conflict_claims: 0 };
+  const result = validator("interaction-packet.schema.json")(packet);
+  assert.equal(result.valid, true);
+  assert.deepEqual(packet.sections[0].items[0].basis, ["understanding", "acceptance"]);
+  assert.deepEqual(packet.sections[0].items[0].metrics, { known_claims: 3, total_claims: 5, unknown_claims: 2, conflict_claims: 0 });
+});
+
+test("legacy interaction packets remain valid without new evidence-basis decorations", () => {
+  const packet = structuredClone(fixtures["interaction-packet.schema.json"]);
+  delete packet.sections[0].items[0].basis;
+  delete packet.sections[0].items[0].metrics;
+  assert.deepEqual(validator("interaction-packet.schema.json")(packet), { valid: true, errors: [] });
+});
+
+test("ready alignment briefs remain schema-valid when the approval is bound to the exact brief", () => {
+  const packet = structuredClone(fixtures["interaction-packet.schema.json"]);
+  packet.kind = "alignment-brief";
+  packet.verdict = "ready";
+  packet.summary = "The brief is ready for explicit scope approval.";
+  packet.attention = { required: true, count: 0, reasons: ["gate-approval"] };
+  packet.decisions = [];
+  packet.actions = [
+    { id: "approve-scope", label: "Approve scope", kind: "approve", recommended: true },
+    { id: "inspect-brief", label: "Inspect the brief", kind: "inspect", recommended: false }
+  ];
+
+  const result = validator("interaction-packet.schema.json")(packet);
+  assert.equal(result.valid, true, JSON.stringify(result.errors));
+});
+
 test("all four developer interaction packet kinds are portable contract values", () => {
   const validate = validator("interaction-packet.schema.json");
   for (const kind of ["alignment-brief", "decision-queue", "progress-pulse", "delivery-brief"]) {
@@ -540,11 +588,18 @@ test("all four developer interaction packet kinds are portable contract values",
 
 test("run events expose interaction publication and attention lifecycle", () => {
   const validate = validator("run-event.schema.json");
-  for (const type of ["interaction.published", "attention.requested", "attention.resolved"]) {
+  for (const type of ["interaction.published", "attention.requested", "attention.resolved", "run.cancelled"]) {
     const event = structuredClone(fixtures["run-event.schema.json"]);
     event.type = type;
     assert.equal(validate(event).valid, true, type);
   }
+});
+
+test("review run indexes can represent cancelled runs", () => {
+  const index = structuredClone(fixtures["review-run-index.schema.json"]);
+  index.runs[0].state = "cancelled";
+  index.runs[0].verdict = "blocked";
+  assert.deepEqual(validator("review-run-index.schema.json")(index), { valid: true, errors: [] });
 });
 
 test("numeric contract upper bounds are enforced", () => {

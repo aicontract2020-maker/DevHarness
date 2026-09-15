@@ -29,6 +29,14 @@ export function evaluateInteractionPacket(packet) {
     addReason(reasons, "surface_count_mismatch", "Compression surfaced count does not match the visible claims and decisions.");
   }
 
+  if (sections.length > 9) {
+    addReason(reasons, "section_bound_exceeded", "A developer packet can surface at most nine sections.");
+  }
+
+  if (decisions.length > 3) {
+    addReason(reasons, "decision_bound_exceeded", "A developer packet can surface at most three decisions.");
+  }
+
   for (const item of items) {
     const mappedSources = mappingByItem.get(item.id);
     if (!mappedSources) {
@@ -43,6 +51,20 @@ export function evaluateInteractionPacket(packet) {
     for (const sourceRef of mappedSources) {
       if (!artifactIds.has(sourceRef)) {
         addReason(reasons, "source_missing", `Surfaced item ${item.id} references unknown artifact ${sourceRef}.`);
+      }
+    }
+  }
+
+  for (const decision of decisions) {
+    const mappedSources = mappingByItem.get(decision.id);
+    if (!mappedSources) {
+      addReason(reasons, "decision_untraceable", `Decision ${decision.id} has no traceability mapping.`);
+      continue;
+    }
+
+    for (const sourceRef of mappedSources) {
+      if (!artifactIds.has(sourceRef)) {
+        addReason(reasons, "source_missing", `Decision ${decision.id} references unknown artifact ${sourceRef}.`);
       }
     }
   }
@@ -72,17 +94,32 @@ export function evaluateInteractionPacket(packet) {
     if (packet?.attention?.required !== true || !reasonsSet.has("gate-approval")) {
       addReason(reasons, "gate_attention_missing", "A ready Alignment or Delivery Brief must request explicit gate approval.");
     }
+    const approveActions = (packet?.actions ?? []).filter((action) => action.kind === "approve");
+    if (approveActions.length !== 1 || approveActions[0].recommended !== true) {
+      addReason(reasons, "approval_action_missing", "A ready Alignment or Delivery Brief must expose exactly one recommended approve action.");
+    }
   }
 
   if (packet?.kind === "decision-queue") {
     if (decisions.length === 0 || packet?.attention?.required !== true || packet?.verdict !== "action-required") {
       addReason(reasons, "invalid_decision_queue", "A Decision Queue must contain decisions and require action.");
     }
+    if ((packet?.actions ?? []).some((action) => action.kind === "approve")) {
+      addReason(reasons, "approve_action_hidden", "A Decision Queue must never offer approve as a next action.");
+    }
+    const recommendedActions = (packet?.actions ?? []).filter((action) => action.recommended);
+    if (recommendedActions.length !== 1 || !["answer", "inspect"].includes(recommendedActions[0]?.kind)) {
+      addReason(reasons, "decision_action_shape", "A Decision Queue must expose exactly one recommended answer or inspect action.");
+    }
   }
 
   if (packet?.kind === "progress-pulse") {
     if (decisions.length > 0 || packet?.attention?.required !== false || packet?.attention?.count !== 0) {
       addReason(reasons, "progress_requires_action", "A Progress Pulse is a no-action view and cannot carry unresolved decisions.");
+    }
+    const actions = Array.isArray(packet?.actions) ? packet.actions : [];
+    if (actions.length !== 1 || actions[0].kind !== "inspect" || actions[0].recommended !== true) {
+      addReason(reasons, "progress_action_shape", "A Progress Pulse must expose exactly one recommended inspect action.");
     }
   }
 

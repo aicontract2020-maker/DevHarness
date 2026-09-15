@@ -14,6 +14,7 @@ import { evaluateReadiness, formatReadinessReport } from "../src/doctor.mjs";
 import { initializeProject, proposeProjectConfig } from "../src/init.mjs";
 import { createOnboardingPlan, formatRepositoryUnderstandingBrief } from "../src/onboard.mjs";
 import { createProjectDeclarationReview } from "../src/project-declaration-review.mjs";
+import { compileProjectHarness } from "../src/harness.mjs";
 
 function git(root, args) {
   return execFileSync("git", ["-C", root, ...args], { encoding: "utf8" }).trim();
@@ -163,6 +164,47 @@ test("init is a dry run by default and refuses to overwrite project configuratio
   await assert.rejects(initializeProject(snapshot, { write: true }), { code: "EEXIST" });
 });
 
+test("init proposes lifecycle bindings when a Playwright base URL is available", async (t) => {
+  const root = await createWebRepository(t);
+  await writeFile(
+    path.join(root, "playwright.config.ts"),
+    [
+      "export default {",
+      "  use: {",
+      "    baseURL: 'http://127.0.0.1:3000'",
+      "  }",
+      "};",
+      ""
+    ].join("\n")
+  );
+
+  const snapshot = await discoverRepository(root);
+  const proposal = proposeProjectConfig(snapshot);
+
+  assert.equal(proposal.harness.services.length, 1);
+  assert.deepEqual(proposal.harness.services[0], {
+    id: "root-dev-service",
+    command_id: "root-dev",
+    readiness: {
+      kind: "http",
+      url: "http://127.0.0.1:3000",
+      expected_statuses: [200],
+      timeout_ms: 60000,
+      interval_ms: 1000
+    },
+    shutdown: {
+      grace_ms: 1000
+    }
+  });
+  assert.deepEqual(proposal.harness.verifications, [
+    {
+      command_id: "web-playwright",
+      service_ids: ["root-dev-service"],
+      warmup: []
+    }
+  ]);
+});
+
 test("project declaration review quantifies structural gaps without trusting discovery", async (t) => {
   const root = await createWebRepository(t);
   const snapshot = await discoverRepository(root);
@@ -183,6 +225,23 @@ test("project declaration review quantifies structural gaps without trusting dis
   assert.ok(review.blockers.some((blocker) => blocker.code === "interactive-verification-unbound"));
   assert.equal(review.decision.id, "confirm-autonomous-test-runtime");
   assert.equal(JSON.stringify(review).includes("super-secret-test-value"), false);
+});
+
+test("review and harness compilation can opt into a dirty local preview without relaxing the baseline warning", async (t) => {
+  const root = await createWebRepository(t);
+  await writeFile(path.join(root, "local-preview-note.txt"), "preview-only\n");
+  const snapshot = await discoverRepository(root);
+  const config = proposeProjectConfig(snapshot);
+
+  await assert.rejects(compileProjectHarness(snapshot, config), /clean committed baseline/);
+
+  const harness = await compileProjectHarness(snapshot, config, { allowDirtyBaseline: true });
+  assert.equal(harness.blockers.length > 0, true);
+
+  const review = await createProjectDeclarationReview(snapshot, config, { allowDirtyBaseline: true });
+  assert.equal(review.verdict, "blocked");
+  assert.equal(review.dimensions.find((item) => item.id === "repository-baseline").status, "missing");
+  assert.equal(review.dimensions.find((item) => item.id === "repository-baseline").earned, 0);
 });
 
 test("doctor reports unsafe environment handling without exposing the value", async (t) => {
@@ -211,20 +270,90 @@ test("onboarding remains honest about detected web and database capabilities", a
   await writeFile(path.join(root, "compose.yml"), "services:\n  db:\n    image: postgres:17\n");
   const snapshot = await discoverRepository(root);
   const report = evaluateReadiness(snapshot);
+  const registry = await contractRegistry();
   const plan = await createOnboardingPlan(snapshot, { report, config: null, configError: "missing" });
+  const summary = plan.summary;
+  const claimedTotal = Object.values(summary.claim_status_counts).reduce((total, value) => total + value, 0);
+  const coverageTotal = Object.values(summary.coverage_status_counts).reduce((total, value) => total + value, 0);
 
   assert.equal(plan.mode, "read-only-plan");
   assert.equal(plan.workspace.dirty, true);
   assert.equal(plan.verdict, "needs-evidence");
+  assert.ok(plan.execution_plan);
+  assert.deepEqual(registry.validate("https://devharness.dev/schemas/v1/execution-plan.schema.json", plan.execution_plan), { valid: true, errors: [] });
+  assert.equal(summary.total_claims, plan.claims.length);
+  assert.equal(claimedTotal, plan.claims.length);
+  assert.equal(coverageTotal, plan.coverage.length);
+  assert.equal(summary.domain_knownness.database.total_claims >= 1, true);
+  assert.equal(summary.domain_knownness.database.subdomains.schema.total_claims >= 1, true);
+  assert.equal(summary.domain_knownness.frontend.total_claims >= 1, true);
+  assert.equal(summary.domain_knownness.frontend.subdomains.routes.total_claims >= 1, true);
+  assert.equal(summary.domain_knownness.backend.total_claims >= 1, true);
+  assert.equal(summary.domain_knownness.backend.subdomains.api_contracts.total_claims >= 1, true);
+  assert.match(formatRepositoryUnderstandingBrief(plan), /Execution graph:/i);
+  assert.ok(summary.priority_domains[0].startsWith("database="));
   assert.ok(plan.claims.some((claim) => claim.domain === "database" && claim.status === "detected"));
   assert.ok(plan.capability_requests.some((request) => request.capability === "database-runtime"));
   assert.ok(plan.capability_requests.some((request) => request.capability === "browser-runtime"));
-  assert.match(formatRepositoryUnderstandingBrief(plan), /not executed/i);
+  assert.match(formatRepositoryUnderstandingBrief(plan), /Understanding summary:/i);
+  assert.match(formatRepositoryUnderstandingBrief(plan), /Claim states:/i);
+  assert.match(formatRepositoryUnderstandingBrief(plan), /Execution graph:/i);
+  assert.match(formatRepositoryUnderstandingBrief(plan), /Plan sketch:/i);
+  assert.match(formatRepositoryUnderstandingBrief(plan), /Likely crew:/i);
+  assert.match(formatRepositoryUnderstandingBrief(plan), /Acceptance checkpoints:/i);
+  assert.match(formatRepositoryUnderstandingBrief(plan), /Execution waves:/i);
+  assert.match(formatRepositoryUnderstandingBrief(plan), /Critical path:/i);
+  assert.match(formatRepositoryUnderstandingBrief(plan), /database detail:/i);
+  assert.match(formatRepositoryUnderstandingBrief(plan), /frontend detail:/i);
+  assert.match(formatRepositoryUnderstandingBrief(plan), /backend detail:/i);
+  const agentRuntime = plan.capability_requests.find((request) => request.capability === "agent-runtime");
+  assert.ok(agentRuntime);
+  assert.equal(agentRuntime.operation, "analyze-goal-read-only");
+  assert.equal(agentRuntime.risk, "high");
+  assert.equal(agentRuntime.authority, "human-only");
+  assert.equal(agentRuntime.reversibility, "Revocable before each external attempt; historical outputs remain labeled.");
+  assert.match(agentRuntime.target, /^[0-9a-f]{64}$/);
+  assert.ok(agentRuntime.scope.some((item) => item.startsWith("repository:")));
+  assert.ok(agentRuntime.scope.some((item) => item.startsWith("revision:")));
+  assert.ok(agentRuntime.scope.some((item) => item.startsWith("provider-origin:")));
+  assert.ok(agentRuntime.scope.includes("no-consumer-write"));
   assert.equal(JSON.stringify(plan).includes("super-secret-test-value"), false);
   assert.equal(plan.coverage.find((item) => item.domain === "repository").status, "unverified");
+  assert.ok(plan.preflight.clarification_questions.length > 0);
+  assert.ok(plan.preflight.research_topics.length > 0);
+  assert.ok(plan.preflight.research_tasks.length > 0);
+  assert.ok(plan.preflight.clarification_questions.every((question) => typeof question.question === "string" && question.question.length > 0));
+  assert.ok(plan.preflight.research_topics.every((topic) => typeof topic.query === "string" && topic.query.length > 0));
+  assert.ok(plan.preflight.research_topics.every((topic) => topic.query.length <= 1000));
+  assert.ok(plan.preflight.research_topics.every((topic) => typeof topic.owner === "string" && topic.owner.length > 0));
+  assert.ok(plan.preflight.research_tasks.every((task) => task.approval_capability === "network-research"));
+  assert.ok(plan.preflight.research_tasks.every((task) => task.query.length <= 1000));
+  assert.equal(plan.capability_requests.filter((request) => request.capability === "network-research").length, plan.preflight.research_tasks.length);
+  assert.ok(plan.preflight.research_tasks.every((task) => plan.capability_requests.some((request) => request.id === task.id && request.operation === "research")));
+  assert.ok(plan.preflight.team_decomposition.length > 0);
+  assert.match(formatRepositoryUnderstandingBrief(plan), /Preflight path:/i);
+  assert.match(formatRepositoryUnderstandingBrief(plan), /Clarification queue:/i);
+  assert.match(formatRepositoryUnderstandingBrief(plan), /Preflight research:/i);
+  assert.match(formatRepositoryUnderstandingBrief(plan), /Team decomposition:/i);
+  assert.match(formatRepositoryUnderstandingBrief(plan), /Authority requests: .*network-research/i);
   const trustContext = await loadTrustedEvaluationContext({ snapshot });
   assert.equal(trustContext.inventory.databaseRequired, true);
   assert.ok(trustContext.inventory.expectedDomains.includes("backend"));
+});
+
+test("onboarding brief surfaces conflicts before general gaps", async (t) => {
+  const root = await createWebRepository(t);
+  const snapshot = await discoverRepository(root);
+  const report = evaluateReadiness(snapshot);
+  const plan = await createOnboardingPlan(snapshot, { report, config: null, configError: "conflicting declaration" });
+  const brief = formatRepositoryUnderstandingBrief(plan);
+
+  assert.equal(plan.summary.conflict_claims, 1);
+  assert.equal(plan.summary.domain_knownness.database.total_claims >= 0, true);
+  assert.match(brief, /Conflicts:/i);
+  assert.match(brief, /repository:/i);
+  assert.match(brief, /Domain knownness:/i);
+  assert.ok(brief.indexOf("Conflicts:") < brief.indexOf("Highest-priority gaps:"));
 });
 
 test("generic command receipts never become real-surface runtime observation", async (t) => {

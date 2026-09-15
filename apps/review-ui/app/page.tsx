@@ -56,12 +56,27 @@ type ReviewRunSummary = {
   capabilities_url?: string;
 };
 type ReviewRunIndex = { schema_version: number; repository_identity: string; runs: ReviewRunSummary[] };
-type InteractionItem = { id: string; text: string; confidence: 'confirmed' | 'verify'; severity: 'info' | 'warning' | 'blocking'; source_refs: string[] };
+type InteractionItem = {
+  id: string;
+  text: string;
+  confidence: 'confirmed' | 'verify';
+  severity: 'info' | 'warning' | 'blocking';
+  source_refs: string[];
+  basis?: string[];
+  metrics?: {
+    known_claims: number;
+    total_claims: number;
+    unknown_claims: number;
+    conflict_claims: number;
+  };
+};
 type InteractionPacket = {
   schema_version: number;
   id: string;
   run_id: string;
   kind: 'alignment-brief' | 'decision-queue' | 'progress-pulse' | 'delivery-brief';
+  generated_at: string;
+  head_sha: string;
   title: string;
   verdict: 'informational' | 'action-required' | 'ready' | 'blocked' | 'failed';
   summary: string;
@@ -69,7 +84,17 @@ type InteractionPacket = {
   sections: Array<{ id: string; title: string; items: InteractionItem[] }>;
   actions: Array<{ id: string; label: string; kind: string; recommended: boolean }>;
   source_artifacts: Array<{ id: string; kind: string; sha256: string }>;
+  traceability: Array<{ item_id: string; source_refs: string[] }>;
   compression: { source_artifact_count: number; surfaced_item_count: number; omitted_item_count: number };
+  highlights: {
+    outcome: string;
+    understanding: string[];
+    boundaries: string[];
+    criteria: string[];
+    questions: string[];
+    decision_count: number;
+    recommended_action: string | null;
+  };
 };
 type CapabilityRequest = {
   id: string;
@@ -96,6 +121,20 @@ type CapabilityAuthorizationView = {
   head_sha: string;
   counts: { total: number; unrequested: number; pending: number; approved: number; rejected: number; expired: number; stale: number };
   capabilities: CapabilityAuthorization[];
+  research_tasks: Array<{
+    id: string;
+    topic_id: string;
+    query: string;
+    owner: string;
+    priority: number;
+    approval_capability: string;
+    status: 'pending-approval' | 'approved' | 'blocked';
+    expected_outcome: string;
+    basis: string[];
+    approval_request_id?: string | null;
+    approval_receipt_id?: string | null;
+  }>;
+  research_task_counts: { total: number; pending_approval: number; approved: number; blocked: number };
   next_action: string;
 };
 type ProjectDeclarationReview = {
@@ -107,6 +146,36 @@ type ProjectDeclarationReview = {
   verdict: 'blocked' | 'review-required';
   approval_available: boolean;
   structural_coverage: number;
+  summary?: {
+    total_claims: number;
+    proved_claims: number;
+    unresolved_claims: number;
+    conflict_claims: number;
+    priority_domains: string[];
+    domain_knownness: {
+      database: {
+        total_claims: number;
+        known_claims: number;
+        unknown_claims: number;
+        conflict_claims: number;
+        subdomains: Record<string, { total_claims: number; known_claims: number; unknown_claims: number; conflict_claims: number }>;
+      };
+      frontend: {
+        total_claims: number;
+        known_claims: number;
+        unknown_claims: number;
+        conflict_claims: number;
+        subdomains: Record<string, { total_claims: number; known_claims: number; unknown_claims: number; conflict_claims: number }>;
+      };
+      backend: {
+        total_claims: number;
+        known_claims: number;
+        unknown_claims: number;
+        conflict_claims: number;
+        subdomains: Record<string, { total_claims: number; known_claims: number; unknown_claims: number; conflict_claims: number }>;
+      };
+    };
+  };
   counts: { commands: number; launch_commands: number; configured_services: number; verification_jobs: number; service_bound_verifications: number; blockers: number };
   dimensions: Array<{ id: string; label: string; earned: number; possible: number; status: 'covered' | 'partial' | 'missing' }>;
   execution_surfaces: Array<{ id: string; kind: 'launch' | 'verify'; run: string; source: string; status: 'mapped' | 'unmapped' }>;
@@ -161,7 +230,8 @@ function isScorecard(value: unknown): value is ReviewScorecard {
 function isInteractionPacket(value: unknown): value is InteractionPacket {
   return isRecord(value) && value.schema_version === 1 && typeof value.run_id === 'string' &&
     typeof value.kind === 'string' && typeof value.title === 'string' && Array.isArray(value.sections) &&
-    Array.isArray(value.actions) && Array.isArray(value.source_artifacts) && isRecord(value.compression);
+    Array.isArray(value.actions) && Array.isArray(value.source_artifacts) && Array.isArray(value.traceability) &&
+    isRecord(value.compression) && isRecord(value.highlights);
 }
 
 function isCapabilityAuthorizationView(value: unknown): value is CapabilityAuthorizationView {
@@ -204,6 +274,45 @@ function ProjectDeclarationPanel({ review }: { review: ProjectDeclarationReview 
               <span className="font-mono text-xs text-[#66706c]">{review.structural_coverage}/100 structural coverage</span>
             </div>
             <p className="mt-2 text-xs leading-5 text-[#68726e]">This score measures whether the declaration is structurally complete. It is not runtime proof.</p>
+            {review.summary ? (
+              <div className="mt-4 grid gap-px border border-[#dce1de] bg-[#dce1de] md:grid-cols-4">
+                {[
+                  ['Proved', `${review.summary.proved_claims}/${review.summary.total_claims}`],
+                  ['Unresolved', review.summary.unresolved_claims],
+                  ['Conflicts', review.summary.conflict_claims],
+                  ['Priority', review.summary.priority_domains.slice(0, 3).join(' · ') || 'none']
+                ].map(([label, value]) => (
+                  <div key={label} className="bg-white px-4 py-3">
+                    <p className="font-mono text-lg font-semibold text-[#303936]">{value}</p>
+                    <p className="mt-1 text-[10px] uppercase tracking-[0.05em] text-[#87908c]">{label}</p>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            {review.summary ? (
+              <div className="mt-4 grid gap-3 lg:grid-cols-3">
+                {[
+                  ['Database', review.summary.domain_knownness.database],
+                  ['Frontend', review.summary.domain_knownness.frontend],
+                  ['Backend', review.summary.domain_knownness.backend],
+                ].map(([label, domain]) => (
+                  <article key={label} className="border border-[#dfe4e1] bg-white p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[#68726e]">{label}</p>
+                      <span className="font-mono text-[10px] text-[#7b8581]">{domain.known_claims}/{domain.total_claims} known</span>
+                    </div>
+                    <div className="mt-2 space-y-1.5">
+                      {Object.entries(domain.subdomains).map(([subdomain, stats]) => (
+                        <div key={subdomain} className="flex items-center justify-between gap-2 text-[11px] text-[#59635f]">
+                          <span className="capitalize">{subdomain.replace(/_/g, ' ')}</span>
+                          <span className="font-mono text-[#7b8581]">{stats.known_claims}/{stats.total_claims} · unk {stats.unknown_claims} · conf {stats.conflict_claims}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : null}
             {review.decision ? (
               <div className="mt-4 border border-[#e6c9c2] bg-[#fff8f6] p-4">
                 <p className="text-xs font-semibold uppercase tracking-[0.06em] text-[#963c31]">One decision needed</p>
@@ -450,6 +559,78 @@ export default function Home() {
   const sourceLabel = sourceState === 'runtime' ? 'LIVE RUNTIME' : sourceState === 'connecting' ? 'CONNECTING' : sourceState === 'offline' ? 'RUNTIME OFFLINE' : 'SAMPLE DATA';
   const selectedRun = runs.find((run) => run.run_id === selectedRunId);
   const noLiveRuns = sourceState === 'runtime' && runs.length === 0;
+  const visibleSections = interaction?.sections ?? null;
+  const questionCount = interaction?.highlights.decision_count ?? 0;
+  const researchTopicCount = interaction?.highlights.understanding.length ?? 0;
+  const crewGroupCount = interaction?.highlights.boundaries.length > 0 ? 1 : 0;
+  const researchApprovedCount = capabilityView?.research_task_counts.approved ?? 0;
+  const researchPendingCount = capabilityView?.research_task_counts.pending_approval ?? 0;
+  const researchTotalCount = capabilityView?.research_task_counts.total ?? researchTopicCount;
+  const researchReady = researchTopicCount === 0 ? true : Boolean(capabilityView) && researchPendingCount === 0;
+  const verificationReady = verificationReview?.latest?.outcome.status === 'pass';
+  const verificationEvidenceLevel = verificationReview?.latest?.achieved_evidence_level ?? null;
+  const clarificationCount = questionCount;
+  const autonomySteps = [
+    {
+      id: 'clarify',
+      label: 'Target clarified',
+      ready: questionCount === 0,
+      detail: questionCount > 0
+        ? `${questionCount} blocking question${questionCount === 1 ? '' : 's'} remain`
+        : 'No unresolved questions remain'
+    },
+    {
+      id: 'research',
+      label: 'Research approved',
+      ready: researchReady,
+      detail: researchTopicCount === 0
+        ? 'No research topics requested yet'
+        : `${researchApprovedCount}/${researchTotalCount} research tasks approved`
+    },
+    {
+      id: 'split',
+      label: 'Crew split ready',
+      ready: crewGroupCount > 0,
+      detail: crewGroupCount > 0
+        ? `${crewGroupCount} crew group${crewGroupCount === 1 ? '' : 's'} defined`
+        : 'No crew split has been proposed'
+    },
+    {
+      id: 'verify',
+      label: 'Real verification ready',
+      ready: verificationReady,
+      detail: verificationReview?.latest
+        ? `${verificationReview.latest.outcome.status.toUpperCase()} · ${verificationEvidenceLevel ?? 'unknown'} evidence`
+        : 'No fresh runtime verification receipt yet'
+    },
+    {
+      id: 'review',
+      label: 'Review / ship ready',
+      ready: scorecard.verdict === 'ready',
+      detail: `${scorecard.proof_coverage.score}/100 proof coverage · ${scorecard.exception_counts.blocking} blocking gaps`
+    }
+  ];
+  const autonomyReadyCount = autonomySteps.filter((step) => step.ready).length;
+  const autonomyStepsRemaining = autonomySteps.length - autonomyReadyCount;
+  const nextAutonomyStep = autonomySteps.find((step) => !step.ready) ?? null;
+  const nextAutonomySuggestion = nextAutonomyStep
+    ? (
+      nextAutonomyStep.id === 'clarify' ? 'Answer the open question(s) so the goal is unambiguous.' :
+      nextAutonomyStep.id === 'research' ? 'Approve the research queue so the plan uses current best practices.' :
+      nextAutonomyStep.id === 'split' ? 'Lock the crew split so work can be divided cleanly.' :
+      nextAutonomyStep.id === 'verify' ? 'Run a real-surface verification receipt.' :
+      'Clear the remaining proof gaps and re-check the review.'
+    )
+    : 'The current slice looks ready for more autonomous work.';
+  const formatBasis = (basis?: string[]) => basis && basis.length > 0 ? basis : [];
+  const basisLabel = (basis: string) => basis.replace(/-/g, ' ');
+  const briefHighlights = interaction ? [
+    { label: 'Outcome', value: interaction.highlights.outcome || 'No outcome summary' },
+    { label: 'Understanding', value: interaction.highlights.understanding.join(' · ') || 'No understanding summary' },
+    { label: 'Boundaries', value: interaction.highlights.boundaries.join(' · ') || 'No boundaries listed' },
+    { label: 'Criteria', value: interaction.highlights.criteria.join(' · ') || 'No criteria listed' },
+    { label: 'Open decisions', value: String(interaction.highlights.decision_count) }
+  ] : [];
 
   return (
     <div className="min-h-screen bg-[#f4f5f3] text-[#18201e]">
@@ -537,7 +718,7 @@ export default function Home() {
               </div>
             </div>
             <div className="grid divide-y divide-[#ecefed] lg:grid-cols-4 lg:divide-x lg:divide-y-0">
-              {interaction.sections.map((section) => (
+              {visibleSections?.map((section) => (
                 <article key={section.id} className="px-5 py-5">
                   <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.07em] text-[#79827e]">{section.title}</p>
                   <div className="space-y-3">
@@ -546,6 +727,28 @@ export default function Home() {
                         {item.severity === 'blocking' ? <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-[#ad463a]" /> : item.confidence === 'confirmed' ? <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-[#39745a]" /> : <CircleDashed className="mt-0.5 size-3.5 shrink-0 text-[#8b7660]" />}
                         <div>
                           <p className="text-xs leading-5 text-[#4f5955]">{item.text}</p>
+                          {item.metrics ? (
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              <Badge variant="outline" className="rounded-md border-[#dce1de] bg-[#f8faf8] px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.06em] text-[#5f6764]">
+                                {item.metrics.known_claims}/{item.metrics.total_claims} known
+                              </Badge>
+                              <Badge variant="outline" className="rounded-md border-[#dce1de] bg-[#f8faf8] px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.06em] text-[#5f6764]">
+                                unk {item.metrics.unknown_claims}
+                              </Badge>
+                              <Badge variant="outline" className="rounded-md border-[#dce1de] bg-[#f8faf8] px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.06em] text-[#5f6764]">
+                                conf {item.metrics.conflict_claims}
+                              </Badge>
+                            </div>
+                          ) : null}
+                          {item.basis && item.basis.length > 0 ? (
+                            <div className="mt-1 flex flex-wrap gap-1">
+                              {item.basis.map((basis) => (
+                                <Badge key={basis} variant="outline" className="rounded-md border-[#dce1de] bg-[#f8faf8] px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.06em] text-[#5f6764]">
+                                  {basis.replace(/-/g, ' ')}
+                                </Badge>
+                              ))}
+                            </div>
+                          ) : null}
                           <p className="mt-1 font-mono text-[10px] uppercase text-[#969e9a]">{item.confidence} · {item.source_refs.join(', ')}</p>
                         </div>
                       </div>
@@ -553,6 +756,31 @@ export default function Home() {
                   </div>
                 </article>
               ))}
+            </div>
+            <div className="border-t border-[#e6e9e7] bg-[#fbfcfb] px-6 py-4">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <p className="text-sm font-semibold text-[#303936]">Brief highlights</p>
+                <span className="font-mono text-[11px] text-[#7b8480]">outcome → understanding → boundaries → criteria</span>
+              </div>
+              <div className="grid gap-px border border-[#dce1de] bg-[#dce1de] lg:grid-cols-5">
+                {briefHighlights.map((tile) => (
+                  <div key={tile.label} className="bg-white px-4 py-3">
+                    <p className="text-[10px] uppercase tracking-[0.06em] text-[#87908c]">{tile.label}</p>
+                    <p className="mt-1 text-xs leading-5 text-[#38413e]">{tile.value}</p>
+                  </div>
+                ))}
+              </div>
+              {interaction.traceability.length > 0 ? (
+                <div className="mt-4 border border-[#dce1de] bg-white px-4 py-3">
+                  <p className="text-[10px] uppercase tracking-[0.06em] text-[#87908c]">Traceability</p>
+                  <p className="mt-1 text-xs leading-5 text-[#38413e]">
+                    {interaction.traceability.length} surfaced items trace back to {interaction.source_artifacts.length} hashed source artifact{interaction.source_artifacts.length === 1 ? '' : 's'}.
+                  </p>
+                  <p className="mt-1 font-mono text-[10px] uppercase text-[#969e9a]">
+                    {interaction.actions.some((action) => action.recommended) ? 'Recommended action is surfaced above' : 'No recommended action surfaced'}
+                  </p>
+                </div>
+              ) : null}
             </div>
             <ProjectDeclarationPanel review={declarationReview} />
             {capabilityView ? (
@@ -594,6 +822,39 @@ export default function Home() {
                     </article>
                   ))}
                 </div>
+                {capabilityView.research_tasks.length > 0 ? (
+                  <div className="mt-4 border-t border-[#e6e9e7] pt-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-semibold text-[#303936]">Research task queue</p>
+                      <Badge className="rounded-md bg-[#e8ebea] text-[#59635f] hover:bg-[#e8ebea]">{capabilityView.research_task_counts.total} total</Badge>
+                      {capabilityView.research_task_counts.approved > 0 ? <Badge className="rounded-md bg-[#dcece3] text-[#286044] hover:bg-[#dcece3]">{capabilityView.research_task_counts.approved} approved</Badge> : null}
+                      {capabilityView.research_task_counts.pending_approval > 0 ? <Badge className="rounded-md bg-[#f0e4c8] text-[#705920] hover:bg-[#f0e4c8]">{capabilityView.research_task_counts.pending_approval} waiting</Badge> : null}
+                      {capabilityView.research_task_counts.blocked > 0 ? <Badge className="rounded-md bg-[#f4d8d2] text-[#8c2f25] hover:bg-[#f4d8d2]">{capabilityView.research_task_counts.blocked} blocked</Badge> : null}
+                    </div>
+                    <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                      {capabilityView.research_tasks.map((task) => (
+                        <article key={task.id} className="border border-[#dfe4e1] bg-white p-4">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-semibold text-[#303936]">{task.id}</p>
+                              <p className="mt-0.5 font-mono text-[10px] uppercase text-[#909995]">{task.owner} · {task.approval_capability}</p>
+                            </div>
+                            <Badge className={`rounded-md uppercase ${task.status === 'approved' ? 'bg-[#dcece3] text-[#286044] hover:bg-[#dcece3]' : task.status === 'pending-approval' ? 'bg-[#f0e4c8] text-[#705920] hover:bg-[#f0e4c8]' : 'bg-[#f4d8d2] text-[#8c2f25] hover:bg-[#f4d8d2]'}`}>{task.status}</Badge>
+                          </div>
+                          <p className="mt-3 text-xs leading-5 text-[#4d5753]">{task.query}</p>
+                          <p className="mt-2 text-[11px] leading-5 text-[#68726e]">{task.expected_outcome}</p>
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            {task.basis.map((basis) => (
+                              <Badge key={basis} variant="outline" className="rounded-md border-[#dce1de] bg-[#f8faf8] px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.06em] text-[#5f6764]">
+                                {basis.replace(/-/g, ' ')}
+                              </Badge>
+                            ))}
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
               </div>
             ) : null}
             <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-[#e6e9e7] bg-[#fafbf9] px-6 py-3 text-[11px] text-[#7b8480]">
@@ -665,6 +926,72 @@ export default function Home() {
                 </div>
               ))}
             </div>
+          </div>
+        </section>
+
+        <section className="mb-6 border border-[#d9dedb] bg-white shadow-[0_1px_2px_rgba(22,36,31,0.04)]">
+          <div className="flex flex-col gap-4 border-b border-[#e6e9e7] px-6 py-5 lg:flex-row lg:items-start lg:justify-between">
+            <div className="max-w-3xl">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-sm font-semibold text-[#303936]">Autonomy readiness</p>
+                <Badge className="rounded-md bg-[#e8ebea] text-[#59635f] hover:bg-[#e8ebea]">
+                  {autonomyReadyCount}/5 ready
+                </Badge>
+                <span className="font-mono text-xs text-[#66706c]">{autonomyStepsRemaining} step{autonomyStepsRemaining === 1 ? '' : 's'} away</span>
+              </div>
+              <p className="mt-2 text-xs leading-5 text-[#68726e]">
+                This is the fast read on whether the agent can already take a goal and move through it with minimal babysitting.
+              </p>
+              <div className="mt-4 grid gap-px border border-[#dce1de] bg-[#dce1de] md:grid-cols-3">
+                {[
+                  ['Clarifications', `${clarificationCount} queued`],
+                  ['Research', researchTopicCount > 0 ? `${researchTopicCount} topic${researchTopicCount === 1 ? '' : 's'}` : 'none'],
+                  ['Verification', verificationReady ? `${verificationEvidenceLevel ?? 'verified'} evidence` : 'pending'],
+                ].map(([label, value]) => (
+                  <div key={label} className="bg-white px-4 py-3">
+                    <p className="font-mono text-lg font-semibold text-[#303936]">{value}</p>
+                    <p className="mt-1 text-[10px] uppercase tracking-[0.05em] text-[#87908c]">{label}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="min-w-[280px] border border-[#e6e9e7] bg-[#fbfcfb] px-4 py-3">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.06em] text-[#87908c]">Current bottleneck</p>
+              <p className="mt-1 text-sm leading-6 text-[#39443f]">
+                {questionCount > 0
+                  ? `${questionCount} question${questionCount === 1 ? '' : 's'} still need a decision.`
+                  : researchPendingCount > 0
+                    ? `${researchPendingCount} research task${researchPendingCount === 1 ? '' : 's'} are still waiting for approval.`
+                    : !verificationReady
+                      ? 'Real-surface verification is still missing.'
+                      : scorecard.verdict === 'ready'
+                        ? 'The repo looks ready for more autonomous work.'
+                        : 'Review and proof gates still have blocking gaps.'}
+              </p>
+              <div className="mt-4 border-t border-[#e6e9e7] pt-3">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.06em] text-[#87908c]">Next best step</p>
+                <p className="mt-1 text-sm leading-6 text-[#39443f]">{nextAutonomySuggestion}</p>
+                {nextAutonomyStep ? (
+                  <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.06em] text-[#9a928f]">Focus: {nextAutonomyStep.label}</p>
+                ) : null}
+              </div>
+            </div>
+          </div>
+          <div className="grid gap-px bg-[#dce1de] md:grid-cols-5">
+            {autonomySteps.map((step) => (
+              <div key={step.id} className="bg-white px-4 py-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[10px] uppercase tracking-[0.06em] text-[#87908c]">{step.label}</p>
+                    <p className={`mt-1 text-sm font-medium ${step.ready ? 'text-[#2f5947]' : 'text-[#9d392e]'}`}>
+                      {step.ready ? 'Ready' : 'Not yet'}
+                    </p>
+                  </div>
+                  {step.ready ? <CheckCircle2 className="size-4 shrink-0 text-[#39745a]" /> : <AlertTriangle className="size-4 shrink-0 text-[#ad463a]" />}
+                </div>
+                <p className="mt-2 text-xs leading-5 text-[#66706c]">{step.detail}</p>
+              </div>
+            ))}
           </div>
         </section>
 

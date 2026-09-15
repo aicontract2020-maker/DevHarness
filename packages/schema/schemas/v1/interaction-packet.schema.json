@@ -72,6 +72,7 @@
     "sections": {
       "type": "array",
       "minItems": 1,
+      "maxItems": 9,
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -95,6 +96,23 @@
                 "text": { "type": "string", "minLength": 1 },
                 "confidence": { "enum": ["confirmed", "verify"] },
                 "severity": { "enum": ["info", "warning", "blocking"] },
+                "basis": {
+                  "type": "array",
+                  "maxItems": 10,
+                  "uniqueItems": true,
+                  "items": { "type": "string", "minLength": 1, "maxLength": 128 }
+                },
+                "metrics": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["known_claims", "total_claims", "unknown_claims", "conflict_claims"],
+                  "properties": {
+                    "known_claims": { "type": "integer", "minimum": 0 },
+                    "total_claims": { "type": "integer", "minimum": 0 },
+                    "unknown_claims": { "type": "integer", "minimum": 0 },
+                    "conflict_claims": { "type": "integer", "minimum": 0 }
+                  }
+                },
                 "source_refs": {
                   "type": "array",
                   "minItems": 1,
@@ -163,6 +181,7 @@
     "actions": {
       "type": "array",
       "minItems": 1,
+      "maxItems": 2,
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -230,4 +249,3 @@
     }
   }
 }
-

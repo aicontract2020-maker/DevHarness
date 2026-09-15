@@ -50,12 +50,12 @@ function resolvedCommand(command) {
   return { ...command, sha256: hashContract(command) };
 }
 
-export async function compileProjectHarness(snapshot, config) {
+export async function compileProjectHarness(snapshot, config, options = {}) {
   await assertContract("project-config", config);
   if (!snapshot.repository.git.is_repository || !snapshot.repository.git.head_sha) {
     throw new Error("Harness compilation requires a committed Git revision.");
   }
-  if (snapshot.repository.git.dirty) {
+  if (snapshot.repository.git.dirty && !options.allowDirtyBaseline) {
     throw new Error("Harness compilation requires a clean committed baseline.");
   }
 

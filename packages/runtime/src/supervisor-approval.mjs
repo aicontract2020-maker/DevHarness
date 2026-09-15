@@ -15,7 +15,7 @@ import {
   writeApprovalRequest
 } from "./supervisor-store.mjs";
 
-const GATES = new Set(["capability", "strategy", "strategy-exception", "scope", "delivery"]);
+const GATES = new Set(["capability", "strategy", "strategy-exception", "scope", "delivery", "alignment-answer"]);
 
 function boundedExpiry(now, expiresInMinutes) {
   if (!Number.isInteger(expiresInMinutes) || expiresInMinutes < 1 || expiresInMinutes > 24 * 60) {
@@ -86,7 +86,7 @@ async function issueDecision({ supervisorRoot, request, decision, humanId, decid
   return receipt;
 }
 
-export function formatForegroundApproval(request, identity, capability = null) {
+export function formatForegroundApproval(request, identity, capability = null, details = null) {
   const capabilityLines = capability ? [
     `Capability: ${capability.capability}\n`,
     `Operation: ${capability.operation}\n`,
@@ -96,10 +96,12 @@ export function formatForegroundApproval(request, identity, capability = null) {
     `Risk: ${capability.risk}\n`,
     `Authority: ${capability.authority}\n`
   ] : [];
+  const detailLines = details ? details.map((line) => `${line}\n`) : [];
   return [
     "\nDevHarness foreground approval\n",
     `Gate: ${request.gate}\n`,
     ...capabilityLines,
+    ...detailLines,
     `Run: ${request.run_id}\n`,
     `Repository: ${request.repository_identity}\n`,
     `Revision: ${request.relevant_head_sha}\n`,
@@ -115,15 +117,22 @@ export async function recordInteractiveApprovalDecision({
   repositoryIdentity,
   requestId,
   humanId = "developer",
-  capability = null
+  capability = null,
+  details = null,
+  responseProvider = null,
+  emitPrompt = true,
+  now = () => new Date()
 }) {
-  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+  const interactiveInput = process.stdin;
+  const interactiveOutput = process.stdout;
+  if (!responseProvider && (!interactiveInput.isTTY || !interactiveOutput.isTTY)) {
     throw new Error("Approval requires the foreground Supervisor TTY; piped and JSON decisions are refused. Independent human authentication is not yet implemented.");
   }
-  const requests = await listVerifiedApprovalRequests(supervisorRoot, repositoryIdentity);
+  const current = now();
+  const requests = await listVerifiedApprovalRequests(supervisorRoot, repositoryIdentity, { now: current });
   const request = requests.find((candidate) => candidate.id === requestId);
   if (!request) throw new Error("No current verified pending approval request exists with that id.");
-  const decisions = await listVerifiedApprovalReceipts(supervisorRoot, repositoryIdentity);
+  const decisions = await listVerifiedApprovalReceipts(supervisorRoot, repositoryIdentity, { now: current });
   if (decisions.some((receipt) => receipt.request_id === request.id)) throw new Error("This approval request already has an immutable decision.");
   if (request.gate === "capability") {
     if (!capability || capability.id !== request.subject.id || hashContract(capability) !== request.subject.artifact_sha256) {
@@ -132,14 +141,20 @@ export async function recordInteractiveApprovalDecision({
   }
 
   const identity = await loadSupervisorIdentity(supervisorRoot);
-  process.stdout.write(formatForegroundApproval(request, identity, capability));
+  if (emitPrompt) interactiveOutput.write(formatForegroundApproval(request, identity, capability, details));
   const prompt = `Type APPROVE ${request.id} or REJECT ${request.id}: `;
-  const terminal = createInterface({ input: process.stdin, output: process.stdout, terminal: true });
+  const terminal = responseProvider
+    ? null
+    : createInterface({ input: interactiveInput, output: interactiveOutput, terminal: true });
   let answer;
   try {
-    answer = (await terminal.question(prompt)).trim();
+    if (responseProvider) {
+      answer = (await responseProvider(prompt)).trim();
+    } else {
+      answer = (await terminal.question(prompt)).trim();
+    }
   } finally {
-    terminal.close();
+    terminal?.close();
   }
   const approve = `APPROVE ${request.id}`;
   const reject = `REJECT ${request.id}`;
@@ -149,6 +164,6 @@ export async function recordInteractiveApprovalDecision({
     request,
     decision: answer === approve ? "approved" : "rejected",
     humanId,
-    decidedAt: new Date().toISOString()
+    decidedAt: current.toISOString()
   });
 }

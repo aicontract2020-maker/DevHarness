@@ -9,9 +9,12 @@ import { createInitialGoalRun, createRunEvent } from "../../core/src/goal-run.mj
 import { createReviewScorecard } from "../../core/src/review-scorecard.mjs";
 import { hashContract } from "../../project/src/harness.mjs";
 import {
+  DEFAULT_CAPABILITY_EXPIRES_IN_MINUTES,
+  LONG_LIVED_CAPABILITY_EXPIRES_IN_MINUTES,
   loadCapabilityAuthorizationView,
   requestCapabilityAuthorization,
-  resolveCapabilityApprovalContext
+  resolveCapabilityApprovalContext, buildNetworkResearchAuthorityFromReceipt, resolveNetworkResearchAuthorityFromCapabilityGrants,
+  resolveCapabilityExpiresInMinutes
 } from "../src/capability-authorization.mjs";
 import { appendGoalRunCheckpoint, createStoredGoalRun, loadRunSourceArtifact } from "../src/goal-run-store.mjs";
 import { formatForegroundApproval } from "../src/supervisor-approval.mjs";
@@ -22,20 +25,33 @@ const at = "2026-08-31T17:00:00.000Z";
 const repositoryIdentity = "example/capability-project";
 
 function capability(id = "browser-runtime") {
+  const kind = ["database-runtime", "agent-runtime", "network-research", "browser-runtime"].includes(id) ? id : "browser-runtime";
+  const targets = {
+    "database-runtime": "disposable-database",
+    "agent-runtime": "codex-readonly-analysis-v1",
+    "network-research": "bounded-http-research",
+    "browser-runtime": "local-browser"
+  };
+  const reasons = {
+    "database-runtime": "Verify migrations and constraints.",
+    "agent-runtime": "Run live Alignment analysis under Supervisor authority.",
+    "network-research": "Fetch bounded public research for clarification.",
+    "browser-runtime": "Exercise the real user interface."
+  };
   return {
     id,
-    capability: id === "database-runtime" ? "database-runtime" : "browser-runtime",
+    capability: kind,
     operation: "prove-capability",
-    target: id === "database-runtime" ? "disposable-database" : "local-browser",
-    scope: [id === "database-runtime" ? "disposable-database" : "local-browser"],
-    reason: id === "database-runtime" ? "Verify migrations and constraints." : "Exercise the real user interface.",
-    risk: id === "database-runtime" ? "high" : "medium",
-    authority: id === "database-runtime" ? "human-only" : "explicit",
+    target: targets[kind],
+    scope: [targets[kind]],
+    reason: reasons[kind],
+    risk: kind === "database-runtime" || kind === "agent-runtime" ? "high" : "medium",
+    authority: kind === "database-runtime" || kind === "agent-runtime" ? "human-only" : "explicit",
     decision: "pending"
   };
 }
 
-async function setup(t) {
+async function setup(t, { capabilities = [capability(), capability("database-runtime")] } = {}) {
   const dataRoot = await mkdtemp(path.join(os.tmpdir(), "devharness-capability-data-"));
   const supervisorRoot = await mkdtemp(path.join(os.tmpdir(), "devharness-capability-supervisor-"));
   t.after(() => Promise.all([rm(dataRoot, { recursive: true, force: true }), rm(supervisorRoot, { recursive: true, force: true })]));
@@ -58,9 +74,91 @@ async function setup(t) {
     workspace: { dirty: false, changed_file_count: 0 },
     mode: "read-only-plan",
     verdict: "needs-evidence",
+    summary: {
+      total_claims: 1,
+      proved_claims: 1,
+      unresolved_claims: 0,
+      conflict_claims: 0,
+      domain_knownness: {
+        database: {
+          total_claims: 0,
+          known_claims: 0,
+          unknown_claims: 0,
+          conflict_claims: 0,
+          subdomains: {
+            schema: { total_claims: 0, known_claims: 0, unknown_claims: 0, conflict_claims: 0 },
+            migrations: { total_claims: 0, known_claims: 0, unknown_claims: 0, conflict_claims: 0 },
+            constraints: { total_claims: 0, known_claims: 0, unknown_claims: 0, conflict_claims: 0 },
+            queries: { total_claims: 0, known_claims: 0, unknown_claims: 0, conflict_claims: 0 },
+            ownership: { total_claims: 0, known_claims: 0, unknown_claims: 0, conflict_claims: 0 }
+          }
+        },
+        frontend: {
+          total_claims: 0,
+          known_claims: 0,
+          unknown_claims: 0,
+          conflict_claims: 0,
+          subdomains: {
+            routes: { total_claims: 0, known_claims: 0, unknown_claims: 0, conflict_claims: 0 },
+            state: { total_claims: 0, known_claims: 0, unknown_claims: 0, conflict_claims: 0 },
+            user_flows: { total_claims: 0, known_claims: 0, unknown_claims: 0, conflict_claims: 0 }
+          }
+        },
+        backend: {
+          total_claims: 0,
+          known_claims: 0,
+          unknown_claims: 0,
+          conflict_claims: 0,
+          subdomains: {
+            api_contracts: { total_claims: 0, known_claims: 0, unknown_claims: 0, conflict_claims: 0 },
+            orchestration: { total_claims: 0, known_claims: 0, unknown_claims: 0, conflict_claims: 0 },
+            failure_paths: { total_claims: 0, known_claims: 0, unknown_claims: 0, conflict_claims: 0 }
+          }
+        }
+      },
+      claim_status_counts: {
+        "code-confirmed": 1,
+        "test-confirmed": 0,
+        "runtime-observed": 0,
+        detected: 0,
+        documented: 0,
+        conflict: 0,
+        unverified: 0,
+        "not-covered": 0
+      },
+      coverage_status_counts: {
+        "code-confirmed": 1,
+        "test-confirmed": 0,
+        "runtime-observed": 0,
+        detected: 0,
+        documented: 0,
+        conflict: 0,
+        unverified: 0,
+        "not-covered": 0,
+        "not-applicable": 9
+      },
+      priority_domains: []
+    },
     claims: [{ id: "claim-repository", domain: "repository", status: "code-confirmed", summary: "Repository is committed.", evidence_refs: ["git"] }],
     coverage: [{ domain: "repository", status: "code-confirmed", claim_ids: ["claim-repository"] }],
-    capability_requests: [capability(), capability("database-runtime")],
+    capability_requests: capabilities,
+    preflight: {
+      research_topics: [],
+      research_tasks: [
+        {
+          id: "browser-runtime",
+          topic_id: "browser-runtime",
+          query: "Exercise the real user interface.",
+          owner: "verification",
+          priority: 2,
+          approval_capability: "network-research",
+          status: "pending-approval",
+          expected_outcome: "Confirm current browser verification practice.",
+          basis: ["browser-runtime"]
+        }
+      ],
+      team_decomposition: []
+    },
     blockers: [{ id: "runtime-unproved", summary: "Runtime behavior is unproved." }],
     limitations: ["No consumer command has run."],
     next_action: { id: "approve-capability-plan", label: "Review capability plan", recommended: true }
@@ -100,12 +198,16 @@ test("capability status moves from unrequested to pending to approved using exac
   const evaluationTime = new Date("2026-08-31T17:10:00.000Z");
   let view = await loadCapabilityAuthorizationView({ ...fixture, repositoryIdentity, runId: fixture.run.id, now: evaluationTime });
   assert.deepEqual(view.counts, { total: 2, unrequested: 2, pending: 0, approved: 0, rejected: 0, expired: 0, stale: 0 });
+  assert.deepEqual(view.research_task_counts, { total: 1, pending_approval: 1, approved: 0, blocked: 0 });
+  assert.equal(view.research_tasks[0].id, "browser-runtime");
+  assert.equal(view.research_tasks[0].status, "pending-approval");
 
   const issued = await requestCapabilityAuthorization({ ...fixture, repositoryIdentity, runId: fixture.run.id, capabilityId: "browser-runtime", now: () => evaluationTime });
   assert.equal(issued.request.subject.id, "browser-runtime");
   assert.equal(issued.request.subject.artifact_sha256, hashContract(capability()));
   view = await loadCapabilityAuthorizationView({ ...fixture, repositoryIdentity, runId: fixture.run.id, now: new Date("2026-08-31T17:20:00.000Z") });
   assert.equal(view.capabilities[0].status, "pending");
+  assert.deepEqual(view.research_task_counts, { total: 1, pending_approval: 1, approved: 0, blocked: 0 });
   assert.equal(view.next_action, `devharness approve --request ${issued.request.id}`);
   assert.equal(await resolveCapabilityApprovalContext({ ...fixture, repositoryIdentity, requestId: issued.request.id, now: evaluationTime }).then((value) => value.id), "browser-runtime");
 
@@ -130,6 +232,8 @@ test("capability status moves from unrequested to pending to approved using exac
   view = await loadCapabilityAuthorizationView({ ...fixture, repositoryIdentity, runId: fixture.run.id, now: new Date("2026-08-31T17:20:00.000Z") });
   assert.equal(view.capabilities[0].status, "approved");
   assert.equal(view.capabilities[0].approval_receipt_id, receipt.id);
+  assert.equal(view.research_tasks[0].status, "approved");
+  assert.equal(view.research_tasks[0].approval_receipt_id, receipt.id);
 });
 
 test("foreground approval presentation exposes the exact bounded capability", async (t) => {
@@ -143,4 +247,154 @@ test("foreground approval presentation exposes the exact bounded capability", as
   assert.match(text, /Risk: high/);
   assert.match(text, /Authority: human-only/);
   assert.match(text, new RegExp(issued.request.subject.artifact_sha256));
+});
+
+
+test("long-lived capabilities default to multi-hour approval windows", () => {
+  assert.equal(resolveCapabilityExpiresInMinutes("agent-runtime"), LONG_LIVED_CAPABILITY_EXPIRES_IN_MINUTES["agent-runtime"]);
+  assert.equal(resolveCapabilityExpiresInMinutes("network-research"), LONG_LIVED_CAPABILITY_EXPIRES_IN_MINUTES["network-research"]);
+  assert.equal(resolveCapabilityExpiresInMinutes("browser-runtime"), DEFAULT_CAPABILITY_EXPIRES_IN_MINUTES);
+  assert.equal(resolveCapabilityExpiresInMinutes("agent-runtime", 90), 90);
+  assert.equal(LONG_LIVED_CAPABILITY_EXPIRES_IN_MINUTES["agent-runtime"], 720);
+  assert.equal(LONG_LIVED_CAPABILITY_EXPIRES_IN_MINUTES["network-research"], 480);
+  assert.throws(() => resolveCapabilityExpiresInMinutes("agent-runtime", 0), /1 and 1440/);
+  assert.throws(() => resolveCapabilityExpiresInMinutes("agent-runtime", 1441), /1 and 1440/);
+});
+
+test("requesting agent-runtime applies the long-lived default TTL and renews after expiry", async (t) => {
+  const fixture = await setup(t, { capabilities: [capability("agent-runtime"), capability("browser-runtime")] });
+  const issued = await requestCapabilityAuthorization({
+    ...fixture,
+    repositoryIdentity,
+    runId: fixture.run.id,
+    capabilityId: "agent-runtime",
+    now: () => new Date("2026-08-31T17:10:00.000Z")
+  });
+  assert.equal(issued.expires_in_minutes, 720);
+  assert.equal(issued.request.expires_at, "2026-09-01T05:10:00.000Z");
+
+  const view = await loadCapabilityAuthorizationView({
+    ...fixture,
+    repositoryIdentity,
+    runId: fixture.run.id,
+    now: new Date("2026-08-31T17:10:00.000Z")
+  });
+  assert.equal(view.next_action, `devharness approve --request ${issued.request.id}`);
+  assert.equal(view.capabilities.find((item) => item.request.id === "agent-runtime").status, "pending");
+
+  await assert.rejects(
+    resolveCapabilityApprovalContext({
+      ...fixture,
+      repositoryIdentity,
+      requestId: issued.request.id,
+      now: new Date("2026-09-01T06:00:00.000Z")
+    }),
+    /expired.*request-capability --run run-capability-1 --capability agent-runtime --expires-minutes 720/i
+  );
+
+  const expiredView = await loadCapabilityAuthorizationView({
+    ...fixture,
+    repositoryIdentity,
+    runId: fixture.run.id,
+    now: new Date("2026-09-01T06:00:00.000Z")
+  });
+  assert.equal(expiredView.capabilities.find((item) => item.request.id === "agent-runtime").status, "expired");
+  assert.equal(
+    expiredView.next_action,
+    "devharness request-capability --run run-capability-1 --capability agent-runtime --expires-minutes 720"
+  );
+
+  const renewed = await requestCapabilityAuthorization({
+    ...fixture,
+    repositoryIdentity,
+    runId: fixture.run.id,
+    capabilityId: "agent-runtime",
+    now: () => new Date("2026-09-01T06:00:00.000Z")
+  });
+  assert.notEqual(renewed.request.id, issued.request.id);
+  assert.equal(renewed.expires_in_minutes, 720);
+  assert.equal(renewed.request.subject.artifact_sha256, issued.request.subject.artifact_sha256);
+});
+
+test("ordinary capabilities keep the 60-minute default TTL", async (t) => {
+  const fixture = await setup(t);
+  const issued = await requestCapabilityAuthorization({
+    ...fixture,
+    repositoryIdentity,
+    runId: fixture.run.id,
+    capabilityId: "browser-runtime",
+    now: () => new Date("2026-08-31T17:10:00.000Z")
+  });
+  assert.equal(issued.expires_in_minutes, 60);
+  assert.equal(issued.request.expires_at, "2026-08-31T18:10:00.000Z");
+});
+
+test("network-research authority is built from capability receipts without a subject digest", async (t) => {
+  const fixture = await setup(t, {
+    capabilities: [
+      capability("agent-runtime"),
+      {
+        ...capability("network-research"),
+        id: "research-task-1",
+        capability: "network-research",
+        operation: "research",
+        target: "public-docs",
+        scope: ["public-docs"]
+      }
+    ]
+  });
+  const evaluationTime = new Date("2026-08-31T17:10:00.000Z");
+  const issued = await requestCapabilityAuthorization({
+    ...fixture,
+    repositoryIdentity,
+    runId: fixture.run.id,
+    capabilityId: "research-task-1",
+    now: () => evaluationTime
+  });
+  const receipt = await attestApprovalReceipt(fixture.supervisorRoot, {
+    schema_version: 1,
+    id: "approval-receipt-research-1",
+    request_id: issued.request.id,
+    request_sha256: approvalRequestHash(issued.request),
+    run_id: issued.request.run_id,
+    repository_identity: issued.request.repository_identity,
+    relevant_head_sha: issued.request.relevant_head_sha,
+    gate: "capability",
+    subject: structuredClone(issued.request.subject),
+    nonce: issued.request.nonce,
+    decision: "approved",
+    decided_at: "2026-08-31T17:15:00.000Z",
+    decided_by: { id: "developer", kind: "human" },
+    source: "interactive-human-gate",
+    expires_at: issued.request.expires_at
+  });
+  await writeApprovalReceipt(fixture.supervisorRoot, repositoryIdentity, receipt);
+
+  const built = buildNetworkResearchAuthorityFromReceipt(receipt, { epoch: 1 });
+  assert.equal(built.capability, "network-research");
+  assert.equal(built.request_id, receipt.request_id);
+  assert.equal(built.receipt_id, receipt.id);
+  assert.equal(built.request_sha256, receipt.request_sha256);
+  assert.equal(built.receipt_sha256, receipt.attestation.payload_sha256);
+  assert.equal(built.epoch, 1);
+  assert.equal(Object.prototype.hasOwnProperty.call(built, "subject_sha256"), false);
+
+  const view = await loadCapabilityAuthorizationView({
+    ...fixture,
+    repositoryIdentity,
+    runId: fixture.run.id,
+    now: new Date("2026-08-31T17:20:00.000Z")
+  });
+  const resolved = await resolveNetworkResearchAuthorityFromCapabilityGrants({
+    supervisorRoot: fixture.supervisorRoot,
+    repositoryIdentity,
+    capabilityView: view,
+    now: new Date("2026-08-31T17:20:00.000Z"),
+    previousEpoch: 0
+  });
+  assert.equal(resolved.receipt_id, receipt.id);
+  assert.equal(resolved.receipt_sha256, receipt.attestation.payload_sha256);
+  assert.equal(Object.prototype.hasOwnProperty.call(resolved, "subject_sha256"), false);
+
+  assert.equal(buildNetworkResearchAuthorityFromReceipt({ ...receipt, decision: "rejected" }), null);
 });

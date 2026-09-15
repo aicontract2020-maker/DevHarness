@@ -27,6 +27,7 @@ import {
   writeApprovalReceipt,
   writeEvidenceManifest
 } from "../src/supervisor-store.mjs";
+import { defaultSupervisorRoot } from "../src/data-store.mjs";
 import { createSupervisorApprovalRequest } from "../src/supervisor-approval.mjs";
 
 const sha = "a".repeat(40);
@@ -86,6 +87,11 @@ test("supervisor identity is pinned, protected and idempotently loadable", async
     const keyInfo = await lstat(path.join(root, "private", "supervisor-key.pk8"));
     assert.equal(keyInfo.mode & 0o077, 0);
   }
+});
+
+test("Supervisor root can be explicitly redirected for local development", () => {
+  assert.equal(defaultSupervisorRoot({ DEVHARNESS_SUPERVISOR_DIR: "/private/tmp/devharness-supervisor" }), "/private/tmp/devharness-supervisor");
+  assert.match(defaultSupervisorRoot({}), /devharness-supervisor$/);
 });
 
 test("canonical bytes are stable, domain separated and reject non-JSON values", () => {

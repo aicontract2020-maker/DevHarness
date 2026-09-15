@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import process from "node:process";
+import { readFile } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,22 +10,46 @@ import { createInitialGoalRun } from "../../core/src/goal-run.mjs";
 import { createReviewScorecard } from "../../core/src/review-scorecard.mjs";
 import { loadTrustedEvaluationContext } from "../../core/src/trusted-context.mjs";
 import { evaluateVerificationExecutionAuthority } from "../../core/src/execution-authority.mjs";
+import { assertContract } from "../../project/src/contracts.mjs";
 import { discoverRepository } from "../../project/src/discover.mjs";
 import { readProjectConfig, readProjectConfigFile } from "../../project/src/config.mjs";
 import { evaluateReadiness, formatReadinessReport } from "../../project/src/doctor.mjs";
 import { initializeProject, proposeProjectConfig } from "../../project/src/init.mjs";
 import { createProjectDeclarationReview } from "../../project/src/project-declaration-review.mjs";
 import { compileProjectHarness, formatProjectHarness } from "../../project/src/harness.mjs";
+import { hashContract } from "../../project/src/harness.mjs";
 import { createOnboardingPlan, formatRepositoryUnderstandingBrief } from "../../project/src/onboard.mjs";
 import { createGoalUnderstandingCheckpoint } from "../../project/src/alignment.mjs";
 import { resolveExternalDataRoot } from "../../project/src/path-policy.mjs";
 import { defaultDataRoot, defaultSupervisorRoot, onboardingPlanPath, projectHarnessPath, writeOnboardingPlan, writeProjectHarness } from "../../runtime/src/data-store.mjs";
+import { loadRunInteraction, loadRunSourceArtifact, appendGoalRunCheckpoint, createStoredGoalRun, loadGoalRun, loadRunScorecard, runStoragePaths } from "../../runtime/src/goal-run-store.mjs";
+import {
+  buildLiveAlignmentLease,
+  buildLiveAlignmentAnalysisPlan,
+  buildLiveAlignmentInteractionPacket,
+  buildLiveAlignmentOperation,
+  buildLiveAlignmentStatus,
+  createLiveAlignmentArtifactRefs,
+  findLiveAlignmentOperationBundleByRun,
+  loadLiveAlignmentOperationBundle,
+  projectLiveAlignmentOperationStatus,
+  retryLiveAlignmentOperation,
+  cancelLiveAlignmentOperation,
+  startLiveAlignmentOperation,
+  stableLiveAlignmentExecutionId
+} from "../../runtime/src/live-alignment.mjs";
+import { continueLiveAlignmentOperation, unresolvedLiveAlignmentDecisions } from "../../runtime/src/live-alignment-continue.mjs";
+import { AgentAdapterRegistry } from "../../runtime/src/agent-adapter.mjs";
+import { loadResearchRecipesForContinue } from "../../runtime/src/research-recipes.mjs";
+import { createLocalReadonlyAnalysisAdapter, LOCAL_READONLY_ADAPTER_ID } from "../../../adapters/agents/local-readonly/index.mjs";
+import { recordAlignmentAnswer } from "../../runtime/src/alignment-answer.mjs";
 import { issueCommandSystemEvidence, issueCommandTestEvidence } from "../../runtime/src/supervisor-evidence.mjs";
 import { createSupervisorApprovalRequest, recordInteractiveApprovalDecision } from "../../runtime/src/supervisor-approval.mjs";
+import { applyRunGateFromApprovalReceipt, reconcileRunGatesFromApprovals } from "../../runtime/src/run-gate-approval.mjs";
 import { initializeSupervisorIdentity } from "../../runtime/src/supervisor-store.mjs";
 import { loadCapabilityAuthorizationView, requestCapabilityAuthorization, resolveCapabilityApprovalContext } from "../../runtime/src/capability-authorization.mjs";
 import { createVerificationPlan, executeVerificationPlan, formatVerificationPlan } from "../../runtime/src/verify.mjs";
-import { appendGoalRunCheckpoint, createStoredGoalRun, loadGoalRun, loadRunScorecard } from "../../runtime/src/goal-run-store.mjs";
+import { createPostScopeAdvanceCheckpoint, postScopeAdvanceSupported } from "../../runtime/src/post-scope-advance.mjs";
 import { startReviewServer } from "../../runtime/src/review-server.mjs";
 
 const HELP = `DevHarness
@@ -36,13 +61,18 @@ Usage:
   devharness build [--repo PATH] [--config PATH] [--write] [--format text|json]
   devharness supervisor-init [--format text|json]
   devharness request-approval --run ID --gate GATE --subject ID --subject-sha SHA [--repo PATH]
-  devharness request-capability --run ID --capability ID [--repo PATH] [--data-dir PATH]
+  devharness request-capability --run ID --capability ID [--expires-minutes N] [--repo PATH] [--data-dir PATH]
   devharness approve --request ID [--repo PATH] [--data-dir PATH]
   devharness verify --command ID [--repo PATH] [--config PATH] [--data-dir PATH] [--run ID --execute] [--attest] [--timeout-seconds N] [--format text|json]
   devharness goal --goal TEXT [--repo PATH] [--data-dir PATH] [--format text|json]
-  devharness advance --run ID [--repo PATH] [--data-dir PATH] [--format text|json]
+  devharness advance --run ID [--repo PATH] [--data-dir PATH] [--artifact-dir PATH] [--command ID] [--format text|json]
+  devharness align --run ID [--continue|--tick] [--agent ID] [--agent-profile ID] [--research-recipes PATH] [--repo PATH] [--data-dir PATH] [--format text|json]
+  devharness answer --run ID --decision ID [--option ID] [--packet SHA] [--repo PATH] [--data-dir PATH] [--format text|json]
+  devharness request-scope --run ID [--repo PATH] [--data-dir PATH] [--format text|json]
+  devharness retry --run ID --operation ID [--repo PATH] [--data-dir PATH] [--format text|json]
+  devharness cancel --run ID --operation ID [--repo PATH] [--data-dir PATH] [--format text|json]
   devharness status --run ID [--repo PATH] [--data-dir PATH] [--format text|json]
-  devharness review [--repo PATH] [--config PATH] [--data-dir PATH] [--port N] [--ui-origin URL]
+  devharness review [--repo PATH] [--config PATH] [--data-dir PATH] [--port N] [--ui-origin URL] [--allow-dirty]
 
 Commands:
   onboard   Produce a read-only understanding and bounded capability plan. --write stores it externally.
@@ -52,10 +82,17 @@ Commands:
   supervisor-init  Create or load the fixed external signing identity. Never exposes its private key.
   request-approval Create a signed, revision-bound pending request; this does not approve it.
   request-capability Request exactly one bounded capability from the current Alignment Brief.
+             Defaults: agent-runtime 720m, network-research 480m, others 60m (max 1440). Re-request expired/stale without losing the Goal Run.
   approve    Record a decision only through an exact foreground TTY confirmation. JSON and pipes are refused; independent human authentication is pending.
   verify    Plan an isolated command. Execution requires a Goal Run and its current signed capabilities.
   goal      Create a durable Goal Run at the current committed revision. Does not execute an agent.
-  advance   Perform the next safe Goal Run step. v0 records static understanding only.
+  advance   Perform the next safe Goal Run step: static understanding from received, or post-scope plan→change→verify prep after gates.scope approval.
+  align     Bootstrap a live Alignment bundle, or tick it with --continue after answers/approvals.
+             --continue loads exact HTTPS recipes from --research-recipes or <config-dir>/research-recipes.json
+             and registers the local readonly analysis adapter (devharness-cli-local-agent) for dogfood worker ticks.
+  request-scope Request scope approval for a ready Alignment Brief.
+  retry     Retry the last failed live Alignment phase once.
+  cancel    Cancel the current live Alignment operation through the shared fence.
   status    Restore one Goal Run from its event stream and show a compact current verdict.
   review    Start a token-protected, read-only loopback service for the developer review page.
 `;
@@ -72,25 +109,37 @@ function parseArguments(argv) {
     execute: false,
     attest: false,
     commandId: null,
-    goal: null,
-    runId: null,
+  goal: null,
+  runId: null,
+  agentId: null,
+  agentProfileId: null,
+  decisionId: null,
+  optionId: null,
+    packetSha256: null,
     gate: null,
     subjectId: null,
     subjectSha256: null,
+    operationId: null,
     requestId: null,
     capabilityId: null,
     configPath: null,
-    expiresInMinutes: 60,
+    expiresInMinutes: null,
     timeoutMs: 10 * 60 * 1000,
     port: 4317,
     uiOrigin: "http://localhost:3000",
-    dataRoot: defaultDataRoot()
+    dataRoot: defaultDataRoot(),
+    allowDirty: false,
+    continueLive: false,
+    researchRecipesPath: null,
+    artifactDir: null
   };
 
   for (let index = 1; index < argv.length; index += 1) {
     const argument = argv[index];
     if (argument === "--write") {
       options.write = true;
+    } else if (argument === "--continue" || argument === "--tick") {
+      options.continueLive = true;
     } else if (argument === "--execute") {
       options.execute = true;
     } else if (argument === "--attest") {
@@ -104,6 +153,21 @@ function parseArguments(argv) {
     } else if (argument === "--run") {
       options.runId = argv[++index];
       if (!options.runId) throw new Error("--run requires a run id");
+    } else if (argument === "--agent") {
+      options.agentId = argv[++index];
+      if (!options.agentId) throw new Error("--agent requires an agent id");
+    } else if (argument === "--agent-profile") {
+      options.agentProfileId = argv[++index];
+      if (!options.agentProfileId) throw new Error("--agent-profile requires an agent profile id");
+    } else if (argument === "--decision") {
+      options.decisionId = argv[++index];
+      if (!options.decisionId) throw new Error("--decision requires a decision id");
+    } else if (argument === "--option") {
+      options.optionId = argv[++index];
+      if (!options.optionId) throw new Error("--option requires an option id");
+    } else if (argument === "--packet") {
+      options.packetSha256 = argv[++index];
+      if (!options.packetSha256) throw new Error("--packet requires a packet digest");
     } else if (argument === "--gate") {
       options.gate = argv[++index];
       if (!options.gate) throw new Error("--gate requires a gate name");
@@ -116,6 +180,9 @@ function parseArguments(argv) {
     } else if (argument === "--request") {
       options.requestId = argv[++index];
       if (!options.requestId) throw new Error("--request requires an approval request id");
+    } else if (argument === "--operation") {
+      options.operationId = argv[++index];
+      if (!options.operationId) throw new Error("--operation requires an operation id");
     } else if (argument === "--capability") {
       options.capabilityId = argv[++index];
       if (!options.capabilityId) throw new Error("--capability requires a capability id");
@@ -135,9 +202,17 @@ function parseArguments(argv) {
       const parsed = new URL(value);
       if (!["http:", "https:"].includes(parsed.protocol) || parsed.origin !== value) throw new Error("--ui-origin must be an exact HTTP origin without a path");
       options.uiOrigin = parsed.origin;
+    } else if (argument === "--artifact-dir") {
+      options.artifactDir = argv[++index];
+      if (!options.artifactDir) throw new Error("--artifact-dir requires a path");
     } else if (argument === "--data-dir") {
       options.dataRoot = argv[++index];
       if (!options.dataRoot) throw new Error("--data-dir requires a path");
+    } else if (argument === "--research-recipes") {
+      options.researchRecipesPath = argv[++index];
+      if (!options.researchRecipesPath) throw new Error("--research-recipes requires a path");
+    } else if (argument === "--allow-dirty") {
+      options.allowDirty = true;
     } else if (argument === "--repo") {
       options.repo = argv[++index];
       if (!options.repo) throw new Error("--repo requires a path");
@@ -176,11 +251,252 @@ async function loadConfiguredProject(snapshot, options) {
 
 function nextRunAction(run) {
   if (run.state === "received") return "Understand the repository and define falsifiable acceptance criteria.";
+  if (run.state === "clarifying" && run.gates?.scope?.status === "approved") {
+    return "Scope is approved. Run `devharness advance --run ID` to plan, write the bounded external change, and prepare verify.";
+  }
   if (run.state === "clarifying") return "Review the Alignment Brief, then authorize the missing proof capabilities before scope definition.";
   if (run.state === "awaiting_scope_approval") return "Review the Alignment Brief and decide the scope gate.";
+  if (run.state === "planning" || run.state === "staffing" || run.state === "executing") {
+    return "Continue the governed post-scope step with `devharness advance --run ID`.";
+  }
+  if (run.state === "verifying") {
+    return "Run `devharness verify --run ID --command <id> --execute --attest` with current capability authority.";
+  }
   if (run.state === "awaiting_delivery_approval") return "Review the Delivery Brief and decide the delivery gate.";
   if (["completed", "blocked", "cancelled"].includes(run.state)) return "Inspect the final verdict and its evidence.";
   return "Continue the governed Goal Run from its recorded state.";
+}
+
+function nextLiveAction(status, { scopeApproved = false } = {}) {
+  if (!status) return "Inspect the live Alignment bundle.";
+  if (status.status === "waiting-agent-authority") return "Approve the exact agent authority, then continue the live operation.";
+  if (status.status === "waiting-research-authority") return "Approve the research authority, then continue the live operation.";
+  if (status.status === "running") return "Let the live operation continue. Run `devharness align --continue --run ID` to tick it.";
+  if (status.status === "question-blocked") return "Answer the blocked question before resuming the live operation.";
+  if (status.status === "ready") {
+    return scopeApproved
+      ? "Scope is approved. Run `devharness advance --run ID` for post-scope plan→change→verify prep, or inspect the Alignment Brief."
+      : "Review the ready Alignment Brief and decide whether to approve scope.";
+  }
+  if (status.status === "failed") return "Retry the failed phase or cancel the operation if the goal changed.";
+  if (status.status === "timed-out") return "Retry or cancel the timed-out operation.";
+  if (status.status === "cancelled") return "Start a new Goal Run if the work is still desired.";
+  return "Continue the live operation.";
+}
+
+function liveAlignmentLimits() {
+  return {
+    attempt_deadline_seconds: 600,
+    max_active_execution_seconds: 3600,
+    max_result_bytes: 1048576,
+    max_stdout_bytes: 10485760,
+    max_stderr_bytes: 10485760,
+    max_retained_records: 20,
+    max_retained_bytes: 20971520,
+    max_temporary_bytes: 268435456,
+    max_processes: 64,
+    max_rss_bytes: 2147483648,
+    cleanup_deadline_seconds: 30,
+    max_research_queries: 5,
+    max_sources_per_query: 5,
+    max_research_requests: 25,
+    max_redirects_per_request: 3,
+    max_research_response_bytes: 2097152,
+    max_research_bytes: 10485760,
+    research_request_deadline_seconds: 30,
+    max_agent_attempts: 6,
+    max_provider_requests: 120,
+    provider_request_deadline_seconds: 120,
+    max_total_tokens: 600000
+  };
+}
+
+function liveAlignmentResultContractSha256() {
+  return createHash("sha256").update("devharness-live-alignment-result-contract-v1").digest("hex");
+}
+
+function liveAlignmentDescriptor({ agentId = "devharness-cli-local-agent", agentProfileId = "codex-readonly-analysis-v1" } = {}) {
+  const descriptor = {
+    schema_version: 1,
+    id: agentId,
+    version: "devharness-cli-local-live-v1",
+    protocol_version: 1,
+    profile_id: agentProfileId,
+    model_id: "local-readonly-analysis",
+    executable_version: "devharness-cli",
+    modes: ["analysis-plan", "analysis-synthesis", "analysis-validation"],
+    features: {
+      structured_output: true,
+      explicit_cancel: true,
+      ephemeral_session: true,
+      read_only_tool_policy: true,
+      built_in_web_disable: true,
+      trusted_usage: true
+    },
+    implementation_sha256: createHash("sha256").update("devharness-cli-live-alignment-implementation").digest("hex"),
+    executable_sha256: createHash("sha256").update(process.execPath).digest("hex"),
+    profile_template_sha256: createHash("sha256").update("devharness-cli-live-alignment-profile-template").digest("hex"),
+    control_plane_origins: ["https://devharness.local"],
+    descriptor_sha256: "pending"
+  };
+  descriptor.descriptor_sha256 = createHash("sha256").update(JSON.stringify({
+    ...descriptor,
+    descriptor_sha256: null
+  })).digest("hex");
+  return descriptor;
+}
+
+function liveAlignmentAuthoritySubject({ run, descriptor, inputCheckpointSha256 }) {
+  return {
+    id: "agent-runtime-subject-cli",
+    sha256: createHash("sha256").update(JSON.stringify({
+      schema_version: 1,
+      repository_identity: run.repository.identity,
+      commit_sha: run.current_head_sha,
+      run_id: run.id,
+      descriptor_sha256: descriptor.descriptor_sha256,
+      input_checkpoint_sha256: inputCheckpointSha256,
+      profile_id: descriptor.profile_id,
+      model_id: descriptor.model_id
+    })).digest("hex")
+  };
+}
+
+async function loadCurrentLiveAlignmentBundle(dataRoot, repositoryIdentity, runId, { agentId = "devharness-cli-local-agent", agentProfileId = "codex-readonly-analysis-v1" } = {}) {
+  const run = await loadGoalRun(dataRoot, repositoryIdentity, runId);
+  if (run.state !== "clarifying") return null;
+  const existing = await findLiveAlignmentOperationBundleByRun(dataRoot, repositoryIdentity, runId, run.current_head_sha);
+  if (existing) {
+    const interaction = await loadRunInteraction(dataRoot, repositoryIdentity, runId);
+    let summary = null;
+    if (interaction) {
+      const sources = new Map(interaction.source_artifacts.map((source) => [source.kind, source]));
+      const goalSource = sources.get("goal-input") ?? null;
+      const snapshotSource = sources.get("repository-snapshot") ?? null;
+      const onboardingSource = sources.get("onboarding-plan") ?? null;
+      if (goalSource && snapshotSource && onboardingSource) {
+        const [{ value: goalValue }, { value: snapshotValue }, { value: onboardingPlanValue }] = await Promise.all([
+          loadRunSourceArtifact(dataRoot, repositoryIdentity, runId, goalSource.id),
+          loadRunSourceArtifact(dataRoot, repositoryIdentity, runId, snapshotSource.id),
+          loadRunSourceArtifact(dataRoot, repositoryIdentity, runId, onboardingSource.id)
+        ]);
+        const computed = buildLiveAlignmentAnalysisPlan({
+          operation: existing.operation,
+          goalArtifact: {
+            id: goalSource.id,
+            kind: "goal",
+            sha256: goalSource.sha256,
+            storage_key: goalSource.uri,
+            media_type: "application/json",
+            size_bytes: Buffer.byteLength(`${JSON.stringify(goalValue, null, 2)}\n`)
+          },
+          snapshotArtifact: {
+            id: snapshotSource.id,
+            kind: "snapshot",
+            sha256: snapshotSource.sha256,
+            storage_key: snapshotSource.uri,
+            media_type: "application/json",
+            size_bytes: Buffer.byteLength(`${JSON.stringify(snapshotValue, null, 2)}\n`)
+          },
+          onboardingArtifact: {
+            id: onboardingSource.id,
+            kind: "onboarding",
+            sha256: onboardingSource.sha256,
+            storage_key: onboardingSource.uri,
+            media_type: "application/json",
+            size_bytes: Buffer.byteLength(`${JSON.stringify(onboardingPlanValue, null, 2)}\n`)
+          },
+          onboardingPlan: onboardingPlanValue
+        });
+        summary = computed.summary;
+      }
+    }
+    return { run, interaction, ...existing, summary: summary ?? existing.summary ?? null };
+  }
+  const interaction = await loadRunInteraction(dataRoot, repositoryIdentity, runId);
+  if (!interaction) return null;
+  const sources = new Map(interaction.source_artifacts.map((source) => [source.kind, source]));
+  const required = [
+    { sourceKind: "goal-input", refKind: "goal" },
+    { sourceKind: "repository-snapshot", refKind: "snapshot" },
+    { sourceKind: "onboarding-plan", refKind: "onboarding" }
+  ];
+  const loaded = {};
+  let onboardingPlanValue = null;
+  for (const { sourceKind, refKind } of required) {
+    const source = sources.get(sourceKind);
+    if (!source) throw new Error(`Current Alignment packet is missing the ${sourceKind} source artifact.`);
+    const { value } = await loadRunSourceArtifact(dataRoot, repositoryIdentity, runId, source.id);
+    if (refKind === "onboarding") onboardingPlanValue = value;
+    loaded[refKind] = {
+      id: source.id,
+      kind: refKind,
+      sha256: source.sha256,
+      storage_key: source.uri,
+      media_type: "application/json",
+      size_bytes: Buffer.byteLength(`${JSON.stringify(value, null, 2)}\n`)
+    };
+  }
+  const developerAnswers = interaction.source_artifacts
+    .filter((source) => source.kind === "developer-answer")
+    .map((source) => ({
+      id: source.id,
+      kind: "developer-answer",
+      sha256: source.sha256,
+      storage_key: source.uri,
+      media_type: "application/json",
+      size_bytes: 0
+    }));
+  const descriptor = liveAlignmentDescriptor({ agentId, agentProfileId });
+  await assertContract("agent-runtime", descriptor);
+  const inputCheckpointSha256 = createHash("sha256").update(JSON.stringify({
+    run_id: run.id,
+    head_sha: run.current_head_sha,
+    packet_sha256: createHash("sha256").update(JSON.stringify(interaction)).digest("hex"),
+    source_ids: interaction.source_artifacts.map((source) => source.id)
+  })).digest("hex");
+  const operation = buildLiveAlignmentOperation({
+    run,
+    goalArtifact: loaded.goal,
+    snapshotArtifact: loaded.snapshot,
+    onboardingArtifact: loaded.onboarding,
+    agentDescriptor: descriptor,
+    agentAuthoritySubject: liveAlignmentAuthoritySubject({ run, descriptor, inputCheckpointSha256 }),
+    resultContractSha256: liveAlignmentResultContractSha256(),
+    limits: liveAlignmentLimits(),
+    developerAnswerArtifacts: developerAnswers,
+    inputCheckpointSha256
+  });
+  const { analysisPlan, summary } = buildLiveAlignmentAnalysisPlan({
+    operation,
+    goalArtifact: loaded.goal,
+    snapshotArtifact: loaded.snapshot,
+    onboardingArtifact: loaded.onboarding,
+    onboardingPlan: onboardingPlanValue
+  });
+  const interactionPacket = buildLiveAlignmentInteractionPacket({
+    operation,
+    analysisPlan,
+    analysisSummary: summary,
+    onboardingSummary: onboardingPlanValue.summary,
+    goalArtifact: loaded.goal,
+    snapshotArtifact: loaded.snapshot,
+    onboardingArtifact: loaded.onboarding
+  });
+  return {
+    run,
+    interaction,
+    operation,
+    analysisPlan,
+    interactionPacket: interactionPacket.packet,
+    summary,
+    goalArtifact: loaded.goal,
+    snapshotArtifact: loaded.snapshot,
+    onboardingArtifact: loaded.onboarding,
+    developerAnswers,
+    descriptor,
+    inputCheckpointSha256
+  };
 }
 
 export function formatVerificationExecutionResult({ receipt, receiptPath, evidence = null, attestation, format = "text" }) {
@@ -224,6 +540,44 @@ function initialScorecard(run, generatedAt) {
   });
 }
 
+function formatStageGateSummary(stageGates) {
+  if (!stageGates) return "not recorded";
+  const gates = [stageGates.implement, stageGates.verify, stageGates.deliver].filter(Boolean);
+  const ready = gates.filter((gate) => gate.status === "ready").length;
+  const blocked = gates.length - ready;
+  const totalReasons = gates.reduce((sum, gate) => sum + (gate.reasons?.length ?? 0), 0);
+  const formatGate = (label, gate) => `${label} ${gate.status}${gate.reasons?.length > 0 ? ` (${gate.reasons.join("; ")})` : ""}`;
+  return `${ready}/${gates.length} ready · ${blocked} blocked · ${totalReasons} reason(s) · ${formatGate("implement", stageGates.implement)} · ${formatGate("verify", stageGates.verify)} · ${formatGate("deliver", stageGates.deliver)}`;
+}
+
+function formatExecutionGraphSummary(graph) {
+  if (!graph) return "not recorded";
+  const owner = graph.integration_owner_task_id ?? "unknown";
+  const criticalPath = graph.critical_path?.length > 0 ? graph.critical_path.join(" → ") : "not yet derivable";
+  const nextWave = graph.schedule_valid
+    ? (graph.next_ready_wave?.task_ids?.length > 0
+      ? `next ready wave ${graph.next_ready_wave.index}: ${graph.next_ready_wave.task_ids.join(", ")}`
+      : "next ready wave: none")
+    : `blocked: ${(graph.blocked_reasons ?? []).map((reason) => reason.summary).join("; ") || "schedule invalid"}`;
+  return `${graph.node_count} node(s) · max parallelism ${graph.max_parallelism} · integration owner ${owner} · critical path ${criticalPath} · ${nextWave}`;
+}
+
+
+function createDefaultContinueAdapterRegistry(services = {}) {
+  if (services.adapterRegistry) return services.adapterRegistry;
+  const registry = new AgentAdapterRegistry();
+  registry.register(LOCAL_READONLY_ADAPTER_ID, createLocalReadonlyAnalysisAdapter(services.localReadonlyAdapter));
+  return registry;
+}
+
+async function resolveContinueResearchRecipes(options, services = {}) {
+  if (Array.isArray(services.researchRecipes)) return services.researchRecipes;
+  return loadResearchRecipesForContinue({
+    researchRecipesPath: options.researchRecipesPath,
+    configPath: options.configPath
+  });
+}
+
 export async function runCli(argv, io = console, services = {}) {
   const options = parseArguments(argv);
   if (!options.command || options.command === "help") {
@@ -231,7 +585,7 @@ export async function runCli(argv, io = console, services = {}) {
     return 0;
   }
 
-  if (!["onboard", "init", "doctor", "build", "supervisor-init", "request-approval", "request-capability", "approve", "verify", "goal", "advance", "status", "review"].includes(options.command)) {
+  if (!["onboard", "init", "doctor", "build", "supervisor-init", "request-approval", "request-capability", "approve", "verify", "goal", "advance", "align", "answer", "request-scope", "retry", "cancel", "status", "review"].includes(options.command)) {
     throw new Error(`Unknown command: ${options.command}`);
   }
 
@@ -276,14 +630,314 @@ export async function runCli(argv, io = console, services = {}) {
     return 0;
   }
 
+  if (options.command === "align") {
+    if (!options.runId) throw new Error("align requires --run ID");
+    const { dataRoot } = resolveExternalDataRoot(snapshot.repository.root_uri, options.dataRoot);
+    if (options.continueLive) {
+      const researchRecipes = await resolveContinueResearchRecipes(options, services);
+      const adapterRegistry = createDefaultContinueAdapterRegistry(services);
+      const continued = await continueLiveAlignmentOperation({
+        dataRoot,
+        repositoryIdentity: snapshot.repository.identity,
+        runId: options.runId,
+        snapshot,
+        supervisorRoot: services.supervisorRoot ?? defaultSupervisorRoot(),
+        now: () => new Date(services.now?.() ?? Date.now()),
+        isOwnerAlive: services.isOwnerAlive,
+        owner: services.leaseOwner,
+        capabilityView: services.capabilityView,
+        researchRecipes,
+        researchAuthority: services.researchAuthority,
+        fetchImpl: services.fetchImpl ?? globalThis.fetch?.bind(globalThis) ?? null,
+        adapterRegistry,
+        adapterName: options.agentId ?? services.adapterName ?? LOCAL_READONLY_ADAPTER_ID,
+        probeRunner: services.probeRunner,
+        resultValidator: services.resultValidator,
+        workerContext: services.workerContext,
+        leaseTtlSeconds: services.leaseTtlSeconds
+      });
+      const live = continued.bundle;
+      const unresolved = continued.unresolved_decisions ?? unresolvedLiveAlignmentDecisions(live.interactionPacket, live.developerAnswers);
+      const result = {
+        mode: "live-alignment",
+        action: "continue",
+        run: await loadGoalRun(dataRoot, snapshot.repository.identity, options.runId),
+        operation: live.operation,
+        status: live.status,
+        lease: live.lease,
+        fence: live.fence,
+        agent: { id: live.operation.agent_descriptor.id, profile_id: live.operation.agent_descriptor.profile_id },
+        unresolved_decisions: unresolved.map((decision) => decision.id),
+        developer_answers: live.developerAnswers?.length ?? 0,
+        research: (continued.research ?? []).map((item) => ({ task_id: item.taskId, outcome: item.manifest?.outcome ?? null })),
+        worker: continued.worker ? { phase: continued.worker.phase, attempt_no: continued.worker.attemptNo, status: continued.worker.worker.attempt.status } : null,
+        blockers: continued.blockers,
+        next_action: continued.next_action
+      };
+      io.log(options.format === "json"
+        ? JSON.stringify(result, null, 2)
+        : `Live Alignment continue: ${live.operation.id}\nRun: ${options.runId}\nState: ${live.status.status}\nPhase: ${live.status.active_phase ?? "none"}\nAttempts: ${live.status.agent_attempts}\nUnresolved decisions: ${unresolved.length}\nLease: ${live.lease?.owner_id ?? "none"}\nNext: ${result.next_action}${result.blockers?.length ? `\nBlockers: ${result.blockers.join(" | ")}` : ""}\nStored externally: ${live.paths.root}`);
+      return live.status.status === "ready" ? 0 : 2;
+    }
+    const bundleInput = await loadCurrentLiveAlignmentBundle(dataRoot, snapshot.repository.identity, options.runId, {
+      agentId: options.agentId ?? "devharness-cli-local-agent",
+      agentProfileId: options.agentProfileId ?? "codex-readonly-analysis-v1"
+    });
+    if (!bundleInput) throw new Error("Live alignment requires a clarifying Goal Run with a current Alignment Brief.");
+    const bundle = await loadLiveAlignmentOperationBundle(dataRoot, snapshot.repository.identity, bundleInput.operation.id);
+    let live = bundle;
+    if (!live) {
+      const lease = buildLiveAlignmentLease(bundleInput.operation, {
+        owner_id: `devharness-cli:${process.pid}`,
+        boot_id: stableLiveAlignmentExecutionId(),
+        pid: process.pid,
+        process_birth_id: stableLiveAlignmentExecutionId()
+      });
+      const initialStatus = buildLiveAlignmentStatus(bundleInput.operation, {
+        status: bundleInput.interactionPacket?.decisions?.length > 0 ? "question-blocked" : "planned",
+        active_phase: bundleInput.interactionPacket?.decisions?.length > 0 ? "analysis-plan" : null
+      });
+      await startLiveAlignmentOperation({
+        dataRoot,
+        repositoryIdentity: snapshot.repository.identity,
+        operation: bundleInput.operation,
+        analysisPlan: bundleInput.analysisPlan,
+        interactionPacket: bundleInput.interactionPacket,
+        status: initialStatus,
+        lease
+      });
+      live = await loadLiveAlignmentOperationBundle(dataRoot, snapshot.repository.identity, bundleInput.operation.id);
+      if (live.status.status === "planned") {
+        live = await projectLiveAlignmentOperationStatus(dataRoot, snapshot.repository.identity, bundleInput.operation.id, { agentAuthorityReady: false });
+      }
+    } else if (live.status.status === "planned") {
+      live = await projectLiveAlignmentOperationStatus(dataRoot, snapshot.repository.identity, bundleInput.operation.id, { agentAuthorityReady: false });
+    }
+    const result = {
+      mode: "live-alignment",
+      run: bundleInput.run,
+      operation: live.operation,
+      status: live.status,
+      lease: live.lease,
+      fence: live.fence,
+      agent: { id: live.operation.agent_descriptor.id, profile_id: live.operation.agent_descriptor.profile_id },
+      analysis_plan: live.analysisPlan ? { id: live.analysisPlan.id, questions: live.analysisPlan.questions.length, research_topics: live.analysisPlan.research_topics.length, research_tasks: live.analysisPlan.research_tasks.length } : null,
+      analysis_summary: bundleInput.summary ?? null,
+      developer_answers: live.developerAnswers?.length ?? 0,
+      interaction_packet: live.interactionPacket ? { id: live.interactionPacket.id, kind: live.interactionPacket.kind, decisions: live.interactionPacket.decisions.length, verdict: live.interactionPacket.verdict } : null,
+      next_action: nextLiveAction(live.status)
+    };
+    io.log(options.format === "json"
+      ? JSON.stringify(result, null, 2)
+      : `Live Alignment: ${live.operation.id}\nRun: ${bundleInput.run.id}\nAgent: ${live.operation.agent_descriptor.id} / ${live.operation.agent_descriptor.profile_id}\nPlan: ${live.analysisPlan ? `${live.analysisPlan.questions.length} questions · ${live.analysisPlan.research_tasks.length} research tasks` : "not recorded"}${bundleInput.summary?.stage_gates ? `\nStage gates: ${formatStageGateSummary(bundleInput.summary.stage_gates)}` : ""}${bundleInput.summary?.execution_graph ? `\nExecution graph: ${formatExecutionGraphSummary(bundleInput.summary.execution_graph)}` : ""}\nPacket: ${live.interactionPacket ? `${live.interactionPacket.kind} · ${unresolvedLiveAlignmentDecisions(live.interactionPacket, live.developerAnswers).length} unresolved / ${live.developerAnswers?.length ?? 0} answered` : "not recorded"}\nState: ${live.status.status}\nPhase: ${live.status.active_phase ?? "none"}\nRevision: ${bundleInput.run.current_head_sha.slice(0, 12)}\nNext: ${result.next_action}\nStored externally: ${live.paths.root}`);
+    return live.status.status === "ready" ? 0 : 2;
+  }
+
+  if (options.command === "answer") {
+    if (!options.runId) throw new Error("answer requires --run ID");
+    const { dataRoot } = resolveExternalDataRoot(snapshot.repository.root_uri, options.dataRoot);
+    const bundleInput = await loadCurrentLiveAlignmentBundle(dataRoot, snapshot.repository.identity, options.runId, {
+      agentId: options.agentId ?? "devharness-cli-local-agent",
+      agentProfileId: options.agentProfileId ?? "codex-readonly-analysis-v1"
+    });
+    if (!bundleInput) throw new Error("Live alignment requires a current Alignment Brief before answering a question.");
+    const supervisorRoot = services.supervisorRoot ?? defaultSupervisorRoot();
+    const answerResult = await recordAlignmentAnswer({
+      dataRoot,
+      supervisorRoot,
+      repositoryIdentity: snapshot.repository.identity,
+      runId: options.runId,
+      packetSha256: options.packetSha256 ?? null,
+      decisionId: options.decisionId,
+      optionId: options.optionId,
+      responseProvider: services.answerResponse,
+      now: () => new Date()
+    });
+    const refreshed = answerResult.bundle;
+    const result = {
+      mode: "live-alignment",
+      run: bundleInput.run,
+      operation: refreshed.operation,
+      status: refreshed.status,
+      lease: refreshed.lease,
+      fence: refreshed.fence,
+      agent: { id: refreshed.operation.agent_descriptor.id, profile_id: refreshed.operation.agent_descriptor.profile_id },
+      developer_answers: refreshed.developerAnswers?.length ?? 0,
+      interaction_packet: refreshed.interactionPacket ? { id: refreshed.interactionPacket.id, kind: refreshed.interactionPacket.kind, decisions: refreshed.interactionPacket.decisions.length, verdict: refreshed.interactionPacket.verdict } : null,
+      answer: answerResult.answer,
+      receipt: answerResult.receipt,
+      next_action: nextLiveAction(refreshed.status)
+    };
+    io.log(options.format === "json"
+      ? JSON.stringify(result, null, 2)
+      : `Answered: ${answerResult.answer.decision_id} → ${answerResult.answer.option_id}\nReceipt: ${answerResult.receipt?.id ?? "replayed"}\nState: ${refreshed.status.status}\nNext: ${result.next_action}`);
+    return refreshed.status.status === "ready" ? 0 : 2;
+  }
+
+  if (options.command === "request-scope") {
+    if (!options.runId) throw new Error("request-scope requires --run ID");
+    const { dataRoot } = resolveExternalDataRoot(snapshot.repository.root_uri, options.dataRoot);
+    const run = await loadGoalRun(dataRoot, snapshot.repository.identity, options.runId);
+    const bundle = await findLiveAlignmentOperationBundleByRun(dataRoot, snapshot.repository.identity, options.runId, run.current_head_sha);
+    if (!bundle) throw new Error("request-scope requires a current ready AlignmentBundle.");
+    if (bundle.status.status !== "ready") throw new Error("request-scope is available only for a ready AlignmentBundle.");
+    const bundleRef = bundle.status.result_bundle_ref;
+    if (!bundleRef) throw new Error("Current AlignmentBundle is missing a result bundle reference.");
+    const supervisorRoot = services.supervisorRoot ?? defaultSupervisorRoot();
+    await initializeSupervisorIdentity(supervisorRoot);
+    const request = await createSupervisorApprovalRequest({
+      supervisorRoot,
+      repositoryIdentity: snapshot.repository.identity,
+      relevantHeadSha: run.current_head_sha,
+      runId: options.runId,
+      gate: "scope",
+      subject: { id: bundleRef.id, artifact_sha256: bundleRef.sha256 },
+      now: () => new Date(services.now?.() ?? Date.now())
+    });
+    const result = {
+      mode: "live-alignment",
+      run,
+      operation: bundle.operation,
+      status: bundle.status,
+      lease: bundle.lease,
+      fence: bundle.fence,
+      bundle_ref: bundleRef,
+      request,
+      next_action: `devharness approve --repo ${fileURLToPath(snapshot.repository.root_uri)} --data-dir ${dataRoot} --request ${request.id}`
+    };
+    io.log(options.format === "json"
+      ? JSON.stringify(result, null, 2)
+      : `Scope approval requested: ${request.id}\nBundle: ${bundleRef.id}\nRevision: ${bundle.operation.commit_sha.slice(0, 12)}\nNext: ${result.next_action}`);
+    return 0;
+  }
+
+  if (options.command === "retry") {
+    if (!options.runId) throw new Error("retry requires --run ID");
+    if (!options.operationId) throw new Error("retry requires --operation ID");
+    const { dataRoot } = resolveExternalDataRoot(snapshot.repository.root_uri, options.dataRoot);
+    const bundle = await loadLiveAlignmentOperationBundle(dataRoot, snapshot.repository.identity, options.operationId);
+    if (!bundle) throw new Error("retry requires an existing live Alignment operation.");
+    if (bundle.operation.run_id !== options.runId) throw new Error("retry requires the operation to belong to the requested Goal Run.");
+    const updated = await retryLiveAlignmentOperation({
+      dataRoot,
+      repositoryIdentity: snapshot.repository.identity,
+      operationId: options.operationId,
+      now: () => new Date(services.now?.() ?? Date.now())
+    });
+    if (!updated) throw new Error("retry requires an existing live Alignment operation.");
+    const result = {
+      mode: "live-alignment",
+      run: await loadGoalRun(dataRoot, snapshot.repository.identity, options.runId),
+      operation: updated.operation,
+      status: updated.status,
+      lease: updated.lease,
+      fence: updated.fence,
+      next_action: nextLiveAction(updated.status)
+    };
+    io.log(options.format === "json"
+      ? JSON.stringify(result, null, 2)
+      : `Retried: ${updated.operation.id}\nPhase: ${updated.status.active_phase ?? "none"}\nAttempt: ${updated.status.current_attempt_id ?? "none"}\nState: ${updated.status.status}\nNext: ${result.next_action}`);
+    return updated.status.status === "ready" ? 0 : 2;
+  }
+
+  if (options.command === "cancel") {
+    if (!options.runId) throw new Error("cancel requires --run ID");
+    if (!options.operationId) throw new Error("cancel requires --operation ID");
+    const { dataRoot } = resolveExternalDataRoot(snapshot.repository.root_uri, options.dataRoot);
+    const bundle = await loadLiveAlignmentOperationBundle(dataRoot, snapshot.repository.identity, options.operationId);
+    if (!bundle) throw new Error("cancel requires an existing live Alignment operation.");
+    if (bundle.operation.run_id !== options.runId) throw new Error("cancel requires the operation to belong to the requested Goal Run.");
+    const updated = await cancelLiveAlignmentOperation({
+      dataRoot,
+      repositoryIdentity: snapshot.repository.identity,
+      operationId: options.operationId,
+      requestedBy: { id: "developer", kind: "human" },
+      now: () => new Date(services.now?.() ?? Date.now())
+    });
+    if (!updated) throw new Error("cancel requires an existing live Alignment operation.");
+    const result = {
+      mode: "live-alignment",
+      run: await loadGoalRun(dataRoot, snapshot.repository.identity, options.runId),
+      operation: updated.operation,
+      status: updated.status,
+      lease: updated.lease,
+      fence: updated.fence,
+      next_action: nextLiveAction(updated.status)
+    };
+    io.log(options.format === "json"
+      ? JSON.stringify(result, null, 2)
+      : `Cancelled: ${updated.operation.id}\nState: ${updated.status.status}\nFence: ${updated.fence.kind}\nNext: ${result.next_action}`);
+    return 0;
+  }
+
   if (options.command === "status") {
     if (!options.runId) throw new Error("status requires --run ID");
     const { dataRoot } = resolveExternalDataRoot(snapshot.repository.root_uri, options.dataRoot);
-    const run = await loadGoalRun(dataRoot, snapshot.repository.identity, options.runId);
-    const scorecard = await loadRunScorecard(dataRoot, snapshot.repository.identity, options.runId);
     const supervisorRoot = services.supervisorRoot ?? defaultSupervisorRoot();
+    const statusNow = new Date(services.now?.() ?? Date.now());
+    const reconciled = await reconcileRunGatesFromApprovals({
+      dataRoot,
+      supervisorRoot,
+      repositoryIdentity: snapshot.repository.identity,
+      runId: options.runId,
+      now: statusNow
+    });
+    const liveInput = await loadCurrentLiveAlignmentBundle(dataRoot, snapshot.repository.identity, options.runId);
+    if (liveInput) {
+      liveInput.run = reconciled.run;
+      let live = await loadLiveAlignmentOperationBundle(dataRoot, snapshot.repository.identity, liveInput.operation.id);
+      if (live) {
+        let capabilitySummary = null;
+        if (liveInput.run.state === "clarifying") {
+          try {
+            capabilitySummary = await loadCapabilityAuthorizationView({ dataRoot, supervisorRoot, repositoryIdentity: snapshot.repository.identity, runId: options.runId, now: statusNow });
+          } catch (error) {
+            capabilitySummary = null;
+            if (options.format === "json") {
+              // keep going; live alignment status is still useful
+            }
+          }
+        }
+        if (live.status?.status === "waiting-agent-authority") {
+          const agentRuntimeApproved = Boolean(capabilitySummary?.capabilities?.some((item) =>
+            (item.request?.id === "agent-runtime" || item.request?.capability === "agent-runtime")
+            && item.status === "approved"
+          ));
+          if (agentRuntimeApproved) {
+            live = await projectLiveAlignmentOperationStatus(dataRoot, snapshot.repository.identity, live.operation.id, {
+              agentAuthorityReady: true,
+              researchAuthorityReady: true,
+              active_phase: live.status.active_phase ?? "analysis-plan"
+            });
+          }
+        }
+        const scopeApproved = liveInput.run.gates?.scope?.status === "approved";
+        const result = {
+          mode: "live-alignment",
+          run: liveInput.run,
+          operation: live.operation,
+          status: live.status,
+          lease: live.lease,
+          fence: live.fence,
+          agent: { id: live.operation.agent_descriptor.id, profile_id: live.operation.agent_descriptor.profile_id },
+          analysis_plan: live.analysisPlan ? { id: live.analysisPlan.id, questions: live.analysisPlan.questions.length, clarification_questions: live.analysisPlan.clarification_questions?.length ?? 0, research_topics: live.analysisPlan.research_topics.length, research_tasks: live.analysisPlan.research_tasks.length, team_decomposition: live.analysisPlan.team_decomposition.length } : null,
+          analysis_summary: liveInput.summary ?? null,
+          capability_authorization: capabilitySummary ? { counts: capabilitySummary.counts, research_task_counts: capabilitySummary.research_task_counts } : null,
+          developer_answers: live.developerAnswers?.length ?? 0,
+          unresolved_decisions: unresolvedLiveAlignmentDecisions(live.interactionPacket, live.developerAnswers).map((decision) => decision.id),
+          interaction_packet: live.interactionPacket ? { id: live.interactionPacket.id, kind: live.interactionPacket.kind, decisions: live.interactionPacket.decisions.length, unresolved: unresolvedLiveAlignmentDecisions(live.interactionPacket, live.developerAnswers).length, verdict: live.interactionPacket.verdict } : null,
+          next_action: nextLiveAction(live.status, { scopeApproved })
+        };
+        io.log(options.format === "json"
+          ? JSON.stringify(result, null, 2)
+          : `Live Alignment: ${live.operation.id}\nRun: ${liveInput.run.id}\nAgent: ${live.operation.agent_descriptor.id} / ${live.operation.agent_descriptor.profile_id}\nPlan: ${live.analysisPlan ? `${live.analysisPlan.clarification_questions?.length ?? 0} clarifications · ${live.analysisPlan.questions.length} questions · ${live.analysisPlan.research_tasks.length} research tasks · ${live.analysisPlan.team_decomposition.length} crew groups` : "not recorded"}${liveInput.summary?.stage_gates ? `\nStage gates: ${formatStageGateSummary(liveInput.summary.stage_gates)}` : ""}${liveInput.summary?.execution_graph ? `\nExecution graph: ${formatExecutionGraphSummary(liveInput.summary.execution_graph)}` : ""}${capabilitySummary ? `\nResearch approvals: ${capabilitySummary.counts.approved} approved · ${capabilitySummary.counts.pending} pending · ${capabilitySummary.counts.unrequested} unrequested` : ""}${capabilitySummary ? `\nResearch queue: ${capabilitySummary.research_task_counts.approved} approved · ${capabilitySummary.research_task_counts.pending_approval} waiting · ${capabilitySummary.research_task_counts.blocked} blocked` : ""}\nPacket: ${live.interactionPacket ? `${live.interactionPacket.kind} · ${unresolvedLiveAlignmentDecisions(live.interactionPacket, live.developerAnswers).length} unresolved / ${live.developerAnswers?.length ?? 0} answered` : "not recorded"}\nState: ${live.status.status}\nPhase: ${live.status.active_phase ?? "none"}\nScope gate: ${liveInput.run.gates.scope.status}\nRevision: ${liveInput.run.current_head_sha.slice(0, 12)}\nNext: ${result.next_action}\nStored externally: ${live.paths.root}`);
+        return live.status.status === "ready" && !scopeApproved ? 0 : (live.status.status === "ready" && scopeApproved ? 0 : 2);
+      }
+    }
+    const run = reconciled.run;
+    const scorecard = await loadRunScorecard(dataRoot, snapshot.repository.identity, options.runId);
     const capabilities = run.state === "clarifying"
-      ? await loadCapabilityAuthorizationView({ dataRoot, supervisorRoot, repositoryIdentity: snapshot.repository.identity, runId: options.runId, now: new Date(services.now?.() ?? Date.now()) })
+      ? await loadCapabilityAuthorizationView({ dataRoot, supervisorRoot, repositoryIdentity: snapshot.repository.identity, runId: options.runId, now: statusNow })
       : null;
     const result = { run, scorecard, ...(capabilities ? { capabilities } : {}), next_action: capabilities?.next_action ?? nextRunAction(run) };
     io.log(options.format === "json"
@@ -299,9 +953,118 @@ export async function runCli(argv, io = console, services = {}) {
     }
     const { dataRoot } = resolveExternalDataRoot(snapshot.repository.root_uri, options.dataRoot);
     const currentRun = await loadGoalRun(dataRoot, snapshot.repository.identity, options.runId);
-    if (currentRun.state !== "received") throw new Error("Static understanding can advance only a received Goal Run.");
     if (currentRun.repository.identity !== snapshot.repository.identity) throw new Error("Goal Run belongs to a different repository.");
     if (currentRun.current_head_sha !== snapshot.repository.git.head_sha) throw new Error("Repository revision changed after Goal Run intake.");
+    const generatedAt = services.now?.() ?? new Date().toISOString();
+
+    if (postScopeAdvanceSupported(currentRun)) {
+      const priorArtifacts = [];
+      for (const artifactId of ["artifact-onboarding-plan", "artifact-goal-input", "artifact-repository-snapshot"]) {
+        try {
+          const loaded = await loadRunSourceArtifact(dataRoot, snapshot.repository.identity, options.runId, artifactId);
+          priorArtifacts.push({ id: loaded.source.id, kind: loaded.source.kind, value: loaded.value, sha256: loaded.source.sha256 });
+        } catch (error) {
+          if (artifactId === "artifact-onboarding-plan") throw error;
+        }
+      }
+      const paths = runStoragePaths(dataRoot, snapshot.repository.identity, options.runId);
+      const currentPointer = JSON.parse(await readFile(paths.current, "utf8"));
+      const nextSequence = (Number.isInteger(currentPointer?.sequence) ? currentPointer.sequence : 1) + 1;
+      const checkpoint = await createPostScopeAdvanceCheckpoint({
+        run: currentRun,
+        snapshot,
+        dataRoot,
+        priorArtifacts,
+        artifactDir: options.artifactDir,
+        verifyCommandId: options.commandId,
+        nextSequence,
+        generatedAt
+      });
+      const scorecard = createReviewScorecard({
+        run: checkpoint.run,
+        scopeHash: createHash("sha256").update(JSON.stringify({ goal: currentRun.goal.original, scope_version: currentRun.goal.scope_version })).digest("hex"),
+        harnessVersion: "unbound",
+        title: `Post-scope delivery: ${currentRun.goal.original}`,
+        reviewVerdicts: [],
+        reviewChecks: [],
+        findings: [],
+        unknowns: [
+          { id: "verify-pending", title: "Verification evidence pending", summary: "Bounded change is recorded; declared quality verification still needs capability-backed execute/attest.", source_refs: ["artifact-readiness-summary"] }
+        ],
+        sourceArtifactCount: checkpoint.artifacts.length,
+        omittedItemCount: checkpoint.packet.compression.omitted_item_count,
+        generatedAt,
+        dataSource: "runtime"
+      });
+      const stored = await appendGoalRunCheckpoint({
+        dataRoot,
+        repositoryIdentity: snapshot.repository.identity,
+        runId: currentRun.id,
+        events: checkpoint.events,
+        nextRun: checkpoint.run,
+        scorecard,
+        packet: checkpoint.packet,
+        artifacts: checkpoint.artifacts
+      });
+      let verifyProbe = null;
+      if (options.commandId) {
+        try {
+          const { config } = await loadConfiguredProject(snapshot, options);
+          const plan = await createVerificationPlan({
+            snapshot,
+            config,
+            commandId: options.commandId,
+            goalRunId: options.runId,
+            dataRoot,
+            timeoutMs: options.timeoutMs
+          });
+          const supervisorRoot = services.supervisorRoot ?? defaultSupervisorRoot();
+          const authorizationView = await loadCapabilityAuthorizationView({
+            dataRoot,
+            supervisorRoot,
+            repositoryIdentity: snapshot.repository.identity,
+            runId: options.runId,
+            now: new Date(services.now?.() ?? Date.now())
+          });
+          const authority = evaluateVerificationExecutionAuthority(plan, authorizationView);
+          verifyProbe = {
+            command_id: options.commandId,
+            authority_allowed: authority.allowed,
+            required_capability_ids: authority.required_capability_ids,
+            missing: authority.missing,
+            reasons: authority.reasons,
+            next_action: authority.allowed
+              ? `devharness verify --run ${options.runId} --command ${options.commandId} --execute --attest`
+              : `Capability gate: ${authority.reasons.map((reason) => reason.message).join(" ")}`
+          };
+        } catch (error) {
+          verifyProbe = {
+            command_id: options.commandId,
+            authority_allowed: false,
+            reasons: [{ code: "verify_probe_failed", message: error.message }],
+            next_action: error.message
+          };
+        }
+      }
+      const result = {
+        mode: "post-scope",
+        run: checkpoint.run,
+        interaction: checkpoint.packet,
+        scorecard,
+        delivery: checkpoint.delivery,
+        verify: verifyProbe,
+        path: stored.paths.checkpoint,
+        next_action: verifyProbe?.next_action ?? nextRunAction(checkpoint.run)
+      };
+      io.log(options.format === "json"
+        ? JSON.stringify(result, null, 2)
+        : `Goal Run advanced (post-scope): ${checkpoint.run.id}\nState: ${checkpoint.run.state}\nSummary: ${checkpoint.delivery.summary_path}\nScope gate: approved\nNext: ${result.next_action}\nStored externally: ${stored.paths.checkpoint}`);
+      return 0;
+    }
+
+    if (currentRun.state !== "received") {
+      throw new Error("advance supports received (static understanding) or scope-approved clarifying/planning/staffing/executing runs.");
+    }
     let config = null;
     let configError = null;
     let configSource = options.configPath ? "external" : "tracked";
@@ -310,7 +1073,6 @@ export async function runCli(argv, io = console, services = {}) {
     } catch (error) {
       configError = error.message;
     }
-    const generatedAt = services.now?.() ?? new Date().toISOString();
     const trustContext = await loadTrustedEvaluationContext({ snapshot });
     const report = evaluateReadiness(snapshot, { trustContext, config, configError, configSource });
     const onboardingPlan = await createOnboardingPlan(snapshot, { report, config, configError, configSource, generatedAt });
@@ -365,7 +1127,7 @@ export async function runCli(argv, io = console, services = {}) {
         if (!error.message.startsWith("No devharness.yaml exists.")) throw error;
       }
     }
-    const declarationReview = await createProjectDeclarationReview(snapshot, declarationConfig);
+    const declarationReview = await createProjectDeclarationReview(snapshot, declarationConfig, { allowDirtyBaseline: options.allowDirty });
     const live = await start({ dataRoot, repositoryIdentity: snapshot.repository.identity, declarationReview, port: options.port, allowedOrigin: options.uiOrigin });
     const reviewUrl = `${options.uiOrigin}/#api=${encodeURIComponent(live.origin)}&token=${live.token}`;
     io.log(options.format === "json"
@@ -391,7 +1153,7 @@ export async function runCli(argv, io = console, services = {}) {
       runId: options.runId,
       gate: options.gate,
       subject: { id: options.subjectId, artifact_sha256: options.subjectSha256 },
-      expiresInMinutes: options.expiresInMinutes
+      expiresInMinutes: options.expiresInMinutes ?? 60
     });
     io.log(options.format === "json" ? JSON.stringify({ request }, null, 2) : `Approval requested: ${request.id}\nGate: ${request.gate}\nSubject: ${request.subject.id}\nRevision: ${request.relevant_head_sha}\nIssuer: ${request.attestation.issuer_fingerprint}\nExpires: ${request.expires_at}`);
     return 0;
@@ -412,7 +1174,7 @@ export async function runCli(argv, io = console, services = {}) {
       expiresInMinutes: options.expiresInMinutes,
       now: () => new Date(services.now?.() ?? Date.now())
     });
-    io.log(options.format === "json" ? JSON.stringify(result, null, 2) : `Capability approval requested: ${result.capability.id}\nOperation: ${result.capability.operation}\nTarget: ${result.capability.target}\nScope: ${result.capability.scope.join(", ")}\nRisk: ${result.capability.risk}\nRequest: ${result.request.id}\nExpires: ${result.request.expires_at}\nNext: devharness approve --repo ${fileURLToPath(snapshot.repository.root_uri)} --data-dir ${dataRoot} --request ${result.request.id}`);
+    io.log(options.format === "json" ? JSON.stringify(result, null, 2) : `Capability approval requested: ${result.capability.id}\nOperation: ${result.capability.operation}\nTarget: ${result.capability.target}\nScope: ${result.capability.scope.join(", ")}\nRisk: ${result.capability.risk}\nRequest: ${result.request.id}\nExpires: ${result.request.expires_at} (${result.expires_in_minutes} minutes)\nNext: devharness approve --repo ${fileURLToPath(snapshot.repository.root_uri)} --data-dir ${dataRoot} --request ${result.request.id}`);
     return 0;
   }
 
@@ -426,9 +1188,25 @@ export async function runCli(argv, io = console, services = {}) {
       supervisorRoot,
       repositoryIdentity: snapshot.repository.identity,
       requestId: options.requestId,
-      capability
+      capability,
+      responseProvider: services.approveResponse ?? null,
+      now: () => new Date(services.now?.() ?? Date.now())
     });
-    io.log(`Decision recorded: ${receipt.decision}\nReceipt: ${receipt.id}\nIssuer: ${receipt.attestation.issuer_fingerprint}`);
+    let gateApplication = null;
+    if (["scope", "delivery"].includes(receipt.gate)) {
+      gateApplication = await applyRunGateFromApprovalReceipt({
+        dataRoot,
+        repositoryIdentity: snapshot.repository.identity,
+        receipt,
+        now: () => new Date(services.now?.() ?? Date.now())
+      });
+    }
+    const gateLine = gateApplication?.applied
+      ? `\nGoal Run gate: ${receipt.gate}=${gateApplication.run.gates[receipt.gate].status}`
+      : gateApplication?.reason === "already-applied"
+        ? `\nGoal Run gate: ${receipt.gate} already ${gateApplication.run.gates[receipt.gate].status}`
+        : "";
+    io.log(`Decision recorded: ${receipt.decision}\nReceipt: ${receipt.id}\nIssuer: ${receipt.attestation.issuer_fingerprint}${gateLine}`);
     return receipt.decision === "approved" ? 0 : 2;
   }
 

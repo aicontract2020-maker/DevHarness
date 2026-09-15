@@ -12,10 +12,10 @@ export function defaultDataRoot(environment = process.env) {
   return path.join(os.homedir(), ".local", "state", "devharness");
 }
 
-// Trusted Supervisor state deliberately ignores project arguments and process environment.
-// The Supervisor process may choose execution storage separately, but its identity anchor is
-// pinned to this user-level location for the lifetime of the local v0 installation.
-export function defaultSupervisorRoot() {
+// Trusted Supervisor state defaults to a fixed user-level anchor, but can be overridden
+// explicitly for local development with DEVHARNESS_SUPERVISOR_DIR.
+export function defaultSupervisorRoot(environment = process.env) {
+  if (environment.DEVHARNESS_SUPERVISOR_DIR) return path.resolve(environment.DEVHARNESS_SUPERVISOR_DIR);
   return path.join(os.homedir(), ".local", "state", "devharness-supervisor");
 }
 

@@ -77,3 +77,30 @@ The first implementation proposed a production Docker Compose file as an executa
 ## Subsequent framework proof
 
 DevHarness now supports deterministic external project-harness compilation and a single runtime-owned local service lifecycle. AIedu_demo has not accepted a declaration, so `build` remains correctly blocked before compilation. The next consumer action requires developer review because it would add `devharness.yaml` and choose real readiness endpoints; framework dogfood remains read-only until then.
+
+## External-local follow-up — 2026-09-01
+
+The approved external-local path is now live and remains consumer-read-only:
+
+- `devharness doctor --repo ../AIedu_demo --config ./local-projects/aiedu-demo/devharness.yaml --format json`
+  reported `needs_work (77/100)` and confirmed the external declaration, clean baseline, supported platforms, initialized submodule and local-only candidate state.
+- `devharness build --repo ../AIedu_demo --config ./local-projects/aiedu-demo/devharness.yaml --format json`
+  compiled a deterministic project harness with zero blockers and stored it outside the consumer repository at
+  `/Users/kaimaplespark/.local/state/devharness/projects/3b5e3cf63c8008d4b848ec5ef0e6d33482b41e63c5da0288c9ee12b346df4b17/harnesses/harness-827cc1271c96af709707660543cafcb9.json`.
+- AIedu_demo remained Git-clean before and after both commands.
+- No consumer file was written or changed.
+
+This means the framework-side external configuration path is now past discovery/compilation and ready for the next consumer-facing verification step.
+
+## Consumer execution follow-up — 2026-09-01
+
+With the same approved external-local declaration, a real `verify --execute --attest` run was started against the clean `demo_deploy` revision using the temporary DevHarness data root and the redirected Supervisor store.
+
+The run reached isolated service launch and materialized the declared submodule before failing at startup:
+
+- The backend container exited during legacy startup migration with `FAILED: No 'script_location' key found in configuration.`
+- The frontend container exited because its entrypoint could not find `/app/package.json`, then failed to locate `.next/standalone/server.js`.
+- PostgreSQL and Redis did start and report healthy status before the application services failed.
+- The temporary verification containers were cleaned up after the run.
+
+The important framework result is that DevHarness did not invent success: it exposed a concrete startup failure in the consumer stack, captured the failing logs, and kept the consumer repository unchanged.

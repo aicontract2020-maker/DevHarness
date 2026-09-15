@@ -4,7 +4,7 @@
   "title": "Computed current capability authorization view",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "run_id", "repository_identity", "head_sha", "generated_at", "counts", "capabilities", "next_action"],
+  "required": ["schema_version", "run_id", "repository_identity", "head_sha", "generated_at", "counts", "capabilities", "research_tasks", "research_task_counts", "next_action"],
   "properties": {
     "schema_version": { "const": 1 },
     "run_id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
@@ -39,6 +39,38 @@
           "approval_receipt_id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
           "expires_at": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/timestamp" }
         }
+      }
+    },
+    "research_tasks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "topic_id", "query", "owner", "priority", "approval_capability", "status", "expected_outcome", "basis"],
+        "properties": {
+          "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+          "topic_id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+          "query": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/text1000" },
+          "owner": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/text200" },
+          "priority": { "type": "integer", "minimum": 1, "maximum": 5 },
+          "approval_capability": { "enum": ["network-research"] },
+          "status": { "enum": ["pending-approval", "approved", "blocked"] },
+          "expected_outcome": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/text1000" },
+          "basis": { "type": "array", "minItems": 1, "maxItems": 10, "uniqueItems": true, "items": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/text256" } },
+          "approval_request_id": { "oneOf": [{ "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" }, { "type": "null" }] },
+          "approval_receipt_id": { "oneOf": [{ "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" }, { "type": "null" }] }
+        }
+      }
+    },
+    "research_task_counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "pending_approval", "approved", "blocked"],
+      "properties": {
+        "total": { "type": "integer", "minimum": 0 },
+        "pending_approval": { "type": "integer", "minimum": 0 },
+        "approved": { "type": "integer", "minimum": 0 },
+        "blocked": { "type": "integer", "minimum": 0 }
       }
     },
     "next_action": { "type": "string", "minLength": 1 }

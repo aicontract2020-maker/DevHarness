@@ -11,6 +11,300 @@
     "generated_at": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/timestamp" },
     "repository_identity": { "type": "string", "minLength": 1 },
     "commit_sha": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/gitCommit" },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total_claims", "proved_claims", "unresolved_claims", "conflict_claims", "claim_status_counts", "coverage_status_counts", "domain_knownness", "priority_domains"],
+      "properties": {
+        "total_claims": { "type": "integer", "minimum": 0 },
+        "proved_claims": { "type": "integer", "minimum": 0 },
+        "unresolved_claims": { "type": "integer", "minimum": 0 },
+        "conflict_claims": { "type": "integer", "minimum": 0 },
+        "claim_status_counts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code-confirmed", "test-confirmed", "runtime-observed", "detected", "documented", "conflict", "unverified", "not-covered"],
+          "properties": {
+            "code-confirmed": { "type": "integer", "minimum": 0 },
+            "test-confirmed": { "type": "integer", "minimum": 0 },
+            "runtime-observed": { "type": "integer", "minimum": 0 },
+            "detected": { "type": "integer", "minimum": 0 },
+            "documented": { "type": "integer", "minimum": 0 },
+            "conflict": { "type": "integer", "minimum": 0 },
+            "unverified": { "type": "integer", "minimum": 0 },
+            "not-covered": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "domain_knownness": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["database", "frontend", "backend"],
+          "properties": {
+            "database": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["total_claims", "known_claims", "unknown_claims", "conflict_claims", "subdomains"],
+              "properties": {
+                "total_claims": { "type": "integer", "minimum": 0 },
+                "known_claims": { "type": "integer", "minimum": 0 },
+                "unknown_claims": { "type": "integer", "minimum": 0 },
+                "conflict_claims": { "type": "integer", "minimum": 0 },
+                "subdomains": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["schema", "migrations", "constraints", "queries", "ownership"],
+                  "properties": {
+                    "schema": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["total_claims", "known_claims", "unknown_claims", "conflict_claims"],
+                      "properties": {
+                        "total_claims": { "type": "integer", "minimum": 0 },
+                        "known_claims": { "type": "integer", "minimum": 0 },
+                        "unknown_claims": { "type": "integer", "minimum": 0 },
+                        "conflict_claims": { "type": "integer", "minimum": 0 }
+                      }
+                    },
+                    "migrations": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["total_claims", "known_claims", "unknown_claims", "conflict_claims"],
+                      "properties": {
+                        "total_claims": { "type": "integer", "minimum": 0 },
+                        "known_claims": { "type": "integer", "minimum": 0 },
+                        "unknown_claims": { "type": "integer", "minimum": 0 },
+                        "conflict_claims": { "type": "integer", "minimum": 0 }
+                      }
+                    },
+                    "constraints": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["total_claims", "known_claims", "unknown_claims", "conflict_claims"],
+                      "properties": {
+                        "total_claims": { "type": "integer", "minimum": 0 },
+                        "known_claims": { "type": "integer", "minimum": 0 },
+                        "unknown_claims": { "type": "integer", "minimum": 0 },
+                        "conflict_claims": { "type": "integer", "minimum": 0 }
+                      }
+                    },
+                    "queries": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["total_claims", "known_claims", "unknown_claims", "conflict_claims"],
+                      "properties": {
+                        "total_claims": { "type": "integer", "minimum": 0 },
+                        "known_claims": { "type": "integer", "minimum": 0 },
+                        "unknown_claims": { "type": "integer", "minimum": 0 },
+                        "conflict_claims": { "type": "integer", "minimum": 0 }
+                      }
+                    },
+                    "ownership": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["total_claims", "known_claims", "unknown_claims", "conflict_claims"],
+                      "properties": {
+                        "total_claims": { "type": "integer", "minimum": 0 },
+                        "known_claims": { "type": "integer", "minimum": 0 },
+                        "unknown_claims": { "type": "integer", "minimum": 0 },
+                        "conflict_claims": { "type": "integer", "minimum": 0 }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "frontend": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["total_claims", "known_claims", "unknown_claims", "conflict_claims", "subdomains"],
+              "properties": {
+                "total_claims": { "type": "integer", "minimum": 0 },
+                "known_claims": { "type": "integer", "minimum": 0 },
+                "unknown_claims": { "type": "integer", "minimum": 0 },
+                "conflict_claims": { "type": "integer", "minimum": 0 },
+                "subdomains": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["routes", "state", "user_flows"],
+                  "properties": {
+                    "routes": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["total_claims", "known_claims", "unknown_claims", "conflict_claims"],
+                      "properties": {
+                        "total_claims": { "type": "integer", "minimum": 0 },
+                        "known_claims": { "type": "integer", "minimum": 0 },
+                        "unknown_claims": { "type": "integer", "minimum": 0 },
+                        "conflict_claims": { "type": "integer", "minimum": 0 }
+                      }
+                    },
+                    "state": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["total_claims", "known_claims", "unknown_claims", "conflict_claims"],
+                      "properties": {
+                        "total_claims": { "type": "integer", "minimum": 0 },
+                        "known_claims": { "type": "integer", "minimum": 0 },
+                        "unknown_claims": { "type": "integer", "minimum": 0 },
+                        "conflict_claims": { "type": "integer", "minimum": 0 }
+                      }
+                    },
+                    "user_flows": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["total_claims", "known_claims", "unknown_claims", "conflict_claims"],
+                      "properties": {
+                        "total_claims": { "type": "integer", "minimum": 0 },
+                        "known_claims": { "type": "integer", "minimum": 0 },
+                        "unknown_claims": { "type": "integer", "minimum": 0 },
+                        "conflict_claims": { "type": "integer", "minimum": 0 }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "backend": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["total_claims", "known_claims", "unknown_claims", "conflict_claims", "subdomains"],
+              "properties": {
+                "total_claims": { "type": "integer", "minimum": 0 },
+                "known_claims": { "type": "integer", "minimum": 0 },
+                "unknown_claims": { "type": "integer", "minimum": 0 },
+                "conflict_claims": { "type": "integer", "minimum": 0 },
+                "subdomains": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["api_contracts", "orchestration", "failure_paths"],
+                  "properties": {
+                    "api_contracts": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["total_claims", "known_claims", "unknown_claims", "conflict_claims"],
+                      "properties": {
+                        "total_claims": { "type": "integer", "minimum": 0 },
+                        "known_claims": { "type": "integer", "minimum": 0 },
+                        "unknown_claims": { "type": "integer", "minimum": 0 },
+                        "conflict_claims": { "type": "integer", "minimum": 0 }
+                      }
+                    },
+                    "orchestration": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["total_claims", "known_claims", "unknown_claims", "conflict_claims"],
+                      "properties": {
+                        "total_claims": { "type": "integer", "minimum": 0 },
+                        "known_claims": { "type": "integer", "minimum": 0 },
+                        "unknown_claims": { "type": "integer", "minimum": 0 },
+                        "conflict_claims": { "type": "integer", "minimum": 0 }
+                      }
+                    },
+                    "failure_paths": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["total_claims", "known_claims", "unknown_claims", "conflict_claims"],
+                      "properties": {
+                        "total_claims": { "type": "integer", "minimum": 0 },
+                        "known_claims": { "type": "integer", "minimum": 0 },
+                        "unknown_claims": { "type": "integer", "minimum": 0 },
+                        "conflict_claims": { "type": "integer", "minimum": 0 }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "coverage_status_counts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code-confirmed", "test-confirmed", "runtime-observed", "detected", "documented", "conflict", "unverified", "not-covered", "not-applicable"],
+          "properties": {
+            "code-confirmed": { "type": "integer", "minimum": 0 },
+            "test-confirmed": { "type": "integer", "minimum": 0 },
+            "runtime-observed": { "type": "integer", "minimum": 0 },
+            "detected": { "type": "integer", "minimum": 0 },
+            "documented": { "type": "integer", "minimum": 0 },
+            "conflict": { "type": "integer", "minimum": 0 },
+            "unverified": { "type": "integer", "minimum": 0 },
+            "not-covered": { "type": "integer", "minimum": 0 },
+            "not-applicable": { "type": "integer", "minimum": 0 }
+          }
+        },
+        "priority_domains": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "execution_plan": { "$ref": "https://devharness.dev/schemas/v1/execution-plan.schema.json" },
+    "execution_graph": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["node_count", "max_parallelism", "integration_owner_task_id", "critical_path", "schedule_valid", "blocked_reasons", "next_ready_wave", "execution_waves", "nodes"],
+      "properties": {
+        "node_count": { "type": "integer", "minimum": 0 },
+        "max_parallelism": { "type": "integer", "minimum": 0 },
+        "integration_owner_task_id": { "anyOf": [{ "type": "string", "minLength": 1 }, { "type": "null" }] },
+        "critical_path": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "schedule_valid": { "type": "boolean" },
+        "blocked_reasons": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["code", "summary"],
+            "properties": {
+              "code": { "type": "string", "minLength": 1 },
+              "summary": { "type": "string", "minLength": 1 },
+              "subject": {}
+            }
+          }
+        },
+        "next_ready_wave": {
+          "anyOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["index", "task_ids"],
+              "properties": {
+                "index": { "type": "integer", "minimum": 1 },
+                "task_ids": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+              }
+            }
+          ]
+        },
+        "execution_waves": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["index", "task_ids"],
+            "properties": {
+              "index": { "type": "integer", "minimum": 1 },
+              "task_ids": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+            }
+          }
+        },
+        "nodes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["task_id", "depends_on", "resources", "proof_criterion_ids", "long_running", "wave_index", "readiness"],
+            "properties": {
+              "task_id": { "type": "string", "minLength": 1 },
+              "depends_on": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+              "resources": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+              "proof_criterion_ids": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+              "long_running": { "type": "boolean" },
+              "wave_index": { "anyOf": [{ "type": "integer", "minimum": 1 }, { "type": "null" }] },
+              "readiness": { "enum": ["ready", "waiting", "blocked"] }
+            }
+          }
+        }
+      }
+    },
     "workspace": { "type": "object", "additionalProperties": false, "required": ["dirty", "changed_file_count"], "properties": { "dirty": { "type": "boolean" }, "changed_file_count": { "type": "integer", "minimum": 0 } } },
     "mode": { "const": "read-only-plan" },
     "verdict": { "enum": ["ready", "needs-evidence", "blocked", "unsupported"] },
@@ -21,6 +315,89 @@
     },
     "coverage": { "type": "array", "minItems": 1, "items": { "type": "object", "additionalProperties": false, "required": ["domain", "status", "claim_ids"], "properties": { "domain": { "enum": ["repository", "runtime", "frontend", "backend", "database", "security", "strategy", "testing", "deployment", "automation"] }, "status": { "enum": ["detected", "code-confirmed", "test-confirmed", "runtime-observed", "conflict", "unverified", "not-covered", "not-applicable"] }, "claim_ids": { "type": "array", "items": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" } } } } },
     "capability_requests": { "type": "array", "items": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/capabilityRequest" } },
+    "preflight": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["research_topics", "research_tasks", "team_decomposition"],
+      "properties": {
+        "clarification_questions": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 3,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "blocker_id", "question", "priority", "basis"],
+            "properties": {
+              "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+              "blocker_id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+              "question": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/text1000" },
+              "priority": { "type": "integer", "minimum": 1, "maximum": 3 },
+              "basis": { "type": "array", "minItems": 1, "maxItems": 10, "uniqueItems": true, "items": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/text256" } }
+            }
+          }
+        },
+        "research_topics": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 5,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "purpose", "public_identifiers", "basis"],
+            "properties": {
+              "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+              "purpose": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/text1000" },
+              "query": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/text1000" },
+              "owner": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/text200" },
+              "priority": { "type": "integer", "minimum": 1, "maximum": 5 },
+              "expected_outcome": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/text1000" },
+              "public_identifiers": { "type": "array", "minItems": 1, "maxItems": 10, "uniqueItems": true, "items": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/text256" } },
+              "basis": { "type": "array", "minItems": 1, "maxItems": 10, "uniqueItems": true, "items": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/text256" } }
+            }
+          }
+        },
+        "research_tasks": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 5,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "topic_id", "query", "owner", "priority", "approval_capability", "status", "expected_outcome", "basis"],
+            "properties": {
+              "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+              "topic_id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+              "query": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/text1000" },
+              "owner": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/text200" },
+              "priority": { "type": "integer", "minimum": 1, "maximum": 5 },
+              "approval_capability": { "enum": ["network-research"] },
+              "status": { "enum": ["pending-approval", "approved", "running", "complete", "blocked"] },
+              "expected_outcome": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/text1000" },
+              "basis": { "type": "array", "minItems": 1, "maxItems": 10, "uniqueItems": true, "items": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/text256" } }
+            }
+          }
+        },
+        "team_decomposition": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "label", "focus", "task_ids", "exit_criteria", "basis"],
+            "properties": {
+              "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+              "label": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/text200" },
+              "focus": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/text1000" },
+              "task_ids": { "type": "array", "minItems": 1, "maxItems": 10, "uniqueItems": true, "items": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" } },
+              "exit_criteria": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/text1000" },
+              "basis": { "type": "array", "minItems": 1, "maxItems": 10, "uniqueItems": true, "items": { "$ref": "https://devharness.dev/schemas/v1/live-alignment-common.schema.json#/$defs/text256" } }
+            }
+          }
+        }
+      }
+    },
     "blockers": { "type": "array", "items": { "type": "object", "additionalProperties": false, "required": ["id", "summary"], "properties": { "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" }, "summary": { "type": "string", "minLength": 1 } } } },
     "limitations": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
     "next_action": { "type": "object", "additionalProperties": false, "required": ["id", "label", "recommended"], "properties": { "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" }, "label": { "type": "string", "minLength": 1 }, "recommended": { "const": true } } }

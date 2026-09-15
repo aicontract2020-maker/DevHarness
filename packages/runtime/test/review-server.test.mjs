@@ -47,9 +47,75 @@ async function setup(t, { interaction = false, capabilities = false, declaration
       workspace: { dirty: false, changed_file_count: 0 },
       mode: "read-only-plan",
       verdict: "needs-evidence",
+      summary: {
+        total_claims: 1,
+        proved_claims: 1,
+        unresolved_claims: 0,
+        conflict_claims: 0,
+        domain_knownness: {
+          database: {
+            total_claims: 0,
+            known_claims: 0,
+            unknown_claims: 0,
+            conflict_claims: 0,
+            subdomains: {
+              schema: { total_claims: 0, known_claims: 0, unknown_claims: 0, conflict_claims: 0 },
+              migrations: { total_claims: 0, known_claims: 0, unknown_claims: 0, conflict_claims: 0 },
+              constraints: { total_claims: 0, known_claims: 0, unknown_claims: 0, conflict_claims: 0 },
+              queries: { total_claims: 0, known_claims: 0, unknown_claims: 0, conflict_claims: 0 },
+              ownership: { total_claims: 0, known_claims: 0, unknown_claims: 0, conflict_claims: 0 }
+            }
+          },
+          frontend: {
+            total_claims: 0,
+            known_claims: 0,
+            unknown_claims: 0,
+            conflict_claims: 0,
+            subdomains: {
+              routes: { total_claims: 0, known_claims: 0, unknown_claims: 0, conflict_claims: 0 },
+              state: { total_claims: 0, known_claims: 0, unknown_claims: 0, conflict_claims: 0 },
+              user_flows: { total_claims: 0, known_claims: 0, unknown_claims: 0, conflict_claims: 0 }
+            }
+          },
+          backend: {
+            total_claims: 0,
+            known_claims: 0,
+            unknown_claims: 0,
+            conflict_claims: 0,
+            subdomains: {
+              api_contracts: { total_claims: 0, known_claims: 0, unknown_claims: 0, conflict_claims: 0 },
+              orchestration: { total_claims: 0, known_claims: 0, unknown_claims: 0, conflict_claims: 0 },
+              failure_paths: { total_claims: 0, known_claims: 0, unknown_claims: 0, conflict_claims: 0 }
+            }
+          }
+        },
+        claim_status_counts: {
+          "code-confirmed": 1,
+          "test-confirmed": 0,
+          "runtime-observed": 0,
+          detected: 0,
+          documented: 0,
+          conflict: 0,
+          unverified: 0,
+          "not-covered": 0
+        },
+        coverage_status_counts: {
+          "code-confirmed": 1,
+          "test-confirmed": 0,
+          "runtime-observed": 0,
+          detected: 0,
+          documented: 0,
+          conflict: 0,
+          unverified: 0,
+          "not-covered": 0,
+          "not-applicable": 9
+        },
+        priority_domains: []
+      },
       claims: [{ id: "claim-repository", domain: "repository", status: "code-confirmed", summary: "Repository is committed.", evidence_refs: ["git"] }],
       coverage: [{ domain: "repository", status: "code-confirmed", claim_ids: ["claim-repository"] }],
       capability_requests: [{ id: "browser-runtime", capability: "browser-runtime", operation: "prove-capability", target: "local-browser", scope: ["local-browser"], reason: "Exercise the real UI.", risk: "medium", authority: "explicit", decision: "pending" }],
+      preflight: { research_topics: [], research_tasks: [], team_decomposition: [] },
       blockers: [{ id: "runtime-unproved", summary: "Runtime behavior is unproved." }],
       limitations: ["No consumer command has run."],
       next_action: { id: "approve-capability-plan", label: "Review capabilities", recommended: true }

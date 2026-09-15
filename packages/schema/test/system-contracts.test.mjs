@@ -41,6 +41,111 @@ test("understanding and authority contracts accept bounded revision-aware fixtur
     verdict: "ready"
   };
   assert.deepEqual(valid("repository-understanding-baseline", baseline), { valid: true, errors: [] });
+
+  const onboarding = {
+    schema_version: 1,
+    id: "onboard-1",
+    generated_at: now,
+    repository_identity: "example/project",
+    workspace: { dirty: false, changed_file_count: 0 },
+    mode: "read-only-plan",
+    verdict: "needs-evidence",
+    summary: {
+      total_claims: 1,
+      proved_claims: 0,
+      unresolved_claims: 1,
+      conflict_claims: 0,
+      domain_knownness: {
+        database: {
+          total_claims: 1,
+          known_claims: 0,
+          unknown_claims: 1,
+          conflict_claims: 0,
+          subdomains: {
+            schema: { total_claims: 1, known_claims: 0, unknown_claims: 1, conflict_claims: 0 },
+            migrations: { total_claims: 0, known_claims: 0, unknown_claims: 0, conflict_claims: 0 },
+            constraints: { total_claims: 0, known_claims: 0, unknown_claims: 0, conflict_claims: 0 },
+            queries: { total_claims: 0, known_claims: 0, unknown_claims: 0, conflict_claims: 0 },
+            ownership: { total_claims: 0, known_claims: 0, unknown_claims: 0, conflict_claims: 0 }
+          }
+        },
+        frontend: {
+          total_claims: 0,
+          known_claims: 0,
+          unknown_claims: 0,
+          conflict_claims: 0,
+          subdomains: {
+            routes: { total_claims: 0, known_claims: 0, unknown_claims: 0, conflict_claims: 0 },
+            state: { total_claims: 0, known_claims: 0, unknown_claims: 0, conflict_claims: 0 },
+            user_flows: { total_claims: 0, known_claims: 0, unknown_claims: 0, conflict_claims: 0 }
+          }
+        },
+        backend: {
+          total_claims: 0,
+          known_claims: 0,
+          unknown_claims: 0,
+          conflict_claims: 0,
+          subdomains: {
+            api_contracts: { total_claims: 0, known_claims: 0, unknown_claims: 0, conflict_claims: 0 },
+            orchestration: { total_claims: 0, known_claims: 0, unknown_claims: 0, conflict_claims: 0 },
+            failure_paths: { total_claims: 0, known_claims: 0, unknown_claims: 0, conflict_claims: 0 }
+          }
+        }
+      },
+      claim_status_counts: {
+        "code-confirmed": 0,
+        "test-confirmed": 0,
+        "runtime-observed": 0,
+        detected: 1,
+        documented: 0,
+        conflict: 0,
+        unverified: 0,
+        "not-covered": 0
+      },
+      coverage_status_counts: {
+        "code-confirmed": 0,
+        "test-confirmed": 0,
+        "runtime-observed": 0,
+        detected: 1,
+        documented: 0,
+        conflict: 0,
+        unverified: 0,
+        "not-covered": 0,
+        "not-applicable": 9
+      },
+      priority_domains: ["database=detected"]
+    },
+    execution_plan: {
+      schema_version: 1,
+      id: "execution-1",
+      run_id: "onboard-1",
+      head_sha: sha,
+      max_parallelism: 2,
+      integration_owner_task_id: "integrate",
+      progress_interval_seconds: 60,
+      nodes: [{
+        task_id: "integrate",
+        depends_on: [],
+        expected_duration_seconds: 30,
+        resources: [{ kind: "workspace", id: "integrate", mode: "exclusive" }],
+        workspace_id: "integrate",
+        proof_criterion_ids: ["claim-1"],
+        long_running: false
+      }]
+    },
+    claims: [{ id: "db", domain: "database", status: "detected", summary: "Database detected.", evidence_refs: [] }],
+    coverage: [{ domain: "database", status: "detected", claim_ids: ["db"] }],
+    capability_requests: [],
+    preflight: {
+      research_topics: [],
+      research_tasks: [],
+      team_decomposition: []
+    },
+    blockers: [],
+    limitations: ["Read-only"],
+    next_action: { id: "next", label: "Review", recommended: true }
+  };
+  assert.deepEqual(valid("onboarding-plan", onboarding), { valid: true, errors: [] });
 });
 
 test("system model and approved strategy express database, security and consistency", () => {

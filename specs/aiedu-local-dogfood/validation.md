@@ -102,3 +102,20 @@ Receipt `verify-1788214709418-344e849b` exercised the new DevHarness lifecycle:
 The next product-level question is now narrow: why the production `/signup` route terminates its
 HTTP request while adjacent routes remain healthy. Investigating or changing that route requires a
 separate authorized AIedu goal.
+
+## Execute follow-up — 2026-09-01
+
+After the external-local configuration and capability approvals were redirected into a writable local
+Supervisor store, DevHarness was able to start a real `verify --execute --attest` run against the
+same clean `demo_deploy` revision.
+
+The run did not pass, but it failed for concrete consumer reasons rather than framework plumbing:
+
+- Backend startup exited during legacy KB migration with `FAILED: No 'script_location' key found in configuration.`
+- Frontend startup exited because the container entrypoint could not find `/app/package.json`, then
+  could not find `.next/standalone/server.js`.
+- PostgreSQL and Redis both reached healthy status before the application containers failed.
+- The temporary verification containers were removed after the run, leaving the host clean.
+
+This is the desired dogfood shape for DevHarness: it reaches real isolated startup, records the
+actual failure mode, and does not mutate the consumer checkout.

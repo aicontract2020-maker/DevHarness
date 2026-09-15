@@ -352,6 +352,7 @@ export async function discoverRepository(requestedRoot) {
 
   const testTools = new Set();
   if (files.some((file) => /(^|\/)playwright\.config\.(js|ts|mjs|cjs)$/.test(file)) || dependencySet.has("@playwright/test")) testTools.add("Playwright");
+  if (files.some((file) => /(^|\/)cypress\.config\.(js|ts|mjs|cjs)$/.test(file)) || dependencySet.has("cypress")) testTools.add("Cypress");
   if (files.some((file) => /(^|\/)vitest\.config\./.test(file)) || dependencySet.has("vitest")) testTools.add("Vitest");
   if (files.some((file) => /(^|\/)jest\.config\./.test(file)) || dependencySet.has("jest")) testTools.add("Jest");
   if (files.some((file) => /(^|\/)(pytest\.ini|conftest\.py)$/.test(file)) || /\bpytest\b/.test(pythonText) || files.some((file) => /(^|\/)test_[^/]+\.py$/.test(file))) testTools.add("pytest");
@@ -373,6 +374,7 @@ export async function discoverRepository(requestedRoot) {
 
   const platforms = new Set();
   if (["Next.js", "React", "Vue", "Vite"].some((name) => frameworks.has(name))) platforms.add("web");
+  if (testTools.has("Playwright") || testTools.has("Cypress")) platforms.add("web");
   if (["FastAPI", "Django", "Flask", "Express", "NestJS"].some((name) => frameworks.has(name))) platforms.add("api");
   if (frameworks.has("Next.js") && (files.some((file) => /(^|\/)(app\/api|pages\/api)\//.test(file)) || ["Prisma", "TypeORM", "Sequelize", "Drizzle"].some((name) => frameworks.has(name)))) platforms.add("api");
   if (packages.some((pkg) => pkg.bin) || /\b(typer|click)\b/.test(pythonText)) platforms.add("cli");
@@ -400,6 +402,9 @@ export async function discoverRepository(requestedRoot) {
   }
   if (testTools.has("Playwright") && !commands.some((command) => command.kind === "verify" && command.run.includes("playwright"))) {
     commands.push({ id: "web-playwright", kind: "verify", run: "npx playwright test", source: "detected:playwright" });
+  }
+  if (testTools.has("Cypress") && !commands.some((command) => command.kind === "verify" && /cypress|cy:run/.test(command.run))) {
+    commands.push({ id: "web-cypress", kind: "verify", run: "npm run cy:run", source: "detected:cypress" });
   }
   const safeComposeFiles = composeFiles.filter((file) => !/(^|[._-])(prod|production)([._-]|$)/i.test(path.posix.basename(file)));
   if (safeComposeFiles.length > 0) {

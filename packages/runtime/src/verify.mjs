@@ -35,8 +35,11 @@ function gitDirty(root) {
   return git(root, ["status", "--porcelain=v1"]).length > 0;
 }
 
-function environmentContract(snapshot, environment) {
-  const declaredKeys = snapshot.environment.declared_keys;
+function environmentContract(snapshot, environment, extraDeclaredKeys = []) {
+  const declaredKeys = [...new Set([
+    ...snapshot.environment.declared_keys,
+    ...extraDeclaredKeys
+  ])].sort();
   const setKeys = declaredKeys.filter((key) => typeof environment[key] === "string" && environment[key].length > 0);
   return {
     declared_keys: declaredKeys,
@@ -121,7 +124,11 @@ export async function createVerificationPlan({
       commit_sha: commitSha
     })),
     warmup: verification.warmup,
-    environment: environmentContract(snapshot, environment),
+    environment: environmentContract(
+      snapshot,
+      environment,
+      Array.isArray(command.env_keys) ? command.env_keys : []
+    ),
     timeout_ms: timeoutMs,
     paths
   };

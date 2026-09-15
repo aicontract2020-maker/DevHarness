@@ -52,7 +52,10 @@ function packet(kind = "alignment-brief") {
       { id: "inspect", label: "Inspect", kind: "inspect", recommended: false }
     ],
     source_artifacts: [{ id: "requirements", kind: "requirements", sha256: artifactHash }],
-    traceability: [{ item_id: "outcome-item", source_refs: ["requirements"] }],
+    traceability: [
+      { item_id: "outcome-item", source_refs: ["requirements"] },
+      { item_id: "revoke-sessions", source_refs: ["requirements"] }
+    ],
     compression: { source_artifact_count: 1, surfaced_item_count: 2, omitted_item_count: 4 }
   };
 }

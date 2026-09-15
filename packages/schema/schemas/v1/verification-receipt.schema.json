@@ -45,6 +45,15 @@
         "kind": { "enum": ["build", "test", "lint", "typecheck", "launch", "verify"] },
         "run": { "type": "string", "minLength": 1 },
         "source": { "type": "string", "minLength": 1 },
+        "env_keys": {
+          "type": "array",
+          "description": "Host environment keys this command may receive during isolated verify execution.",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+          }
+        },
         "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
       }
     },
