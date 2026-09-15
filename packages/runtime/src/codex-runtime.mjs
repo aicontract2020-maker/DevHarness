@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { access, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -31,6 +32,7 @@ export const CODEX_OUTPUT_SCHEMA = Object.freeze({
 });
 
 const CREDENTIAL_ENV_KEYS = Object.freeze(["DEVHARNESS_PROVIDER_CREDENTIAL", "OPENAI_API_KEY"]);
+const COMPATIBLE_CODEX_AUTH_MODES = Object.freeze(new Set(["apikey"]));
 
 export function defaultCodexProfile(environment = process.env) {
   const origin = String(environment.DEVHARNESS_CODEX_ORIGIN ?? "").trim() || DEFAULT_CODEX_ORIGIN;
@@ -49,14 +51,46 @@ export function defaultCodexProfile(environment = process.env) {
   };
 }
 
+export function resolveCodexAuthFilePath(environment = process.env) {
+  const home = String(environment.HOME ?? "").trim();
+  if (!home) return null;
+  return path.join(home, ".codex", "auth.json");
+}
+
+/**
+ * Parent-only credential fallback from ~/.codex/auth.json.
+ * Never mount this file into the Agent; the loopback proxy alone uses the value.
+ */
+export function loadProviderCredentialFromCodexAuthFile(environment = process.env) {
+  const authPath = resolveCodexAuthFilePath(environment);
+  if (!authPath) return null;
+  let parsed;
+  try {
+    parsed = JSON.parse(readFileSync(authPath, "utf8"));
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  const authMode = String(parsed.auth_mode ?? "").trim().toLowerCase();
+  if (!COMPATIBLE_CODEX_AUTH_MODES.has(authMode)) return null;
+  const value = parsed.OPENAI_API_KEY;
+  if (typeof value !== "string" || value.trim().length === 0) return null;
+  return {
+    key: "codex-auth.json:OPENAI_API_KEY",
+    value: value.trim(),
+    source: "codex-auth.json",
+    authMode
+  };
+}
+
 export function resolveProviderCredential(environment = process.env) {
   for (const key of CREDENTIAL_ENV_KEYS) {
     const value = environment[key];
     if (typeof value === "string" && value.trim().length > 0) {
-      return { key, value: value.trim() };
+      return { key, value: value.trim(), source: "env" };
     }
   }
-  return null;
+  return loadProviderCredentialFromCodexAuthFile(environment);
 }
 
 export async function resolveCodexExecutable(environment = process.env) {
@@ -91,15 +125,16 @@ export async function isCodexConfigured(environment = process.env) {
 export function codexAuthUnavailableMessage({ executable = null, credential = null } = {}) {
   const missing = [];
   if (!executable) missing.push("Codex CLI executable (install @openai/codex, put `codex` on PATH, or export DEVHARNESS_CODEX_PATH)");
-  if (!credential) missing.push("parent provider credential (export OPENAI_API_KEY or DEVHARNESS_PROVIDER_CREDENTIAL)");
+  if (!credential) missing.push("parent provider credential (export OPENAI_API_KEY or DEVHARNESS_PROVIDER_CREDENTIAL, or use ~/.codex/auth.json with auth_mode=apikey)");
   return [
     "Codex adapter is not ready for a live provider call.",
     missing.length ? `Missing: ${missing.join("; ")}.` : "Provider proxy could not start.",
-    "DevHarness does not read ~/.codex/auth.json and does not mount login/session files into the Agent.",
-    "`codex login` alone is not enough: continue uses --ignore-user-config plus a parent-owned loopback proxy.",
+    "Parent may load OPENAI_API_KEY from ~/.codex/auth.json when env is unset and auth_mode is apikey; that value is used only by the parent-owned loopback proxy.",
+    "DevHarness does not mount login/session files into the Agent (`--ignore-user-config`).",
+    "`codex login` alone is not enough for ChatGPT session cookies: continue still needs an API key via env or auth.json.",
     "Example:",
     "  export DEVHARNESS_CODEX_PATH=\"/Applications/ChatGPT.app/Contents/Resources/codex\"",
-    "  export OPENAI_API_KEY  # or DEVHARNESS_PROVIDER_CREDENTIAL",
+    "  export OPENAI_API_KEY  # or DEVHARNESS_PROVIDER_CREDENTIAL; else parent reads ~/.codex/auth.json",
     "  # optional: export DEVHARNESS_CODEX_MODEL=\"gpt-5\"",
     "  # optional: export DEVHARNESS_CODEX_ORIGIN=\"https://api.openai.com\"",
     "  $DH align --continue --agent codex --repo \"$REPO\" --config \"$CONFIG\" --run \"$RUN_ID\"",

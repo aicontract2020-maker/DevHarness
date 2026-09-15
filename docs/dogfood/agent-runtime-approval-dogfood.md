@@ -194,10 +194,19 @@ it only selects the worker backend for the next tick.
 
 #### Codex auth (required for a live provider call)
 
-DevHarness does **not** read `~/.codex/auth.json` and does **not** mount login
-files into the Agent (`--ignore-user-config`). `codex login` alone is not
-enough. The parent process must export a provider credential and be able to
-spawn the Codex CLI:
+DevHarness does **not** mount login/session files into the Agent
+(`--ignore-user-config`). Provider calls always go through the **parent-owned
+loopback proxy**.
+
+Credential resolution (parent process only):
+
+1. `DEVHARNESS_PROVIDER_CREDENTIAL` or `OPENAI_API_KEY` from the environment, else
+2. `OPENAI_API_KEY` from `~/.codex/auth.json` when present and `auth_mode` is
+   `apikey` (ChatGPT.app / Codex local auth). Other `auth_mode` values are ignored.
+
+The auth.json value is used **only by the parent proxy** — never copied into the
+Agent sandbox, never logged, never committed. Prefer env export in CI; local
+dogfood can rely on an existing ChatGPT/Codex `auth.json`.
 
 ```bash
 # 1. Codex CLI. ChatGPT.app ships one; npm also publishes @openai/codex.
@@ -205,7 +214,8 @@ export DEVHARNESS_CODEX_PATH="/Applications/ChatGPT.app/Contents/Resources/codex
 # or: export PATH="$(dirname "$(command -v codex)"):$PATH"
 
 # 2. Parent credential for the loopback provider proxy (never commit this).
-export OPENAI_API_KEY          # or: export DEVHARNESS_PROVIDER_CREDENTIAL
+# export OPENAI_API_KEY          # or: export DEVHARNESS_PROVIDER_CREDENTIAL
+# If unset, parent loads OPENAI_API_KEY from ~/.codex/auth.json when auth_mode=apikey.
 
 # 3. Optional model / origin (defaults: gpt-5 / https://api.openai.com)
 # export DEVHARNESS_CODEX_MODEL="gpt-5"

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -12,8 +12,10 @@ import {
   DEFAULT_CODEX_ORIGIN,
   LOCAL_READONLY_ADAPTER_ID,
   defaultCodexProfile,
+  loadProviderCredentialFromCodexAuthFile,
   prepareCodexExecutionContext,
   resolveAlignAgentSelection,
+  resolveCodexAuthFilePath,
   resolveCodexExecutable,
   resolveProviderCredential
 } from "../src/codex-runtime.mjs";
@@ -33,18 +35,64 @@ test("default Codex profile is read-only analysis and documents change/execute l
   assert.deepEqual(profile.template.modes, ["analysis-plan", "analysis-synthesis", "analysis-validation"]);
 });
 
-test("provider credential is read only from env keys and never invented", () => {
+test("provider credential prefers env keys and never invents values", () => {
   assert.equal(resolveProviderCredential({}), null);
-  assert.equal(resolveProviderCredential({ HOME: "/Users/example", PATH: "/usr/bin" }), null);
+  assert.equal(resolveProviderCredential({ HOME: "/Users/example-missing", PATH: "/usr/bin" }), null);
   const fromPreferred = resolveProviderCredential({
     OPENAI_API_KEY: "sk-openai",
     DEVHARNESS_PROVIDER_CREDENTIAL: "sk-parent"
   });
   assert.equal(fromPreferred.key, "DEVHARNESS_PROVIDER_CREDENTIAL");
   assert.equal(fromPreferred.value, "sk-parent");
+  assert.equal(fromPreferred.source, "env");
   const fromOpenAI = resolveProviderCredential({ OPENAI_API_KEY: " sk-openai " });
   assert.equal(fromOpenAI.key, "OPENAI_API_KEY");
   assert.equal(fromOpenAI.value, "sk-openai");
+  assert.equal(fromOpenAI.source, "env");
+});
+
+test("parent loads OPENAI_API_KEY from ~/.codex/auth.json when env unset and auth_mode=apikey", async (t) => {
+  const home = await mkdtemp(path.join(os.tmpdir(), "devharness-codex-auth-home-"));
+  t.after(() => rm(home, { recursive: true, force: true }));
+  const authDir = path.join(home, ".codex");
+  await mkdir(authDir, { recursive: true, mode: 0o700 });
+  const authPath = path.join(authDir, "auth.json");
+  assert.equal(resolveCodexAuthFilePath({ HOME: home }), authPath);
+
+  await writeFile(authPath, `${JSON.stringify({
+    auth_mode: "apikey",
+    OPENAI_API_KEY: "sk-fake-from-auth-file-for-unit-test"
+  }, null, 2)}\n`, { mode: 0o600 });
+
+  const fromFile = loadProviderCredentialFromCodexAuthFile({ HOME: home });
+  assert.equal(fromFile.source, "codex-auth.json");
+  assert.equal(fromFile.authMode, "apikey");
+  assert.equal(fromFile.key, "codex-auth.json:OPENAI_API_KEY");
+  assert.equal(fromFile.value, "sk-fake-from-auth-file-for-unit-test");
+
+  const resolved = resolveProviderCredential({ HOME: home, PATH: "/usr/bin" });
+  assert.equal(resolved.value, "sk-fake-from-auth-file-for-unit-test");
+  assert.equal(resolved.source, "codex-auth.json");
+
+  // Env still wins over auth.json
+  const envWins = resolveProviderCredential({
+    HOME: home,
+    OPENAI_API_KEY: "sk-env-wins"
+  });
+  assert.equal(envWins.value, "sk-env-wins");
+  assert.equal(envWins.source, "env");
+
+  // Incompatible auth_mode is ignored
+  await writeFile(authPath, `${JSON.stringify({
+    auth_mode: "chatgpt",
+    OPENAI_API_KEY: "sk-should-ignore"
+  }, null, 2)}\n`, { mode: 0o600 });
+  assert.equal(loadProviderCredentialFromCodexAuthFile({ HOME: home }), null);
+  assert.equal(resolveProviderCredential({ HOME: home }), null);
+
+  // Missing key field
+  await writeFile(authPath, `${JSON.stringify({ auth_mode: "apikey" }, null, 2)}\n`, { mode: 0o600 });
+  assert.equal(loadProviderCredentialFromCodexAuthFile({ HOME: home }), null);
 });
 
 test("align agent selection prefers Codex only when executable and credential exist", async () => {
@@ -165,3 +213,34 @@ test("resolveCodexExecutable honors DEVHARNESS_CODEX_PATH without reading auth f
   assert.equal(await resolveCodexExecutable({ DEVHARNESS_CODEX_PATH: bin, PATH: "/usr/bin:/bin" }), bin);
   assert.equal(await resolveCodexExecutable({ PATH: "/usr/bin:/bin", HOME: root, DEVHARNESS_CODEX_DISABLE_WELL_KNOWN: "1" }), null);
 });
+
+test("prepareCodexExecutionContext accepts parent credential from auth.json fallback", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "devharness-codex-authfile-ctx-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const home = path.join(root, "home");
+  await mkdir(path.join(home, ".codex"), { recursive: true, mode: 0o700 });
+  await writeFile(path.join(home, ".codex", "auth.json"), `${JSON.stringify({
+    auth_mode: "apikey",
+    OPENAI_API_KEY: "sk-fake-authjson-parent-only"
+  }, null, 2)}\n`, { mode: 0o600 });
+  const calls = [];
+  const prepared = await prepareCodexExecutionContext({
+    analysisRoot: root,
+    attemptRoot: path.join(root, "attempt"),
+    privateHome: path.join(root, "private-home"),
+    supervisorRoot: path.join(root, "supervisor"),
+    resultPath: path.join(root, "attempt", "result.json"),
+    operationId: "alignment-operation-test-authfile",
+    attemptId: "attempt-authfile",
+    environment: { HOME: home, PATH: "/usr/bin:/bin", DEVHARNESS_CODEX_DISABLE_WELL_KNOWN: "1" },
+    profile: defaultCodexProfile({}),
+    async startProxy(options) {
+      calls.push(options);
+      return { server: { close(cb) { cb?.(); } }, port: 43201, token: options.childToken, origin: "http://127.0.0.1:43201" };
+    }
+  });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].parentCredential, "sk-fake-authjson-parent-only");
+  assert.equal(prepared.context.proxy.port, 43201);
+});
+

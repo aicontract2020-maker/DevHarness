@@ -11,7 +11,7 @@ test(enabled ? "real Codex smoke is enabled" : "real Codex smoke stays opt-in", 
   const executable = await resolveCodexExecutable(environment);
   const credential = resolveProviderCredential(environment);
   assert.ok(executable, "set DEVHARNESS_CODEX_PATH or put `codex` on PATH");
-  assert.ok(credential, "export OPENAI_API_KEY or DEVHARNESS_PROVIDER_CREDENTIAL; DevHarness does not read ~/.codex/auth.json");
+  assert.ok(credential, "export OPENAI_API_KEY or DEVHARNESS_PROVIDER_CREDENTIAL, or provide ~/.codex/auth.json with auth_mode=apikey (parent proxy only)");
   const adapter = createCodexAdapter({ profile: defaultCodexProfile(environment) });
   const descriptor = await adapter.probe({ environment, profileId: "codex-readonly-analysis-v1" });
   assert.equal(descriptor.id, "codex");
