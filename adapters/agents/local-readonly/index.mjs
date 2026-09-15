@@ -28,8 +28,9 @@ function nowIso(clock) {
 /**
  * Dogfood / local readonly analysis adapter.
  * Exercises the real continue → runBoundedAgentWorker path without Codex binary or API keys.
- * Swap to the builtin `codex` adapter (registerBuiltinAgentAdapters) when a real Codex
- * executable + provider proxy are available: `align --continue --agent codex ...`.
+ * Primary live adapter is builtin `codex` when Codex CLI + OPENAI_API_KEY /
+ * DEVHARNESS_PROVIDER_CREDENTIAL are configured. This stub remains the CI/dogfood
+ * fallback: `align --continue --agent devharness-cli-local-agent ...`.
  */
 export function createLocalReadonlyAnalysisAdapter({
   profileId = DEFAULT_PROFILE_ID,

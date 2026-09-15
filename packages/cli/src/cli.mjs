@@ -41,7 +41,14 @@ import {
 import { continueLiveAlignmentOperation, unresolvedLiveAlignmentDecisions } from "../../runtime/src/live-alignment-continue.mjs";
 import { AgentAdapterRegistry } from "../../runtime/src/agent-adapter.mjs";
 import { loadResearchRecipesForContinue } from "../../runtime/src/research-recipes.mjs";
-import { createLocalReadonlyAnalysisAdapter, LOCAL_READONLY_ADAPTER_ID } from "../../../adapters/agents/local-readonly/index.mjs";
+import { registerBuiltinAgentAdapters, LOCAL_READONLY_ADAPTER_ID } from "../../../adapters/agents/index.mjs";
+import {
+  CODEX_ADAPTER_ID,
+  CODEX_READONLY_PROFILE_ID,
+  defaultCodexProfile,
+  resolveAlignAgentSelection,
+  resolveProviderCredential
+} from "../../runtime/src/codex-runtime.mjs";
 import { recordAlignmentAnswer } from "../../runtime/src/alignment-answer.mjs";
 import { issueCommandSystemEvidence, issueCommandTestEvidence } from "../../runtime/src/supervisor-evidence.mjs";
 import { createSupervisorApprovalRequest, listPendingApprovalRequestsForRun, recordInteractiveApprovalDecisions } from "../../runtime/src/supervisor-approval.mjs";
@@ -89,7 +96,10 @@ Commands:
   advance   Perform the next safe Goal Run step: static understanding from received, or post-scope plan→change→verify prep after gates.scope approval.
   align     Bootstrap a live Alignment bundle, or tick it with --continue after answers/approvals.
              --continue loads exact HTTPS recipes from --research-recipes or <config-dir>/research-recipes.json
-             and registers the local readonly analysis adapter (devharness-cli-local-agent) for dogfood worker ticks.
+             and registers builtin adapters: codex (real Codex CLI + parent provider proxy) and
+             devharness-cli-local-agent (local-readonly stub). Default is Codex when the CLI and
+             OPENAI_API_KEY/DEVHARNESS_PROVIDER_CREDENTIAL are configured; otherwise local-readonly.
+             --agent codex forces Codex; --agent devharness-cli-local-agent forces the stub.
   request-scope Request scope approval for a ready Alignment Brief.
   retry     Retry the last failed live Alignment phase once.
   cancel    Cancel the current live Alignment operation through the shared fence.
@@ -375,7 +385,7 @@ function liveAlignmentAuthoritySubject({ run, descriptor, inputCheckpointSha256 
   };
 }
 
-async function loadCurrentLiveAlignmentBundle(dataRoot, repositoryIdentity, runId, { agentId = "devharness-cli-local-agent", agentProfileId = "codex-readonly-analysis-v1" } = {}) {
+async function loadCurrentLiveAlignmentBundle(dataRoot, repositoryIdentity, runId, { agentId = "devharness-cli-local-agent", agentProfileId = "codex-readonly-analysis-v1", agentDescriptor = null } = {}) {
   const run = await loadGoalRun(dataRoot, repositoryIdentity, runId);
   if (run.state !== "clarifying") return null;
   const existing = await findLiveAlignmentOperationBundleByRun(dataRoot, repositoryIdentity, runId, run.current_head_sha);
@@ -460,7 +470,7 @@ async function loadCurrentLiveAlignmentBundle(dataRoot, repositoryIdentity, runI
       media_type: "application/json",
       size_bytes: 0
     }));
-  const descriptor = liveAlignmentDescriptor({ agentId, agentProfileId });
+  const descriptor = agentDescriptor ?? liveAlignmentDescriptor({ agentId, agentProfileId });
   await assertContract("agent-runtime", descriptor);
   const inputCheckpointSha256 = createHash("sha256").update(JSON.stringify({
     run_id: run.id,
@@ -576,11 +586,33 @@ function formatExecutionGraphSummary(graph) {
 }
 
 
-function createDefaultContinueAdapterRegistry(services = {}) {
+function createDefaultContinueAdapterRegistry(services = {}, environment = process.env) {
   if (services.adapterRegistry) return services.adapterRegistry;
   const registry = new AgentAdapterRegistry();
-  registry.register(LOCAL_READONLY_ADAPTER_ID, createLocalReadonlyAnalysisAdapter(services.localReadonlyAdapter));
-  return registry;
+  const codexOptions = services.codexAdapter === false
+    ? false
+    : {
+        ...(services.codexAdapterOptions ?? {}),
+        inspectExecutable: services.inspectCodexExecutable ?? services.codexAdapterOptions?.inspectExecutable,
+        spawnProcess: services.spawnCodexProcess ?? services.codexAdapterOptions?.spawnProcess,
+        resultFileExists: services.codexResultFileExists ?? services.codexAdapterOptions?.resultFileExists,
+        profile: services.codexProfile ?? services.codexAdapterOptions?.profile ?? defaultCodexProfile(environment),
+        environment
+      };
+  return registerBuiltinAgentAdapters(registry, {
+    localReadonly: services.localReadonlyAdapter,
+    codex: codexOptions
+  });
+}
+
+async function resolveLiveAlignmentDescriptor({ agentId, agentProfileId, registry, environment }) {
+  if (agentId === CODEX_ADAPTER_ID && registry) {
+    return registry.probe(CODEX_ADAPTER_ID, {
+      environment,
+      profileId: agentProfileId ?? CODEX_READONLY_PROFILE_ID
+    });
+  }
+  return liveAlignmentDescriptor({ agentId, agentProfileId });
 }
 
 async function resolveContinueResearchRecipes(options, services = {}) {
@@ -647,8 +679,9 @@ export async function runCli(argv, io = console, services = {}) {
     if (!options.runId) throw new Error("align requires --run ID");
     const { dataRoot } = resolveExternalDataRoot(snapshot.repository.root_uri, options.dataRoot);
     if (options.continueLive) {
+      const environment = services.environment ?? process.env;
       const researchRecipes = await resolveContinueResearchRecipes(options, services);
-      const adapterRegistry = createDefaultContinueAdapterRegistry(services);
+      const adapterRegistry = createDefaultContinueAdapterRegistry(services, environment);
       const continued = await continueLiveAlignmentOperation({
         dataRoot,
         repositoryIdentity: snapshot.repository.identity,
@@ -663,11 +696,15 @@ export async function runCli(argv, io = console, services = {}) {
         researchAuthority: services.researchAuthority,
         fetchImpl: services.fetchImpl ?? globalThis.fetch?.bind(globalThis) ?? null,
         adapterRegistry,
-        adapterName: options.agentId ?? services.adapterName ?? LOCAL_READONLY_ADAPTER_ID,
+        adapterName: options.agentId ?? services.adapterName ?? null,
         probeRunner: services.probeRunner,
         resultValidator: services.resultValidator,
         workerContext: services.workerContext,
-        leaseTtlSeconds: services.leaseTtlSeconds
+        leaseTtlSeconds: services.leaseTtlSeconds,
+        providerCredential: services.providerCredential ?? resolveProviderCredential(environment)?.value ?? null,
+        startProviderProxy: services.startProviderProxy ?? null,
+        codexProfile: services.codexProfile ?? defaultCodexProfile(environment),
+        environment
       });
       const live = continued.bundle;
       const unresolved = continued.unresolved_decisions ?? unresolvedLiveAlignmentDecisions(live.interactionPacket, live.developerAnswers);
@@ -692,9 +729,36 @@ export async function runCli(argv, io = console, services = {}) {
         : `Live Alignment continue: ${live.operation.id}\nRun: ${options.runId}\nState: ${live.status.status}\nPhase: ${live.status.active_phase ?? "none"}\nAttempts: ${live.status.agent_attempts}\nUnresolved decisions: ${unresolved.length}\nLease: ${live.lease?.owner_id ?? "none"}\nNext: ${result.next_action}${result.blockers?.length ? `\nBlockers: ${result.blockers.join(" | ")}` : ""}\nStored externally: ${live.paths.root}`);
       return live.status.status === "ready" ? 0 : 2;
     }
+    const environment = services.environment ?? process.env;
+    const selection = await resolveAlignAgentSelection({
+      requestedAgentId: options.agentId,
+      requestedProfileId: options.agentProfileId,
+      environment
+    });
+    let agentId = selection.agentId;
+    let agentProfileId = selection.agentProfileId;
+    const adapterRegistry = createDefaultContinueAdapterRegistry(services, environment);
+    let descriptorOverride = null;
+    if (agentId === CODEX_ADAPTER_ID) {
+      try {
+        descriptorOverride = await resolveLiveAlignmentDescriptor({
+          agentId,
+          agentProfileId,
+          registry: adapterRegistry,
+          environment
+        });
+      } catch (error) {
+        if (options.agentId === CODEX_ADAPTER_ID) {
+          throw new Error(`Codex adapter is not ready: ${error.message}`);
+        }
+        agentId = LOCAL_READONLY_ADAPTER_ID;
+        agentProfileId = options.agentProfileId ?? "codex-readonly-analysis-v1";
+      }
+    }
     const bundleInput = await loadCurrentLiveAlignmentBundle(dataRoot, snapshot.repository.identity, options.runId, {
-      agentId: options.agentId ?? "devharness-cli-local-agent",
-      agentProfileId: options.agentProfileId ?? "codex-readonly-analysis-v1"
+      agentId,
+      agentProfileId,
+      agentDescriptor: descriptorOverride
     });
     if (!bundleInput) throw new Error("Live alignment requires a clarifying Goal Run with a current Alignment Brief.");
     const bundle = await loadLiveAlignmentOperationBundle(dataRoot, snapshot.repository.identity, bundleInput.operation.id);

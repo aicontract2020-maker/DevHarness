@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 
 import { canonicalDigest, canonicalJson } from "../../../packages/runtime/src/canonical-records.mjs";
+import { resolveCodexExecutable } from "../../../packages/runtime/src/codex-runtime.mjs";
 
 const execFile = promisify(execFileCallback);
 const POLICY = [
@@ -33,9 +34,10 @@ async function findExecutable(name, searchPath) {
 }
 
 async function defaultInspectExecutable(environment = {}) {
-  const executablePath = await findExecutable("codex", environment.PATH ?? process.env.PATH);
+  const merged = { ...process.env, ...environment };
+  const executablePath = await resolveCodexExecutable(merged) ?? await findExecutable("codex", merged.PATH ?? process.env.PATH);
   const [{ stdout }, bytes] = await Promise.all([
-    execFile(executablePath, ["--version"], { env: { PATH: environment.PATH ?? process.env.PATH ?? "/usr/bin:/bin", LANG: "C", HOME: "/var/empty" }, timeout: 10000, maxBuffer: 1024 * 1024 }),
+    execFile(executablePath, ["--version"], { env: { PATH: merged.PATH ?? process.env.PATH ?? "/usr/bin:/bin", LANG: "C", HOME: "/var/empty" }, timeout: 10000, maxBuffer: 1024 * 1024 }),
     readFile(executablePath)
   ]);
   return { path: executablePath, version: stdout.trim(), bytes };

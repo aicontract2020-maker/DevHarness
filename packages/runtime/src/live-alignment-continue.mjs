@@ -37,6 +37,13 @@ import {
   buildLocalReadonlyValidation,
   expectedDomainsFromSnapshot
 } from "./local-readonly-artifacts.mjs";
+import {
+  CODEX_ADAPTER_ID,
+  closeProviderProxy,
+  defaultCodexProfile,
+  prepareCodexExecutionContext,
+  resolveProviderCredential
+} from "./codex-runtime.mjs";
 
 const DEFAULT_LEASE_TTL_SECONDS = 120;
 
@@ -528,18 +535,27 @@ async function tickAgentPhase({
   probeRunner,
   resultValidator,
   workerContext,
-  now
+  now,
+  providerCredential = null,
+  startProviderProxy = null,
+  codexProfile = null,
+  environment = process.env
 }) {
   const phase = bundle.status.active_phase ?? "analysis-plan";
   const attemptNo = Math.min(2, Math.max(1, (bundle.status.agent_attempts ?? 0) + 1));
   const attemptId = `attempt-${randomUUID().replace(/-/g, "").slice(0, 24)}`;
+  const resolvedProfile = codexProfile ?? defaultCodexProfile(environment);
+  const modelId = adapterName === CODEX_ADAPTER_ID
+    ? resolvedProfile.modelId
+    : (bundle.operation.agent_descriptor?.model_id ?? "local-readonly-analysis");
   const invocation = {
     id: `invocation-${attemptId.slice(8)}`,
     operation_id: bundle.operation.id,
     attempt_no: attemptNo,
     phase,
     execution_instance_id: workerContext?.executionInstanceId ?? stableLiveAlignmentExecutionId(),
-    expected_domains: expectedDomainsFromSnapshot(snapshot)
+    expected_domains: expectedDomainsFromSnapshot(snapshot),
+    adapter: { model_id: modelId }
   };
   await appendJournal(dataRoot, repositoryIdentity, bundle.operation.id, "phase-started", {
     phase,
@@ -551,36 +567,58 @@ async function tickAgentPhase({
   const paths = alignmentOperationPaths(dataRoot, repositoryIdentity, bundle.operation.id);
   const attemptRoot = path.join(paths.attempts, phase, String(attemptNo));
   await mkdir(attemptRoot, { recursive: true, mode: 0o700 });
-  const context = workerContext ?? {
+  let context = workerContext ?? {
     analysisRoot: fileURLToPath(snapshot.repository.root_uri),
     attemptTmpPath: path.join(attemptRoot, "tmp"),
     privateHome: path.join(attemptRoot, "home"),
     supervisorRoot: path.join(attemptRoot, "supervisor"),
     resultPath: path.join(attemptRoot, "result.json")
   };
-  await mkdir(context.attemptTmpPath, { recursive: true, mode: 0o700 });
-  await mkdir(context.privateHome, { recursive: true, mode: 0o700 });
-  await mkdir(context.supervisorRoot, { recursive: true, mode: 0o700 });
+  let proxyServer = null;
+  try {
+    if (!workerContext && adapterName === CODEX_ADAPTER_ID) {
+      const prepared = await prepareCodexExecutionContext({
+        analysisRoot: context.analysisRoot,
+        attemptRoot,
+        privateHome: context.privateHome,
+        supervisorRoot: context.supervisorRoot,
+        resultPath: context.resultPath,
+        operationId: bundle.operation.id,
+        attemptId,
+        environment,
+        profile: resolvedProfile,
+        providerCredential: providerCredential ?? resolveProviderCredential(environment)?.value ?? null,
+        startProxy: startProviderProxy ?? undefined
+      });
+      context = prepared.context;
+      proxyServer = prepared.proxyServer;
+    }
+    await mkdir(context.attemptTmpPath, { recursive: true, mode: 0o700 });
+    await mkdir(context.privateHome, { recursive: true, mode: 0o700 });
+    await mkdir(context.supervisorRoot, { recursive: true, mode: 0o700 });
 
-  const worker = await runBoundedAgentWorker({
-    snapshot,
-    adapterRegistry,
-    adapterName,
-    invocation,
-    workerContext: context,
-    probeRunner: probeRunner ?? (async ({ code }) => ({ status: "pass", summary: code })),
-    resultValidator: resultValidator ?? (() => true),
-    clock: now
-  });
-  await writeJsonReplace(path.join(attemptRoot, "attempt.json"), worker.attempt);
-  await appendJournal(dataRoot, repositoryIdentity, bundle.operation.id, "phase-finished", {
-    phase,
-    attempt_id: attemptId,
-    attempt_no: attemptNo,
-    attempt_sha256: hashContract(worker.attempt),
-    status: worker.attempt.status
-  }, now);
-  return { worker, attemptId, attemptNo, phase, invocation };
+    const worker = await runBoundedAgentWorker({
+      snapshot,
+      adapterRegistry,
+      adapterName,
+      invocation,
+      workerContext: context,
+      probeRunner: probeRunner ?? (async ({ code }) => ({ status: "pass", summary: code })),
+      resultValidator: resultValidator ?? (() => true),
+      clock: now
+    });
+    await writeJsonReplace(path.join(attemptRoot, "attempt.json"), worker.attempt);
+    await appendJournal(dataRoot, repositoryIdentity, bundle.operation.id, "phase-finished", {
+      phase,
+      attempt_id: attemptId,
+      attempt_no: attemptNo,
+      attempt_sha256: hashContract(worker.attempt),
+      status: worker.attempt.status
+    }, now);
+    return { worker, attemptId, attemptNo, phase, invocation };
+  } finally {
+    await closeProviderProxy(proxyServer);
+  }
 }
 
 function nextActionFor(status, blockers = [], { scopeApproved = false } = {}) {
@@ -618,7 +656,11 @@ export async function continueLiveAlignmentOperation({
   probeRunner = null,
   resultValidator = null,
   workerContext = null,
-  leaseTtlSeconds = DEFAULT_LEASE_TTL_SECONDS
+  leaseTtlSeconds = DEFAULT_LEASE_TTL_SECONDS,
+  providerCredential = null,
+  startProviderProxy = null,
+  codexProfile = null,
+  environment = process.env
 } = {}) {
   if (!snapshot?.repository?.root_uri) throw new Error("A live snapshot is required.");
   const bundle = await findLiveAlignmentOperationBundleByRun(dataRoot, repositoryIdentity, runId, snapshot.repository.git?.head_sha)
@@ -812,7 +854,11 @@ export async function continueLiveAlignmentOperation({
         probeRunner,
         resultValidator,
         workerContext,
-        now
+        now,
+        providerCredential,
+        startProviderProxy,
+        codexProfile,
+        environment
       });
       const succeeded = workerResult.worker.attempt.status === "succeeded";
       let published = null;

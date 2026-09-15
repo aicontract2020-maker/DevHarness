@@ -555,3 +555,112 @@ test("continue leaves analysis-validation with local-readonly artifacts and a re
   assert.equal(validation.bundle.interactionPacket.kind, "alignment-brief");
   assert.equal(validation.bundle.interactionPacket.verdict, "ready");
 });
+
+test("continue ticks an injected Codex adapter through the worker contract", async (t) => {
+  const { dataRoot, consumerRoot } = await startBundle(t, {
+    status: "running",
+    leaseExpiresAt: "2026-09-01T11:59:00.000Z",
+    includeQuestions: false
+  });
+  const { createCodexAdapter } = await import("../../../adapters/agents/codex/index.mjs");
+  const { AgentAdapterRegistry } = await import("../src/agent-adapter.mjs");
+  const { defaultCodexProfile } = await import("../src/codex-runtime.mjs");
+  const profile = defaultCodexProfile({ DEVHARNESS_CODEX_MODEL: "gpt-approved" });
+  const spawnCalls = [];
+  const proxyCalls = [];
+  const adapter = createCodexAdapter({
+    profile,
+    implementationBytes: Buffer.from("codex-adapter-test"),
+    async inspectExecutable() {
+      return { path: "/opt/codex", version: "codex-cli 1.2.3", bytes: Buffer.from("codex-executable") };
+    },
+    async spawnProcess(request) {
+      spawnCalls.push(request);
+      const resultPath = request.argv[request.argv.indexOf("--output-last-message") + 1];
+      await writeFile(resultPath, `${JSON.stringify({ schema_version: 1, phase: "analysis-plan", summary: "injected Codex result" })}\n`);
+      return {
+        completion: Promise.resolve({
+          exitCode: 0,
+          startedAt: "2026-09-01T12:10:00.000Z",
+          completedAt: "2026-09-01T12:10:05.000Z",
+          usage: { input_tokens: 4, output_tokens: 2, total_tokens: 6 }
+        }),
+        async kill() {}
+      };
+    },
+    async resultFileExists(target) {
+      try {
+        await (await import("node:fs/promises")).access(target);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+  });
+  const registry = new AgentAdapterRegistry().register("codex", adapter);
+  const result = await continueLiveAlignmentOperation({
+    dataRoot,
+    repositoryIdentity,
+    runId: run.id,
+    snapshot: snapshotFor(consumerRoot),
+    now: () => new Date("2026-09-01T12:10:00.000Z"),
+    isOwnerAlive: async () => false,
+    owner: { owner_id: "owner-codex", boot_id: "boot-codex", pid: 7777, process_birth_id: "birth-codex" },
+    capabilityView: approvedCapabilities,
+    adapterRegistry: registry,
+    adapterName: "codex",
+    providerCredential: "sk-test-parent",
+    environment: { OPENAI_API_KEY: "sk-test-parent", DEVHARNESS_CODEX_MODEL: "gpt-approved" },
+    codexProfile: profile,
+    async startProviderProxy(options) {
+      proxyCalls.push(options);
+      return { server: { close(cb) { cb?.(); } }, port: 43199, token: options.childToken, origin: "http://127.0.0.1:43199" };
+    }
+  });
+  assert.equal(result.worker.worker.attempt.status, "succeeded");
+  assert.equal(result.status.active_phase, "analysis-synthesis");
+  assert.equal(spawnCalls.length, 1);
+  assert.equal(proxyCalls.length, 1);
+  assert.equal(proxyCalls[0].parentCredential, "sk-test-parent");
+  assert.equal(spawnCalls[0].argv.includes("gpt-approved"), true);
+  assert.equal(spawnCalls[0].env.DEVHARNESS_PROXY_TOKEN, proxyCalls[0].childToken);
+  assert.match(spawnCalls[0].stdin, /"phase":"analysis-plan"/);
+  assert.equal(spawnCalls[0].stdin.includes("sk-test-parent"), false);
+});
+
+test("continue reports AUTH_UNAVAILABLE for Codex without a parent credential", async (t) => {
+  const { dataRoot, consumerRoot } = await startBundle(t, {
+    status: "running",
+    leaseExpiresAt: "2026-09-01T11:59:00.000Z",
+    includeQuestions: false
+  });
+  const { createCodexAdapter } = await import("../../../adapters/agents/codex/index.mjs");
+  const { AgentAdapterRegistry } = await import("../src/agent-adapter.mjs");
+  const { defaultCodexProfile } = await import("../src/codex-runtime.mjs");
+  const registry = new AgentAdapterRegistry().register("codex", createCodexAdapter({
+    profile: defaultCodexProfile({}),
+    implementationBytes: Buffer.from("codex-adapter-test"),
+    async inspectExecutable() {
+      return { path: "/opt/codex", version: "1.0.0", bytes: Buffer.from("codex") };
+    },
+    async spawnProcess() { throw new Error("Codex must not spawn without auth"); }
+  }));
+  const result = await continueLiveAlignmentOperation({
+    dataRoot,
+    repositoryIdentity,
+    runId: run.id,
+    snapshot: snapshotFor(consumerRoot),
+    now: () => new Date("2026-09-01T12:10:00.000Z"),
+    isOwnerAlive: async () => false,
+    owner: { owner_id: "owner-codex", boot_id: "boot-codex", pid: 7777, process_birth_id: "birth-codex" },
+    capabilityView: approvedCapabilities,
+    adapterRegistry: registry,
+    adapterName: "codex",
+    environment: { PATH: "/usr/bin:/bin" },
+    async startProviderProxy() { throw new Error("proxy must not start"); }
+  });
+  assert.equal(result.worker, null);
+  assert.equal(result.status.terminal_error, null);
+  assert.equal(result.status.status, "running");
+  assert.equal(result.blockers.some((blocker) => /OPENAI_API_KEY or DEVHARNESS_PROVIDER_CREDENTIAL/.test(blocker)), true);
+});

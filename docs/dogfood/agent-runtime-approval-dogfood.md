@@ -178,27 +178,71 @@ bound subject's `subject_sha256` (epoch ≥ 1) so the research gateway can fetch
 No parallel attach CLI is required. If no matching approved receipt exists,
 continue still prints the authority-receipt blocker and continues local analysis.
 
-### Local readonly adapter (no Codex API key)
+### Agent adapters: Codex (primary) and local-readonly (fallback)
 
-Operation agent id defaults to `devharness-cli-local-agent` with profile
-`codex-readonly-analysis-v1`. Continue registers a **local readonly analysis
-stub** under that id so dogfood can exercise `continue → runBoundedAgentWorker`
-without Codex binary/credentials. It writes honest `dogfood-local-stub`
-artifacts (not Codex) and advances
-`analysis-plan` → `analysis-synthesis` → `analysis-validation`. A successful
-validation tick publishes a docs-only Alignment bundle and can move the
-operation to `ready` for `request-scope`.
+Continue registers **both** builtin adapters:
 
-To swap to real Codex later (requires Codex on `PATH` + provider proxy):
+| Adapter id | When it runs | What it can do |
+|---|---|---|
+| `codex` | Default when Codex CLI + parent credential are configured, or `--agent codex` | Real Codex `exec` for `analysis-plan` → `analysis-synthesis` → `analysis-validation` only. Read-only sandbox. No change/execute, no consumer writes, no Agent web/research tools. Provider traffic goes through the parent-owned loopback proxy. |
+| `devharness-cli-local-agent` | Default when Codex is **not** configured, or `--agent devharness-cli-local-agent` | Local readonly stub for CI/dogfood without API keys. Writes honest `dogfood-local-stub` artifacts (not Codex). |
+
+Profile id is `codex-readonly-analysis-v1` for both. An existing operation keeps
+its recorded adapter on `--continue` unless you pass `--agent`. Do not expect
+`--agent codex` to rewrite a previously approved local-readonly descriptor;
+it only selects the worker backend for the next tick.
+
+#### Codex auth (required for a live provider call)
+
+DevHarness does **not** read `~/.codex/auth.json` and does **not** mount login
+files into the Agent (`--ignore-user-config`). `codex login` alone is not
+enough. The parent process must export a provider credential and be able to
+spawn the Codex CLI:
 
 ```bash
-# after registering the builtin Codex adapter in your services/environment:
+# 1. Codex CLI. ChatGPT.app ships one; npm also publishes @openai/codex.
+export DEVHARNESS_CODEX_PATH="/Applications/ChatGPT.app/Contents/Resources/codex"
+# or: export PATH="$(dirname "$(command -v codex)"):$PATH"
+
+# 2. Parent credential for the loopback provider proxy (never commit this).
+export OPENAI_API_KEY          # or: export DEVHARNESS_PROVIDER_CREDENTIAL
+
+# 3. Optional model / origin (defaults: gpt-5 / https://api.openai.com)
+# export DEVHARNESS_CODEX_MODEL="gpt-5"
+# export DEVHARNESS_CODEX_ORIGIN="https://api.openai.com"
+```
+
+Confirm the binary:
+
+```bash
+"$DEVHARNESS_CODEX_PATH" --version
+# expect: codex-cli …
+```
+
+Live Codex continue (this is the dogfood command once auth is set):
+
+```bash
 $DH align --continue --agent codex --repo "$REPO" --config "$CONFIG" --run "$RUN_ID"
 ```
 
-If recipes or the adapter are still missing, continue keeps the operation
-`running` and prints the remaining blocker instead of inventing credentials,
-origins, or a Codex session.
+New Goal Runs: omit `--agent` and DevHarness will pick `codex` automatically
+when both the CLI and a parent credential are present.
+
+Optional real-binary smoke (still no CI network by default):
+
+```bash
+DVH_ENABLE_REAL_CODEX_SMOKE=1 node --test packages/runtime/test/live-alignment-codex-smoke.test.mjs
+```
+
+#### Fallback without keys
+
+```bash
+$DH align --continue --agent devharness-cli-local-agent --repo "$REPO" --config "$CONFIG" --run "$RUN_ID"
+```
+
+If Codex is requested but the executable or credential is missing, continue
+keeps the operation `running` and prints `AUTH_UNAVAILABLE` setup steps
+instead of inventing credentials, origins, or a Codex session.
 
 `--tick` is an alias for `--continue`.
 

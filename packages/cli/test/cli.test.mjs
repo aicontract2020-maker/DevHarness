@@ -1204,7 +1204,83 @@ test("align --continue help documents research-recipes and parseArguments accept
   const help = capture();
   const helpCode = await runCli(["--help"], help.io);
   assert.equal(helpCode, 0);
-  assert.match(help.lines.join("\n"), /research-recipes/);
+  const body = help.lines.join("\n");
+  assert.match(body, /research-recipes/);
+  assert.match(body, /--agent codex/);
+  assert.match(body, /devharness-cli-local-agent/);
+});
+
+test("align --agent codex records a probed Codex descriptor from an injected executable", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "devharness-cli-codex-repo-"));
+  const dataRoot = await mkdtemp(path.join(os.tmpdir(), "devharness-cli-codex-data-"));
+  t.after(() => Promise.all([rm(root, { recursive: true, force: true }), rm(dataRoot, { recursive: true, force: true })]));
+  await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "codex-align-fixture", dependencies: { next: "15.0.0", pg: "8.0.0" }, scripts: { test: "node --test" } }));
+  await writeFile(path.join(root, "package-lock.json"), "{}\n");
+  execFileSync("git", ["-C", root, "init", "-b", "main"]);
+  execFileSync("git", ["-C", root, "config", "user.email", "devharness@example.invalid"]);
+  execFileSync("git", ["-C", root, "config", "user.name", "DevHarness Tests"]);
+  execFileSync("git", ["-C", root, "add", "."]);
+  execFileSync("git", ["-C", root, "commit", "-m", "fixture"]);
+
+  assert.equal(await runCli(
+    ["goal", "--repo", root, "--data-dir", dataRoot, "--goal", "Add password reset", "--format", "json"],
+    capture().io,
+    { newRunId: () => "run-codex-align-1", now: () => "2026-09-15T16:00:00.000Z" }
+  ), 0);
+  await runCli(
+    ["advance", "--repo", root, "--data-dir", dataRoot, "--run", "run-codex-align-1", "--format", "json"],
+    capture().io,
+    { now: () => "2026-09-15T17:00:00.000Z" }
+  );
+  const alignOutput = capture();
+  assert.equal(await runCli(
+    ["align", "--repo", root, "--data-dir", dataRoot, "--run", "run-codex-align-1", "--agent", "codex", "--format", "json"],
+    alignOutput.io,
+    {
+      now: () => "2026-09-15T17:05:00.000Z",
+      environment: { PATH: "/usr/bin:/bin" },
+      inspectCodexExecutable: async () => ({
+        path: "/opt/codex",
+        version: "codex-cli 1.2.3",
+        bytes: Buffer.from("codex-executable")
+      })
+    }
+  ), 2);
+  const aligned = JSON.parse(alignOutput.lines[0]);
+  assert.equal(aligned.agent.id, "codex");
+  assert.equal(aligned.agent.profile_id, "codex-readonly-analysis-v1");
+  assert.equal(aligned.operation.agent_descriptor.executable_version, "codex-cli 1.2.3");
+});
+
+test("align defaults to local-readonly when Codex auth is not configured", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "devharness-cli-local-default-repo-"));
+  const dataRoot = await mkdtemp(path.join(os.tmpdir(), "devharness-cli-local-default-data-"));
+  t.after(() => Promise.all([rm(root, { recursive: true, force: true }), rm(dataRoot, { recursive: true, force: true })]));
+  await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "local-default-fixture", dependencies: { next: "15.0.0", pg: "8.0.0" }, scripts: { test: "node --test" } }));
+  await writeFile(path.join(root, "package-lock.json"), "{}\n");
+  execFileSync("git", ["-C", root, "init", "-b", "main"]);
+  execFileSync("git", ["-C", root, "config", "user.email", "devharness@example.invalid"]);
+  execFileSync("git", ["-C", root, "config", "user.name", "DevHarness Tests"]);
+  execFileSync("git", ["-C", root, "add", "."]);
+  execFileSync("git", ["-C", root, "commit", "-m", "fixture"]);
+  assert.equal(await runCli(
+    ["goal", "--repo", root, "--data-dir", dataRoot, "--goal", "Add password reset", "--format", "json"],
+    capture().io,
+    { newRunId: () => "run-local-default-1", now: () => "2026-09-15T16:00:00.000Z" }
+  ), 0);
+  await runCli(
+    ["advance", "--repo", root, "--data-dir", dataRoot, "--run", "run-local-default-1", "--format", "json"],
+    capture().io,
+    { now: () => "2026-09-15T17:00:00.000Z" }
+  );
+  const alignOutput = capture();
+  assert.equal(await runCli(
+    ["align", "--repo", root, "--data-dir", dataRoot, "--run", "run-local-default-1", "--format", "json"],
+    alignOutput.io,
+    { now: () => "2026-09-15T17:05:00.000Z", environment: { PATH: "/usr/bin:/bin" } }
+  ), 2);
+  const aligned = JSON.parse(alignOutput.lines[0]);
+  assert.equal(aligned.agent.id, "devharness-cli-local-agent");
 });
 
 
