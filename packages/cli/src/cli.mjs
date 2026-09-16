@@ -90,7 +90,7 @@ Commands:
   request-approval Create a signed, revision-bound pending request; this does not approve it.
   request-capability Request exactly one bounded capability from the current Alignment Brief.
              Defaults: agent-runtime/vcs-write 720m, network-research 480m, others 60m (max 1440). Re-request expired/stale without losing the Goal Run.
-             After Gate 1, request `vcs-write` then TTY-approve before `advance --mode controlled-change`.
+             After Gate 1, request vcs-write then TTY-approve before advance --mode controlled-change.
   approve    Record one or more decisions in a single foreground TTY confirmation (--request repeated, or --run + --pending). JSON and pipes are refused; never silently auto-approves.
   verify    Plan an isolated command. Execution requires a Goal Run and its current signed capabilities.
   goal      Create a durable Goal Run at the current committed revision. Does not execute an agent.
