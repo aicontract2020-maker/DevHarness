@@ -285,15 +285,31 @@ export function createProviderProxyResponder({
     let currentUrl = upstreamUrl(selectedOrigin, url);
     let redirectCount = 0;
     while (true) {
-      const upstreamResponse = await fetchImpl(currentUrl, {
-        method,
-        headers: upstreamHeaders({
-          parentCredential,
-          includeJsonContentType: method !== "GET" && forwardBody.length > 0
-        }),
-        body: method === "GET" ? undefined : forwardBody,
-        redirect: "manual"
-      });
+      let upstreamResponse;
+      try {
+        upstreamResponse = await fetchImpl(currentUrl, {
+          method,
+          headers: upstreamHeaders({
+            parentCredential,
+            includeJsonContentType: method !== "GET" && forwardBody.length > 0
+          }),
+          body: method === "GET" ? undefined : forwardBody,
+          redirect: "manual"
+        });
+      } catch (error) {
+        const receipt = requestReceipt({
+          reservation,
+          status: "failed",
+          responseStatus: 0,
+          responseBytes: 0,
+          responseSha256: null,
+          usage: null,
+          finalUrl: currentUrl,
+          diagnosticCode: "USAGE_UNAVAILABLE"
+        });
+        await publishReceipt(receipt);
+        return response(502, { error: "upstream_fetch_failed", detail: String(error?.message ?? error).slice(0, 300) });
+      }
 
       const isRedirect = upstreamResponse.status >= 300 && upstreamResponse.status < 400 && upstreamResponse.headers?.get?.("location");
       if (isRedirect) {
