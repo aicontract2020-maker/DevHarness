@@ -37,6 +37,7 @@ import {
   buildLocalReadonlyValidation,
   expectedDomainsFromSnapshot
 } from "./local-readonly-artifacts.mjs";
+import { mapTerminalError } from "./agent-adapter.mjs";
 import {
   CODEX_ADAPTER_ID,
   closeProviderProxy,
@@ -890,7 +891,7 @@ export async function continueLiveAlignmentOperation({
           current_attempt_id: succeeded ? null : workerResult.attemptId,
           agent_attempts: (current.status.agent_attempts ?? 0) + 1,
           total_tokens: (current.status.total_tokens ?? 0) + (workerResult.worker.attempt.limit_observations?.total_tokens ?? 0),
-          terminal_error: succeeded ? null : (workerResult.worker.attempt.termination_reason ?? "ANALYSIS_FAILED"),
+          terminal_error: succeeded ? null : (mapTerminalError(workerResult.worker.attempt.termination_reason) ?? "ANALYSIS_FAILED"),
           research_subject_ref: subjectInfo.subjectRef ?? current.status.research_subject_ref,
           result_bundle_ref: published?.result_bundle_ref ?? current.status.result_bundle_ref
         })

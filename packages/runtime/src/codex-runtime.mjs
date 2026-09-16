@@ -9,7 +9,7 @@ import { startProviderProxyServer } from "./provider-proxy.mjs";
 export const CODEX_ADAPTER_ID = "codex";
 export const CODEX_READONLY_PROFILE_ID = "codex-readonly-analysis-v1";
 export const LOCAL_READONLY_ADAPTER_ID = "devharness-cli-local-agent";
-export const DEFAULT_CODEX_MODEL_ID = "gpt-5";
+export const DEFAULT_CODEX_MODEL_ID = "gpt-5.6-sol";
 export const DEFAULT_CODEX_ORIGIN = "https://api.openai.com";
 export const WELL_KNOWN_CODEX_PATHS = Object.freeze([
   "/Applications/ChatGPT.app/Contents/Resources/codex"

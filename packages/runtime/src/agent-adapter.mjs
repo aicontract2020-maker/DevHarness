@@ -10,6 +10,33 @@ const STABLE_ERROR_CODE = new Set(["ADAPTER_NOT_FOUND", "ADAPTER_INCOMPATIBLE", 
 const SHA256 = /^[0-9a-f]{64}$/;
 const IDENTIFIER = /^[A-Za-z][A-Za-z0-9._:-]{0,127}$/;
 
+
+const TERMINATION_REASON_TO_STABLE_ERROR = Object.freeze({
+  authority: "AGENT_AUTHORITY_REQUIRED",
+  unsupported: "ADAPTER_INCOMPATIBLE",
+  cancelled: "CANCELLED",
+  timeout: "TIMEOUT",
+  "process-exit": "PROCESS_EXIT",
+  "invalid-output": "INVALID_OUTPUT",
+  limit: "RESOURCE_LIMIT",
+  isolation: "ISOLATION_UNAVAILABLE",
+  integrity: "ATTEMPT_INTEGRITY",
+  cleanup: "CLEANUP_FAILED"
+});
+
+/** Map adapter termination_reason (kebab) or an already-stable code onto operation terminal_error. */
+export function mapTerminalError(terminationReason, fallback = "ANALYSIS_FAILED") {
+  if (terminationReason == null || terminationReason === "completed") return null;
+  if (STABLE_ERROR_CODE.has(terminationReason)) return terminationReason;
+  // Expand STABLE_ERROR_CODE usage: also accept full schema enum values used by live alignment.
+  const mapped = TERMINATION_REASON_TO_STABLE_ERROR[terminationReason];
+  if (mapped) return mapped;
+  if (typeof terminationReason === "string" && /^[A-Z][A-Z0-9_]{1,63}$/.test(terminationReason)) {
+    return terminationReason;
+  }
+  return fallback;
+}
+
 export class AgentAdapterError extends Error {
   constructor(code, message) {
     super(message);

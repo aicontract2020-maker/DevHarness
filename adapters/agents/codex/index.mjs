@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { execFile as execFileCallback, spawn as spawnChild } from "node:child_process";
-import { access, readFile } from "node:fs/promises";
+import { access, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
@@ -47,10 +47,27 @@ function defaultSpawnProcess(request) {
   const child = spawnChild(request.executable, request.argv, {
     cwd: request.cwd,
     env: request.env,
-    stdio: ["pipe", "ignore", "ignore"],
+    stdio: ["pipe", "pipe", "pipe"],
     detached: true
   });
   const startedAt = new Date().toISOString();
+  const stdoutChunks = [];
+  const stderrChunks = [];
+  let stdoutBytes = 0;
+  let stderrBytes = 0;
+  const MAX_CAPTURE = 64 * 1024;
+  child.stdout.on("data", (chunk) => {
+    if (stdoutBytes >= MAX_CAPTURE) return;
+    const next = chunk.subarray(0, Math.max(0, MAX_CAPTURE - stdoutBytes));
+    stdoutChunks.push(next);
+    stdoutBytes += next.length;
+  });
+  child.stderr.on("data", (chunk) => {
+    if (stderrBytes >= MAX_CAPTURE) return;
+    const next = chunk.subarray(0, Math.max(0, MAX_CAPTURE - stderrBytes));
+    stderrChunks.push(next);
+    stderrBytes += next.length;
+  });
   child.stdin.end(request.stdin);
   const completion = new Promise((resolve, reject) => {
     child.once("error", reject);
@@ -59,7 +76,9 @@ function defaultSpawnProcess(request) {
       signal,
       startedAt,
       completedAt: new Date().toISOString(),
-      usage: { input_tokens: 0, output_tokens: 0, total_tokens: 0 }
+      usage: { input_tokens: 0, output_tokens: 0, total_tokens: 0 },
+      stdout: Buffer.concat(stdoutChunks).toString("utf8"),
+      stderr: Buffer.concat(stderrChunks).toString("utf8")
     }));
   });
   return {
@@ -114,7 +133,19 @@ function terminal(completion, context, resultExists) {
   const base = { started_at: completion.startedAt, completed_at: completion.completedAt, exit_code: completion.exitCode ?? null, usage };
   if (completion.timedOut) return { ...base, status: "timed-out", termination_reason: "timeout", result_path: null, adapter_diagnostics: [{ code: "TIMEOUT", summary: "The bounded Agent attempt timed out." }] };
   if (completion.cancelled) return { ...base, status: "cancelled", termination_reason: "cancelled", result_path: null, adapter_diagnostics: [{ code: "CANCELLED", summary: "The Agent attempt was cancelled." }] };
-  if (completion.exitCode !== 0) return { ...base, status: "failed", termination_reason: "process-exit", result_path: null, adapter_diagnostics: [{ code: "PROCESS_EXIT", summary: "The Agent process exited abnormally." }] };
+  if (completion.exitCode !== 0) {
+    const detail = String(completion.stderr || completion.stdout || "").trim().replace(/\s+/g, " ").slice(0, 700);
+    return {
+      ...base,
+      status: "failed",
+      termination_reason: "process-exit",
+      result_path: null,
+      adapter_diagnostics: [{
+        code: "PROCESS_EXIT",
+        summary: detail ? `The Agent process exited abnormally: ${detail}` : "The Agent process exited abnormally."
+      }]
+    };
+  }
   if (!resultExists) return { ...base, status: "failed", termination_reason: "invalid-output", result_path: null, adapter_diagnostics: [{ code: "INVALID_OUTPUT", summary: "The Agent did not produce its required result file." }] };
   return { ...base, status: "succeeded", termination_reason: "completed", result_path: context.resultPath, adapter_diagnostics: [] };
 }
@@ -169,6 +200,18 @@ export function createCodexAdapter({
       }
       try {
         const completion = await handle.completion;
+        try {
+          const logPath = path.join(executionContext.attemptTmpPath, "codex-stdio.log");
+          const body = [
+            `exitCode=${completion.exitCode}`,
+            `signal=${completion.signal ?? ""}`,
+            "----- stdout -----",
+            completion.stdout ?? "",
+            "----- stderr -----",
+            completion.stderr ?? ""
+          ].join("\n");
+          await writeFile(logPath, body, "utf8");
+        } catch {}
         const exists = completion.exitCode === 0 && !completion.timedOut && !completion.cancelled && await resultFileExists(executionContext.resultPath);
         return terminal(completion, executionContext, exists);
       } finally {

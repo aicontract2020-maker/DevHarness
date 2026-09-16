@@ -172,9 +172,24 @@ function validateUsage(usage) {
     && Number.isSafeInteger(usage.total_tokens) && usage.total_tokens === usage.input_tokens + usage.output_tokens;
 }
 
+function normalizeUsage(usage) {
+  if (!usage || typeof usage !== "object" || Array.isArray(usage)) return null;
+  const input = usage.input_tokens ?? usage.prompt_tokens;
+  const output = usage.output_tokens ?? usage.completion_tokens;
+  let total = usage.total_tokens;
+  if (!Number.isSafeInteger(total) && Number.isSafeInteger(input) && Number.isSafeInteger(output)) {
+    total = input + output;
+  }
+  const normalized = {
+    input_tokens: input,
+    output_tokens: output,
+    total_tokens: total
+  };
+  return validateUsage(normalized) ? normalized : null;
+}
+
 function extractUsage(payload) {
-  const usage = payload?.usage;
-  return validateUsage(usage) ? usage : null;
+  return normalizeUsage(payload?.usage);
 }
 
 function upstreamHeaders({ parentCredential }) {

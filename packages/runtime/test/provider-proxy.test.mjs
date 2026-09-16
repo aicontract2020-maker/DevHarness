@@ -30,7 +30,7 @@ test("provider proxy requires the child token, injects the parent credential, an
       calls.push({ kind: "fetch", url, init });
       assert.equal(init.headers.authorization, `Bearer ${parentCredential}`);
       assert.equal(Object.hasOwn(init.headers, "x-devharness-proxy-token"), false);
-      return new Response(JSON.stringify({ id: "resp-1", usage: { input_tokens: 11, output_tokens: 7, total_tokens: 18 } }), {
+      return new Response(JSON.stringify({ id: "resp-1", usage: { input_tokens: 11, output_tokens: 7, total_tokens: 18, input_tokens_details: { cached_tokens: 0 }, output_tokens_details: { reasoning_tokens: 0 } } }), {
         status: 200,
         headers: { "content-type": "application/json" }
       });
