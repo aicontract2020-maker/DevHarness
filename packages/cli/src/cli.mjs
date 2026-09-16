@@ -81,7 +81,7 @@ Usage:
   devharness approve (--request ID [--request ID ...] | --run ID --pending) [--repo PATH] [--data-dir PATH]
   devharness verify --command ID [--repo PATH] [--config PATH] [--data-dir PATH] [--run ID --execute] [--commit SHA] [--attest] [--timeout-seconds N] [--format text|json]
   devharness goal --goal TEXT [--repo PATH] [--data-dir PATH] [--format text|json]
-  devharness advance --run ID [--mode docs-only|controlled-change] [--repo PATH] [--data-dir PATH] [--artifact-dir PATH] [--command ID] [--format text|json]
+  devharness advance --run ID [--mode docs-only|controlled-change] [--change-json PATH] [--repo PATH] [--data-dir PATH] [--artifact-dir PATH] [--command ID] [--format text|json]
   devharness align --run ID [--continue|--tick] [--agent ID] [--agent-profile ID] [--research-recipes PATH] [--repo PATH] [--data-dir PATH] [--format text|json]
   devharness answer --run ID --decision ID --option ID [--decision ID --option ID ...] [--packet SHA] [--repo PATH] [--data-dir PATH] [--format text|json]
   devharness request-scope --run ID [--repo PATH] [--data-dir PATH] [--format text|json]
@@ -165,6 +165,7 @@ function parseArguments(argv) {
     baseRef: null,
     push: false,
     createPr: false,
+    changeJsonPath: null,
     commitSha: null
   };
 
@@ -222,6 +223,9 @@ function parseArguments(argv) {
       if (!requestId) throw new Error("--request requires an approval request id");
       options.requestIds.push(requestId);
       if (!options.requestId) options.requestId = requestId;
+    } else if (argument === "--change-json") {
+      options.changeJsonPath = argv[++index];
+      if (!options.changeJsonPath) throw new Error("--change-json requires a path");
     } else if (argument === "--branch") {
       options.branchName = argv[++index];
       if (!options.branchName) throw new Error("--branch requires a name");
@@ -1303,6 +1307,10 @@ export async function runCli(argv, io = console, services = {}) {
       const paths = runStoragePaths(dataRoot, snapshot.repository.identity, options.runId);
       const currentPointer = JSON.parse(await readFile(paths.current, "utf8"));
       const nextSequence = (Number.isInteger(currentPointer?.sequence) ? currentPointer.sequence : 1) + 1;
+      let changeSpec = null;
+      if (options.changeJsonPath) {
+        changeSpec = JSON.parse(await readFile(options.changeJsonPath, "utf8"));
+      }
       const checkpoint = await createPostScopeAdvanceCheckpoint({
         run: currentRun,
         snapshot,
@@ -1312,6 +1320,7 @@ export async function runCli(argv, io = console, services = {}) {
         verifyCommandId: options.commandId,
         deliveryMode,
         vcsWriteAuthorized,
+        changeSpec,
         nextSequence,
         generatedAt
       });

@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 
@@ -69,7 +69,7 @@ export async function applyBoundedControlledChange({
   generatedAt = new Date().toISOString()
 }) {
   const root = canonicalPath(worktreePath);
-  const spec = change ?? {
+  const defaultChange = {
     kind: "ensure-file",
     relative_path: "DEVHARNESS_CONTROLLED_CHANGE.md",
     contents: [
@@ -83,28 +83,85 @@ export async function applyBoundedControlledChange({
       ""
     ].join("\n")
   };
-
-  if (spec.kind !== "ensure-file") {
-    throw new Error(`Unsupported controlled-change kind: ${spec.kind}`);
+  const specs = normalizeChangeSpecs(change ?? defaultChange);
+  const applied = [];
+  for (const spec of specs) {
+    applied.push(await applyOneControlledChange(root, spec));
   }
-  const relative = String(spec.relative_path ?? "").replace(/^\/+/, "");
-  if (!relative || relative.includes("..") || path.isAbsolute(relative)) {
+  const status = git(root, ["status", "--porcelain=v1"]);
+  if (!status) throw new Error("Controlled-change did not modify the worktree.");
+  const primary = applied[0];
+  return {
+    kind: specs.length === 1 ? primary.kind : "batch",
+    relative_path: primary.relative_path,
+    contents_sha256: primary.contents_sha256,
+    changes: applied,
+    porcelain: status
+  };
+}
+
+function normalizeChangeSpecs(change) {
+  if (Array.isArray(change?.changes)) return change.changes;
+  if (change?.kind) return [change];
+  throw new Error("Controlled-change spec must be a change object or { changes: [...] }.");
+}
+
+function assertRelativePath(relative) {
+  const value = String(relative ?? "").replace(/^\/+/, "");
+  if (!value || value.includes("..") || path.isAbsolute(value)) {
     throw new Error("Controlled-change path must be a relative file inside the worktree.");
   }
+  return value;
+}
+
+async function applyOneControlledChange(root, spec) {
+  const relative = assertRelativePath(spec.relative_path);
   const absolute = canonicalPath(path.join(root, relative));
   if (!isWithin(root, absolute)) {
     throw new Error("Controlled-change path escapes the worktree.");
   }
-  await mkdir(path.dirname(absolute), { recursive: true, mode: 0o700 });
-  await writeFile(absolute, spec.contents, { encoding: "utf8", mode: 0o600 });
-  const status = git(root, ["status", "--porcelain=v1"]);
-  if (!status) throw new Error("Controlled-change did not modify the worktree.");
-  return {
-    kind: spec.kind,
-    relative_path: relative,
-    contents_sha256: hashContract(spec.contents),
-    porcelain: status
-  };
+
+  if (spec.kind === "ensure-file") {
+    if (typeof spec.contents !== "string") throw new Error("ensure-file requires string contents.");
+    await mkdir(path.dirname(absolute), { recursive: true, mode: 0o700 });
+    await writeFile(absolute, spec.contents, { encoding: "utf8", mode: 0o600 });
+    return {
+      kind: spec.kind,
+      relative_path: relative,
+      contents_sha256: hashContract(spec.contents)
+    };
+  }
+
+  if (spec.kind === "replace-in-file") {
+    const oldString = spec.old_string;
+    const newString = spec.new_string;
+    if (typeof oldString !== "string" || typeof newString !== "string") {
+      throw new Error("replace-in-file requires old_string and new_string.");
+    }
+    if (!oldString) throw new Error("replace-in-file old_string must be non-empty.");
+    let current;
+    try {
+      current = await readFile(absolute, "utf8");
+    } catch (error) {
+      if (error.code === "ENOENT") throw new Error(`replace-in-file target missing: ${relative}`);
+      throw error;
+    }
+    const matches = current.split(oldString).length - 1;
+    if (matches !== 1) {
+      throw new Error(`replace-in-file expected exactly one match in ${relative}, found ${matches}.`);
+    }
+    const next = current.replace(oldString, newString);
+    await writeFile(absolute, next, { encoding: "utf8", mode: 0o600 });
+    return {
+      kind: spec.kind,
+      relative_path: relative,
+      contents_sha256: hashContract(next),
+      old_string_sha256: hashContract(oldString),
+      new_string_sha256: hashContract(newString)
+    };
+  }
+
+  throw new Error(`Unsupported controlled-change kind: ${spec.kind}`);
 }
 
 export function commitControlledChange({

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
@@ -66,4 +66,34 @@ test("controlled change mutates an isolated worktree and leaves the main checkou
   assert.equal(execFileSync("git", ["-C", root, "status", "--porcelain=v1"], { encoding: "utf8" }), "");
   assert.equal(await readFile(path.join(worktree, "DEVHARNESS_CONTROLLED_CHANGE.md"), "utf8").then((v) => v.includes("run-1")), true);
   assert.equal(await readFile(path.join(root, "DEVHARNESS_CONTROLLED_CHANGE.md"), "utf8").then(() => false, () => true), true);
+});
+
+test("replace-in-file applies an exact single substitution", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "devharness-replace-repo-"));
+  const dataRoot = await mkdtemp(path.join(os.tmpdir(), "devharness-replace-data-"));
+  t.after(() => Promise.all([rm(root, { recursive: true, force: true }), rm(dataRoot, { recursive: true, force: true })]));
+  execFileSync("git", ["-C", root, "init", "-b", "main"]);
+  execFileSync("git", ["-C", root, "config", "user.email", "devharness@example.invalid"]);
+  execFileSync("git", ["-C", root, "config", "user.name", "DevHarness Tests"]);
+  await mkdir(path.join(root, "backend", "src"), { recursive: true });
+  await writeFile(path.join(root, "backend", "src", "main.py"), "async def health_check():\n    return {\"status\": \"healthy\"}\n");
+  execFileSync("git", ["-C", root, "add", "."]);
+  execFileSync("git", ["-C", root, "commit", "-m", "base"]);
+  const head = execFileSync("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+  const worktreePath = path.join(dataRoot, "change-worktree");
+  await createControlledChangeWorktree({ repositoryRoot: root, worktreePath, headSha: head });
+  const applied = await applyBoundedControlledChange({
+    worktreePath,
+    change: {
+      kind: "replace-in-file",
+      relative_path: "backend/src/main.py",
+      old_string: "return {\"status\": \"healthy\"}\n",
+      new_string: "return {\"status\": \"healthy\", \"service\": \"aiedu-backend\"}\n"
+    },
+    runId: "run-replace-1"
+  });
+  assert.equal(applied.kind, "replace-in-file");
+  const body = await readFile(path.join(worktreePath, "backend", "src", "main.py"), "utf8");
+  assert.match(body, /aiedu-backend/);
+  assert.equal(await readFile(path.join(root, "backend", "src", "main.py"), "utf8").then((t) => t.includes("aiedu-backend")), false);
 });
