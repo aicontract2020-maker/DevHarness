@@ -102,8 +102,14 @@ test("provider proxy rejects wrong child credentials, cross-origin redirects, an
   assert.match(JSON.parse(result.body).error, /usage_unavailable/);
 });
 
-test("provider proxy forces stream false and still forwards JSON content-type", async () => {
+test("provider proxy passes through Responses SSE and extracts usage", async () => {
   let forwarded;
+  const sse = [
+    "event: response.completed",
+    'data: {"type":"response.completed","response":{"id":"resp-2","usage":{"input_tokens":3,"output_tokens":1,"total_tokens":4,"input_tokens_details":{"cached_tokens":0}}}}',
+    "",
+    ""
+  ].join("\n");
   const respond = createProviderProxyResponder({
     exactOrigins,
     childToken,
@@ -112,9 +118,9 @@ test("provider proxy forces stream false and still forwards JSON content-type", 
     attemptId: "attempt-1",
     fetchImpl: async (_url, init) => {
       forwarded = init;
-      return new Response(JSON.stringify({ id: "resp-2", usage: { input_tokens: 3, output_tokens: 1, total_tokens: 4 } }), {
+      return new Response(sse, {
         status: 200,
-        headers: { "content-type": "application/json" }
+        headers: { "content-type": "text/event-stream; charset=utf-8" }
       });
     },
     now: () => new Date(now)
@@ -125,6 +131,8 @@ test("provider proxy forces stream false and still forwards JSON content-type", 
   assert.equal(response.status, 200);
   assert.equal(forwarded.headers["content-type"], "application/json");
   const body = JSON.parse(forwarded.body);
-  assert.equal(body.stream, false);
-  assert.equal(Object.hasOwn(body, "stream_options"), false);
+  assert.equal(body.stream, true);
+  assert.match(response.headers["content-type"], /text\/event-stream/);
+  assert.match(response.body, /event: response\.completed/);
+  assert.match(response.body, /"usage"/);
 });

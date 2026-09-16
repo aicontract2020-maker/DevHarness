@@ -18,16 +18,15 @@ export const WELL_KNOWN_CODEX_PATHS = Object.freeze([
 export const CODEX_OUTPUT_SCHEMA = Object.freeze({
   $schema: "https://json-schema.org/draft/2020-12/schema",
   type: "object",
-  additionalProperties: true,
-  required: ["schema_version", "phase"],
+  additionalProperties: false,
+  required: ["schema_version", "phase", "summary", "adapter", "profile_id", "notes"],
   properties: {
-    schema_version: { const: 1 },
-    phase: { enum: ["analysis-plan", "analysis-synthesis", "analysis-validation"] },
+    schema_version: { type: "integer", const: 1 },
+    phase: { type: "string", enum: ["analysis-plan", "analysis-synthesis", "analysis-validation"] },
     summary: { type: "string" },
     adapter: { type: "string" },
     profile_id: { type: "string" },
-    goal_analysis: { type: "object" },
-    validation: { type: "object" }
+    notes: { type: "array", items: { type: "string" } }
   }
 });
 

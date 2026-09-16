@@ -42,18 +42,46 @@ function tokenMatches(expected, actual) {
   return timingSafeEqual(left, right);
 }
 
-function response(status, body, allowedOrigin = null, extraHeaders = {}) {
-  return {
-    status,
-    headers: {
-      "content-type": "application/json; charset=utf-8",
-      "cache-control": "no-store",
-      "x-content-type-options": "nosniff",
-      ...(allowedOrigin ? { "access-control-allow-origin": allowedOrigin, vary: "Origin" } : {}),
-      ...extraHeaders
-    },
-    body: body === undefined ? "" : `${JSON.stringify(body)}\n`
+function response(status, body, allowedOrigin = null, extraHeaders = {}, { raw = false, contentType = null } = {}) {
+  const headers = {
+    "content-type": contentType
+      ?? (raw ? "text/event-stream; charset=utf-8" : "application/json; charset=utf-8"),
+    "cache-control": "no-store",
+    "x-content-type-options": "nosniff",
+    ...(allowedOrigin ? { "access-control-allow-origin": allowedOrigin, vary: "Origin" } : {}),
+    ...extraHeaders
   };
+  let encoded;
+  if (raw) {
+    encoded = body === undefined || body === null ? "" : String(body);
+  } else {
+    encoded = body === undefined ? "" : `${JSON.stringify(body)}\n`;
+  }
+  return { status, headers, body: encoded };
+}
+
+function encodeResponsesSseFromJson(payload) {
+  const completed = {
+    type: "response.completed",
+    response: payload
+  };
+  return `event: response.completed\ndata: ${JSON.stringify(completed)}\n\n`;
+}
+
+function extractUsageFromSse(text) {
+  let usage = null;
+  for (const line of String(text ?? "").split(/\r?\n/)) {
+    if (!line.startsWith("data:")) continue;
+    const data = line.slice(5).trim();
+    if (!data || data === "[DONE]") continue;
+    try {
+      const event = JSON.parse(data);
+      const candidate = event?.response?.usage ?? event?.usage ?? null;
+      const normalized = normalizeUsage(candidate);
+      if (normalized) usage = normalized;
+    } catch {}
+  }
+  return usage;
 }
 
 function byteLength(text) {
@@ -262,13 +290,9 @@ export function createProviderProxyResponder({
     const maxOutputTokens = Number.isInteger(payload?.max_output_tokens) && payload.max_output_tokens >= 0 && payload.max_output_tokens <= 600000
       ? payload.max_output_tokens
       : 0;
-    // DevHarness accounting requires a single JSON completion with usage; force non-streaming.
-    let forwardBody = requestBody;
-    if (payload && typeof payload === "object" && !Array.isArray(payload) && payload.stream === true) {
-      const nextPayload = { ...payload, stream: false };
-      delete nextPayload.stream_options;
-      forwardBody = serializeBody(nextPayload);
-    }
+    const clientWantedStream = Boolean(payload && typeof payload === "object" && payload.stream === true);
+    // Keep the child's stream flag so Codex receives a real Responses SSE transcript.
+    const forwardBody = requestBody;
     const reservation = requestReservation({
       operationId,
       attemptId,
@@ -347,7 +371,98 @@ export function createProviderProxyResponder({
         continue;
       }
 
+      const upstreamContentType = upstreamResponse.headers?.get?.("content-type") ?? "";
+      if (clientWantedStream || /text\/event-stream/i.test(upstreamContentType)) {
+        const sseText = await upstreamResponse.text();
+        if (byteLength(sseText) > maxResponseBytes) {
+          const receipt = requestReceipt({
+            reservation,
+            status: "failed",
+            responseStatus: upstreamResponse.status,
+            responseBytes: byteLength(sseText),
+            responseSha256: createHash("sha256").update(sseText, "utf8").digest("hex"),
+            usage: null,
+            finalUrl: currentUrl,
+            diagnosticCode: "RESOURCE_LIMIT"
+          });
+          await publishReceipt(receipt);
+          return response(413, { error: "response_limit_exceeded" });
+        }
+        if (upstreamResponse.status >= 400) {
+          const receipt = requestReceipt({
+            reservation,
+            status: "failed",
+            responseStatus: upstreamResponse.status,
+            responseBytes: byteLength(sseText),
+            responseSha256: createHash("sha256").update(sseText, "utf8").digest("hex"),
+            usage: null,
+            finalUrl: currentUrl,
+            diagnosticCode: "USAGE_UNAVAILABLE"
+          });
+          await publishReceipt(receipt);
+          return response(upstreamResponse.status, sseText, null, {
+            "x-devharness-proxy-operation": operationId,
+            "x-devharness-proxy-attempt": attemptId,
+            "x-devharness-proxy-error": "upstream_client_error"
+          }, { raw: true, contentType: upstreamContentType || "text/event-stream; charset=utf-8" });
+        }
+        const usage = extractUsageFromSse(sseText);
+        if (!usage) {
+          const receipt = requestReceipt({
+            reservation,
+            status: "failed",
+            responseStatus: upstreamResponse.status,
+            responseBytes: byteLength(sseText),
+            responseSha256: createHash("sha256").update(sseText, "utf8").digest("hex"),
+            usage: null,
+            finalUrl: currentUrl,
+            diagnosticCode: "USAGE_UNAVAILABLE"
+          });
+          await publishReceipt(receipt);
+          return response(502, {
+            error: "usage_unavailable",
+            upstream_status: upstreamResponse.status,
+            content_type: upstreamContentType,
+            body_prefix: String(sseText ?? "").slice(0, 240)
+          });
+        }
+        const receipt = requestReceipt({
+          reservation,
+          status: "completed",
+          responseStatus: upstreamResponse.status,
+          responseBytes: byteLength(sseText),
+          responseSha256: createHash("sha256").update(sseText, "utf8").digest("hex"),
+          usage,
+          finalUrl: null,
+          diagnosticCode: null
+        });
+        await publishReceipt(receipt);
+        return response(200, sseText, null, {
+          "x-devharness-proxy-operation": operationId,
+          "x-devharness-proxy-attempt": attemptId,
+          "x-devharness-proxy-started-at": startedAt
+        }, { raw: true, contentType: "text/event-stream; charset=utf-8" });
+      }
+
       const parsed = await parseJSONResponse(upstreamResponse, maxResponseBytes);
+      if (upstreamResponse.status >= 400 && parsed.payload && typeof parsed.payload === "object" && parsed.payload.error) {
+        const receipt = requestReceipt({
+          reservation,
+          status: "failed",
+          responseStatus: upstreamResponse.status,
+          responseBytes: byteLength(parsed.text),
+          responseSha256: createHash("sha256").update(parsed.text, "utf8").digest("hex"),
+          usage: null,
+          finalUrl: currentUrl,
+          diagnosticCode: "USAGE_UNAVAILABLE"
+        });
+        await publishReceipt(receipt);
+        return response(upstreamResponse.status, parsed.payload, null, {
+          "x-devharness-proxy-operation": operationId,
+          "x-devharness-proxy-attempt": attemptId,
+          "x-devharness-proxy-error": "upstream_client_error"
+        });
+      }
       if (parsed.oversized) {
         const receipt = requestReceipt({
           reservation,
@@ -375,7 +490,22 @@ export function createProviderProxyResponder({
           diagnosticCode: "USAGE_UNAVAILABLE"
         });
         await publishReceipt(receipt);
-        return response(502, { error: "usage_unavailable" });
+        const rawUsage = parsed.payload?.usage;
+        return response(502, {
+          error: "usage_unavailable",
+          upstream_status: upstreamResponse.status,
+          content_type: upstreamResponse.headers?.get?.("content-type") ?? null,
+          payload_type: parsed.payload == null ? "null" : Array.isArray(parsed.payload) ? "array" : typeof parsed.payload,
+          usage_keys: rawUsage && typeof rawUsage === "object" ? Object.keys(rawUsage) : null,
+          usage_preview: rawUsage && typeof rawUsage === "object"
+            ? {
+                input_tokens: rawUsage.input_tokens ?? rawUsage.prompt_tokens ?? null,
+                output_tokens: rawUsage.output_tokens ?? rawUsage.completion_tokens ?? null,
+                total_tokens: rawUsage.total_tokens ?? null
+              }
+            : null,
+          body_prefix: String(parsed.text ?? "").slice(0, 240)
+        });
       }
       const receipt = requestReceipt({
         reservation,
@@ -388,11 +518,21 @@ export function createProviderProxyResponder({
         diagnosticCode: null
       });
       await publishReceipt(receipt);
-      return response(upstreamResponse.status, parsed.payload ?? { data: parsed.text }, null, {
+      const proxyHeaders = {
         "x-devharness-proxy-operation": operationId,
         "x-devharness-proxy-attempt": attemptId,
         "x-devharness-proxy-started-at": startedAt
-      });
+      };
+      if (clientWantedStream) {
+        return response(
+          200,
+          encodeResponsesSseFromJson(parsed.payload ?? { data: parsed.text }),
+          null,
+          proxyHeaders,
+          { raw: true }
+        );
+      }
+      return response(upstreamResponse.status, parsed.payload ?? { data: parsed.text }, null, proxyHeaders);
     }
   };
 }
