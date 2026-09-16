@@ -23,7 +23,7 @@ export function evaluateDeliveryReadiness({
   profile = "full"
 }) {
   const reasons = [];
-  const docsOnly = profile === "docs-only";
+  const docsOnly = profile === "docs-only" || profile === "controlled-change";
   const trusted = isTrustedEvaluationContext(trustContext);
   if (!trusted && !(docsOnly && (criteria?.length ?? 0) === 0)) {
     addReason(reasons, "trusted_delivery_context_missing", "Delivery readiness requires Supervisor-verified evidence; caller evidence arrays are ignored.");

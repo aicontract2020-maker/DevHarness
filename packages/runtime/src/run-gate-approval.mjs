@@ -158,6 +158,31 @@ export async function applyRunGateFromApprovalReceipt({
     nextRun.state = "planning";
   }
 
+  if (
+    receipt.gate === "delivery"
+    && receipt.decision === "approved"
+    && run.state === "awaiting_delivery_approval"
+  ) {
+    events.push(createRunEvent({
+      runId: receipt.run_id,
+      sequence: nextSequence + 1,
+      at,
+      type: "state.transitioned",
+      actor: { id: "runtime", kind: "runtime", role: "orchestrator" },
+      data: { from: "awaiting_delivery_approval", to: "completed" }
+    }));
+    events.push(createRunEvent({
+      runId: receipt.run_id,
+      sequence: nextSequence + 2,
+      at,
+      type: "run.completed",
+      actor: structuredClone(receipt.decided_by),
+      data: { gate: "delivery", receipt_id: receipt.id }
+    }));
+    nextRun.state = "completed";
+    nextRun.timestamps.completed_at = at;
+  }
+
   const scorecard = await loadRunScorecard(dataRoot, repositoryIdentity, receipt.run_id);
   const existingPacket = await loadRunInteraction(dataRoot, repositoryIdentity, receipt.run_id);
   let packet;

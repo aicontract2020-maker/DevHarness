@@ -57,6 +57,10 @@ import { initializeSupervisorIdentity } from "../../runtime/src/supervisor-store
 import { findApprovedVcsWrite, loadCapabilityAuthorizationView, requestCapabilityAuthorization, resolveCapabilityApprovalContext } from "../../runtime/src/capability-authorization.mjs";
 import { createVerificationPlan, executeVerificationPlan, formatVerificationPlan } from "../../runtime/src/verify.mjs";
 import { createPostScopeAdvanceCheckpoint, postScopeAdvanceSupported } from "../../runtime/src/post-scope-advance.mjs";
+import {
+  createDeliveryAdvanceCheckpoint,
+  deliveryAdvanceSupported
+} from "../../runtime/src/delivery-advance.mjs";
 import { startReviewServer } from "../../runtime/src/review-server.mjs";
 
 const HELP = `DevHarness
@@ -76,6 +80,7 @@ Usage:
   devharness align --run ID [--continue|--tick] [--agent ID] [--agent-profile ID] [--research-recipes PATH] [--repo PATH] [--data-dir PATH] [--format text|json]
   devharness answer --run ID --decision ID --option ID [--decision ID --option ID ...] [--packet SHA] [--repo PATH] [--data-dir PATH] [--format text|json]
   devharness request-scope --run ID [--repo PATH] [--data-dir PATH] [--format text|json]
+  devharness request-delivery --run ID [--repo PATH] [--data-dir PATH] [--format text|json]
   devharness retry --run ID --operation ID [--repo PATH] [--data-dir PATH] [--format text|json]
   devharness cancel --run ID --operation ID [--repo PATH] [--data-dir PATH] [--format text|json]
   devharness status --run ID [--repo PATH] [--data-dir PATH] [--format text|json]
@@ -94,7 +99,7 @@ Commands:
   approve    Record one or more decisions in a single foreground TTY confirmation (--request repeated, or --run + --pending). JSON and pipes are refused; never silently auto-approves.
   verify    Plan an isolated command. Execution requires a Goal Run and its current signed capabilities.
   goal      Create a durable Goal Run at the current committed revision. Does not execute an agent.
-  advance   Perform the next safe Goal Run step: static understanding from received, or post-scope plan→change→verify prep after gates.scope approval.
+  advance   Perform the next safe Goal Run step: static understanding from received, post-scope plan→change→verify prep after Gate 1, or Delivery Brief prep after a ready tip scorecard.
              --mode docs-only (default) writes an external readiness summary. --mode controlled-change requires approved vcs-write and commits a bounded change in an isolated worktree.
   align     Bootstrap a live Alignment bundle, or tick it with --continue after answers/approvals.
              --continue loads exact HTTPS recipes from --research-recipes or <config-dir>/research-recipes.json
@@ -103,6 +108,7 @@ Commands:
              OPENAI_API_KEY/DEVHARNESS_PROVIDER_CREDENTIAL are configured; otherwise local-readonly.
              --agent codex forces Codex; --agent devharness-cli-local-agent forces the stub.
   request-scope Request scope approval for a ready Alignment Brief.
+  request-delivery Request Gate 2 delivery approval for a ready Delivery Brief.
   retry     Retry the last failed live Alignment phase once.
   cancel    Cancel the current live Alignment operation through the shared fence.
   status    Restore one Goal Run from its event stream and show a compact current verdict.
@@ -297,7 +303,7 @@ function nextRunAction(run) {
     return "Continue the governed post-scope step with `devharness advance --run ID`.";
   }
   if (run.state === "verifying") {
-    return "Run `devharness verify --run ID --command <id> --execute --attest` with current capability authority.";
+    return "If verification already attested and the tip scorecard is ready, run `devharness advance --run ID` to open Gate 2; otherwise verify --execute --attest first.";
   }
   if (run.state === "awaiting_delivery_approval") return "Review the Delivery Brief and decide the delivery gate.";
   if (["completed", "blocked", "cancelled"].includes(run.state)) return "Inspect the final verdict and its evidence.";
@@ -727,7 +733,7 @@ async function maybeRefreshDocsOnlyScorecardAfterVerify({
     omittedItemCount: packet.compression?.omitted_item_count ?? 0,
     generatedAt,
     dataSource: "runtime",
-    profile: "docs-only",
+    profile: deliveryMode === "controlled-change" ? "controlled-change" : "docs-only",
     trustContext
   });
   const stored = await appendGoalRunCheckpoint({
@@ -750,7 +756,7 @@ export async function runCli(argv, io = console, services = {}) {
     return 0;
   }
 
-  if (!["onboard", "init", "doctor", "build", "supervisor-init", "request-approval", "request-capability", "approve", "verify", "goal", "advance", "align", "answer", "request-scope", "retry", "cancel", "status", "review"].includes(options.command)) {
+  if (!["onboard", "init", "doctor", "build", "supervisor-init", "request-approval", "request-capability", "approve", "verify", "goal", "advance", "align", "answer", "request-scope", "request-delivery", "retry", "cancel", "status", "review"].includes(options.command)) {
     throw new Error(`Unknown command: ${options.command}`);
   }
 
@@ -1015,6 +1021,42 @@ export async function runCli(argv, io = console, services = {}) {
     io.log(options.format === "json"
       ? JSON.stringify(result, null, 2)
       : `Scope approval requested: ${request.id}\nBundle: ${bundleRef.id}\nRevision: ${bundle.operation.commit_sha.slice(0, 12)}\nNext: ${result.next_action}`);
+    return 0;
+  }
+
+  if (options.command === "request-delivery") {
+    if (!options.runId) throw new Error("request-delivery requires --run ID");
+    const { dataRoot } = resolveExternalDataRoot(snapshot.repository.root_uri, options.dataRoot);
+    const run = await loadGoalRun(dataRoot, snapshot.repository.identity, options.runId);
+    if (run.state !== "awaiting_delivery_approval") {
+      throw new Error("request-delivery requires state=awaiting_delivery_approval (advance a verifying run with a ready tip scorecard first).");
+    }
+    const packet = await loadRunInteraction(dataRoot, snapshot.repository.identity, options.runId);
+    if (!packet || packet.kind !== "delivery-brief" || packet.verdict !== "ready") {
+      throw new Error("request-delivery requires a current ready Delivery Brief.");
+    }
+    const brief = await loadRunSourceArtifact(dataRoot, snapshot.repository.identity, options.runId, "artifact-delivery-brief");
+    const supervisorRoot = services.supervisorRoot ?? defaultSupervisorRoot();
+    await initializeSupervisorIdentity(supervisorRoot);
+    const request = await createSupervisorApprovalRequest({
+      supervisorRoot,
+      repositoryIdentity: snapshot.repository.identity,
+      relevantHeadSha: run.current_head_sha,
+      runId: options.runId,
+      gate: "delivery",
+      subject: { id: brief.source.id, artifact_sha256: brief.source.sha256 },
+      now: () => new Date(services.now?.() ?? Date.now())
+    });
+    const result = {
+      mode: "delivery",
+      run,
+      brief: { id: brief.source.id, sha256: brief.source.sha256 },
+      request,
+      next_action: `devharness approve --repo ${fileURLToPath(snapshot.repository.root_uri)} --data-dir ${dataRoot} --request ${request.id}`
+    };
+    io.log(options.format === "json"
+      ? JSON.stringify(result, null, 2)
+      : `Delivery approval requested: ${request.id}\nBrief: ${brief.source.id}\nRevision: ${run.current_head_sha.slice(0, 12)}\nNext: ${result.next_action}`);
     return 0;
   }
 
@@ -1304,8 +1346,71 @@ export async function runCli(argv, io = console, services = {}) {
       return 0;
     }
 
+    {
+      const tipScorecard = await loadRunScorecard(dataRoot, snapshot.repository.identity, options.runId);
+      if (deliveryAdvanceSupported(currentRun, tipScorecard)) {
+        const priorArtifacts = [];
+        for (const artifactId of ["artifact-onboarding-plan", "artifact-goal-input", "artifact-repository-snapshot", "artifact-readiness-summary", "artifact-execution-plan"]) {
+          try {
+            const loaded = await loadRunSourceArtifact(dataRoot, snapshot.repository.identity, options.runId, artifactId);
+            priorArtifacts.push({ id: loaded.source.id, kind: loaded.source.kind, value: loaded.value, sha256: loaded.source.sha256 });
+          } catch (error) {
+            if (artifactId === "artifact-onboarding-plan") throw error;
+          }
+        }
+        const paths = runStoragePaths(dataRoot, snapshot.repository.identity, options.runId);
+        const currentPointer = JSON.parse(await readFile(paths.current, "utf8"));
+        const nextSequence = (Number.isInteger(currentPointer?.sequence) ? currentPointer.sequence : 1) + 1;
+        const checkpoint = await createDeliveryAdvanceCheckpoint({
+          run: currentRun,
+          scorecard: tipScorecard,
+          priorArtifacts,
+          nextSequence,
+          generatedAt
+        });
+        const scorecard = createReviewScorecard({
+          run: checkpoint.run,
+          scopeHash: createHash("sha256").update(JSON.stringify({ goal: currentRun.goal.original, scope_version: currentRun.goal.scope_version })).digest("hex"),
+          harnessVersion: "unbound",
+          title: `Delivery Brief: ${currentRun.goal.original}`,
+          reviewVerdicts: [],
+          reviewChecks: [],
+          findings: [],
+          unknowns: [],
+          sourceArtifactCount: checkpoint.artifacts.length,
+          omittedItemCount: checkpoint.packet.compression.omitted_item_count,
+          generatedAt,
+          dataSource: "runtime",
+          profile: checkpoint.delivery.mode === "controlled-change" ? "controlled-change" : "docs-only"
+        });
+        const stored = await appendGoalRunCheckpoint({
+          dataRoot,
+          repositoryIdentity: snapshot.repository.identity,
+          runId: currentRun.id,
+          events: checkpoint.events,
+          nextRun: checkpoint.run,
+          scorecard,
+          packet: checkpoint.packet,
+          artifacts: checkpoint.artifacts
+        });
+        const result = {
+          mode: "delivery",
+          run: checkpoint.run,
+          interaction: checkpoint.packet,
+          scorecard,
+          delivery: checkpoint.delivery,
+          path: stored.paths.checkpoint,
+          next_action: `devharness request-delivery --run ${currentRun.id}`
+        };
+        io.log(options.format === "json"
+          ? JSON.stringify(result, null, 2)
+          : `Goal Run advanced (delivery): ${checkpoint.run.id}\nState: ${checkpoint.run.state}\nDelivery Brief: ${checkpoint.delivery.brief_id}\nNext: ${result.next_action}\nStored externally: ${stored.paths.checkpoint}`);
+        return 0;
+      }
+    }
+
     if (currentRun.state !== "received") {
-      throw new Error("advance supports received (static understanding) or scope-approved clarifying/planning/staffing/executing runs.");
+      throw new Error("advance supports received (static understanding), scope-approved clarifying/planning/staffing/executing runs, or verifying runs with a ready tip scorecard.");
     }
     let config = null;
     let configError = null;
