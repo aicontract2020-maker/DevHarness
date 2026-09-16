@@ -50,6 +50,7 @@ async function issueCommandEvidence({
   receiptId,
   runId,
   criterion,
+  commitSha = null,
   now = () => new Date()
 }, semantics, expectedKind, observationSummary, outcomeSummary) {
   if (!snapshot?.repository?.identity || !snapshot?.repository?.git?.head_sha) {
@@ -63,7 +64,8 @@ async function issueCommandEvidence({
   const receipt = receipts.find((candidate) => candidate.id === receiptId);
   if (!receipt) throw new Error(`No intact verification receipt exists for ${receiptId}.`);
   if (receipt.command.kind !== expectedKind) throw new Error(`The ${semantics.id} driver accepts only ${expectedKind} receipts.`);
-  if (!receiptMatchesCurrentConfig(snapshot, config, receipt)) {
+  const evidenceCommitSha = commitSha ?? receipt.commit_sha ?? snapshot.repository.git.head_sha;
+  if (!receiptMatchesCurrentConfig(snapshot, config, receipt, { commitSha: evidenceCommitSha })) {
     throw new Error("The verification receipt is not a passing proof for the current revision and configuration.");
   }
 
@@ -74,7 +76,7 @@ async function issueCommandEvidence({
   const recipeHash = hashContract({
     driver,
     repository_identity: snapshot.repository.identity,
-    commit_sha: snapshot.repository.git.head_sha,
+    commit_sha: evidenceCommitSha,
     criterion: { id: criterion.id, sha256: criterionHash },
     command: { id: receipt.command.id, kind: receipt.command.kind, sha256: receipt.command.sha256 },
     harness: receipt.harness,
@@ -93,7 +95,7 @@ async function issueCommandEvidence({
     captured_at: issuedAt,
     subject: {
       repository_identity: snapshot.repository.identity,
-      commit_sha: snapshot.repository.git.head_sha
+      commit_sha: evidenceCommitSha
     },
     observation: {
       result: "pass",
@@ -105,7 +107,7 @@ async function issueCommandEvidence({
     schema_version: 1,
     id: `manifest-${seed.slice(0, 32)}`,
     repository_identity: snapshot.repository.identity,
-    commit_sha: snapshot.repository.git.head_sha,
+    commit_sha: evidenceCommitSha,
     run_id: runId,
     criterion: { id: criterion.id, sha256: criterionHash },
     command: { id: receipt.command.id, kind: receipt.command.kind, sha256: receipt.command.sha256 },

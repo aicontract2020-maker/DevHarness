@@ -15,8 +15,9 @@ function commandHash(command) {
   return hashContract(command);
 }
 
-export function receiptMatchesCurrentConfig(snapshot, config, receipt) {
+export function receiptMatchesCurrentConfig(snapshot, config, receipt, options = {}) {
   if (!config) return false;
+  const expectedCommitSha = options.commitSha ?? snapshot.repository.git.head_sha;
   const configured = config.quality.commands.find((command) => command.id === receipt.command.id);
   if (!configured) return false;
   const resolvedCommand = { ...configured, sha256: commandHash(configured) };
@@ -44,7 +45,7 @@ export function receiptMatchesCurrentConfig(snapshot, config, receipt) {
   return (
       expectedServices.every(Boolean) &&
       receipt.repository_identity === snapshot.repository.identity &&
-      receipt.commit_sha === snapshot.repository.git.head_sha &&
+      receipt.commit_sha === expectedCommitSha &&
       receipt.command.kind === configured.kind &&
       receipt.command.run === configured.run &&
       receipt.command.source === configured.source &&

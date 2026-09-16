@@ -638,6 +638,24 @@ async function resolveContinueResearchRecipes(options, services = {}) {
 }
 
 
+
+async function loadControlledChangeAuthorityContext({ dataRoot, repositoryIdentity, runId, commitSha }) {
+  if (!runId || !commitSha) return null;
+  try {
+    const loaded = await loadRunSourceArtifact(dataRoot, repositoryIdentity, runId, "artifact-readiness-summary");
+    const value = loaded.value;
+    if (value?.delivery_mode !== "controlled-change") return null;
+    if (value?.change_commit_sha !== commitSha) return null;
+    if (!value?.head_sha) return null;
+    return {
+      baseline_head_sha: value.head_sha,
+      change_commit_sha: value.change_commit_sha
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function maybeRefreshDocsOnlyScorecardAfterVerify({
   snapshot,
   dataRoot,
@@ -651,16 +669,18 @@ async function maybeRefreshDocsOnlyScorecardAfterVerify({
   const run = await loadGoalRun(dataRoot, snapshot.repository.identity, runId);
   if (!["verifying", "reviewing"].includes(run.state)) return null;
 
-  let docsOnly = commandId === "docs-readiness-summary";
-  if (!docsOnly) {
+  let deliveryMode = commandId === "docs-readiness-summary" ? "docs-only"
+    : commandId === "controlled-change-marker" ? "controlled-change"
+    : null;
+  if (!deliveryMode) {
     try {
-      await loadRunSourceArtifact(dataRoot, snapshot.repository.identity, runId, "artifact-readiness-summary");
-      docsOnly = true;
+      const loaded = await loadRunSourceArtifact(dataRoot, snapshot.repository.identity, runId, "artifact-readiness-summary");
+      deliveryMode = loaded.value?.delivery_mode === "controlled-change" ? "controlled-change" : "docs-only";
     } catch {
-      docsOnly = false;
+      deliveryMode = null;
     }
   }
-  if (!docsOnly) return null;
+  if (!deliveryMode) return null;
 
   const packet = await loadRunInteraction(dataRoot, snapshot.repository.identity, runId);
   if (!packet) throw new Error("Docs-only verify refresh requires a current interaction packet.");
@@ -698,7 +718,7 @@ async function maybeRefreshDocsOnlyScorecardAfterVerify({
     run: nextRun,
     scopeHash: createHash("sha256").update(JSON.stringify({ goal: run.goal.original, scope_version: run.goal.scope_version })).digest("hex"),
     harnessVersion: "unbound",
-    title: `Docs-only verification: ${run.goal.original}`,
+    title: `${deliveryMode === "controlled-change" ? "Controlled-change verification" : "Docs-only verification"}: ${run.goal.original}`,
     reviewVerdicts: [],
     reviewChecks: [],
     findings: [],
@@ -1240,7 +1260,13 @@ export async function runCli(argv, io = console, services = {}) {
             runId: options.runId,
             now: new Date(services.now?.() ?? Date.now())
           });
-          const authority = evaluateVerificationExecutionAuthority(plan, authorizationView);
+          const controlledChange = await loadControlledChangeAuthorityContext({
+            dataRoot,
+            repositoryIdentity: snapshot.repository.identity,
+            runId: options.runId,
+            commitSha: plan.commit_sha
+          });
+          const authority = evaluateVerificationExecutionAuthority(plan, authorizationView, { controlledChange });
           const commitFlag = changeCommit ? ` --commit ${changeCommit}` : "";
           verifyProbe = {
             command_id: options.commandId,
@@ -1527,7 +1553,13 @@ export async function runCli(argv, io = console, services = {}) {
       runId: options.runId,
       now: new Date(services.now?.() ?? Date.now())
     });
-    const authority = evaluateVerificationExecutionAuthority(plan, authorizationView);
+    const controlledChange = await loadControlledChangeAuthorityContext({
+      dataRoot,
+      repositoryIdentity: snapshot.repository.identity,
+      runId: options.runId,
+      commitSha: plan.commit_sha
+    });
+    const authority = evaluateVerificationExecutionAuthority(plan, authorizationView, { controlledChange });
     if (!authority.allowed) throw new Error(`Verification execution lacks current capability authority: ${authority.reasons.map((reason) => reason.message).join(" ")}`);
     const receipt = await executeVerificationPlan(plan);
     let evidence = null;
@@ -1556,9 +1588,10 @@ export async function runCli(argv, io = console, services = {}) {
           config,
           receiptId: receipt.id,
           runId: receipt.goal_run_id ?? options.runId,
+          commitSha: receipt.commit_sha,
           criterion: {
             id: `configured-tests-${receipt.command.id}`,
-            claim: `The configured ${receipt.command.id} ${receipt.command.kind === "verify" ? "system verification" : "automated tests"} pass at the current revision.`
+            claim: `The configured ${receipt.command.id} ${receipt.command.kind === "verify" ? "system verification" : "automated tests"} pass at the attested revision.`
           }
         });
         attestation = { status: "issued", reason: null, summary: "Supervisor passing evidence was issued." };

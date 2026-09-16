@@ -10,12 +10,20 @@ export function requiredCapabilityIdsForVerification(plan) {
   return CAPABILITY_ORDER.filter((id) => required.has(id));
 }
 
-export function evaluateVerificationExecutionAuthority(plan, authorizationView) {
+export function evaluateVerificationExecutionAuthority(plan, authorizationView, options = {}) {
   const reasons = [];
   if (!authorizationView || authorizationView.repository_identity !== plan?.repository_identity) {
     reasons.push({ code: "authorization_repository_mismatch", message: "Capability authorization belongs to another repository." });
   }
-  if (!authorizationView || authorizationView.head_sha !== plan?.commit_sha) {
+  const controlled = options.controlledChange ?? null;
+  const controlledChangeRevisionOk = Boolean(
+    controlled
+    && controlled.baseline_head_sha
+    && controlled.change_commit_sha
+    && authorizationView?.head_sha === controlled.baseline_head_sha
+    && plan?.commit_sha === controlled.change_commit_sha
+  );
+  if (!authorizationView || (authorizationView.head_sha !== plan?.commit_sha && !controlledChangeRevisionOk)) {
     reasons.push({ code: "authorization_revision_mismatch", message: "Capability authorization belongs to another revision." });
   }
   const byId = new Map((authorizationView?.capabilities ?? []).map((item) => [item.request.id, item]));

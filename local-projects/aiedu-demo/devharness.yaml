@@ -1,0 +1,229 @@
+{
+  "version": 1,
+  "project": {
+    "id": "aiedu-demo"
+  },
+  "platforms": [
+    "api",
+    "web"
+  ],
+  "quality": {
+    "commands": [
+      {
+        "id": "docs-readiness-summary",
+        "kind": "test",
+        "run": "node --input-type=module -e \"import { access } from 'node:fs/promises'; const p=process.env.DEVHARNESS_READINESS_SUMMARY; if(!p) { console.error('DEVHARNESS_READINESS_SUMMARY unset'); process.exit(1);} await access(p); console.log('readiness summary present:', p);\"",
+        "source": "external DevHarness docs-only dogfood probe under local-projects/",
+        "env_keys": [
+          "DEVHARNESS_READINESS_SUMMARY"
+        ]
+      },
+      {
+        "id": "controlled-change-marker",
+        "kind": "test",
+        "run": "node --input-type=module -e \"import { access } from 'node:fs/promises'; await access('DEVHARNESS_CONTROLLED_CHANGE.md'); const t=await (await import('node:fs/promises')).readFile('DEVHARNESS_CONTROLLED_CHANGE.md','utf8'); if(!t.includes('controlled')) { console.error('marker contents unexpected'); process.exit(1);} console.log('controlled-change marker present');\"",
+        "source": "external DevHarness controlled-change dogfood probe under local-projects/"
+      },
+      {
+        "id": "docker-compose-build",
+        "kind": "build",
+        "run": "docker compose -f docker-compose.yml -f docker-compose.dev.yml -f /Users/kaimaplespark/GAC/git/film-making/DevHarness/local-projects/aiedu-demo/docker-compose.devharness.yml build",
+        "source": "docker-compose.yml + docker-compose.dev.yml + external local port overlay"
+      },
+      {
+        "id": "aiedu-full-stack-launch",
+        "kind": "launch",
+        "run": "install -m 600 config/.env.example config/.env && docker compose --project-name \"$DEVHARNESS_RUN_ID\" -f docker-compose.yml -f docker-compose.dev.yml -f /Users/kaimaplespark/GAC/git/film-making/DevHarness/local-projects/aiedu-demo/docker-compose.devharness.yml up --no-build",
+        "source": "docker-compose.yml + docker-compose.dev.yml + external local port overlay + config/.env.example"
+      },
+      {
+        "id": "frontend-build",
+        "kind": "build",
+        "run": "npm --prefix frontend run build",
+        "source": "frontend/package.json"
+      },
+      {
+        "id": "frontend-lint",
+        "kind": "lint",
+        "run": "npm --prefix frontend run lint",
+        "source": "frontend/package.json"
+      },
+      {
+        "id": "frontend-test",
+        "kind": "test",
+        "run": "npm --prefix frontend run test",
+        "source": "frontend/package.json"
+      },
+      {
+        "id": "frontend-test-failover",
+        "kind": "test",
+        "run": "npm --prefix frontend run test:failover",
+        "source": "frontend/package.json"
+      },
+      {
+        "id": "python-tests",
+        "kind": "test",
+        "run": "python -m pytest",
+        "source": "backend/pyproject.toml + repository test discovery"
+      },
+      {
+        "id": "web-playwright",
+        "kind": "verify",
+        "run": "NODE_PATH=/Users/kaimaplespark/GAC/git/film-making/DevHarness/local-projects/aiedu-demo/frontend-runtime/node_modules QA_FRONTEND_URL=http://localhost:13000 /Users/kaimaplespark/GAC/git/film-making/DevHarness/local-projects/aiedu-demo/frontend-runtime/node_modules/.bin/playwright test -c frontend/playwright.config.ts --output /Users/kaimaplespark/GAC/git/film-making/DevHarness/local-projects/aiedu-demo/playwright-results",
+        "source": "frontend/playwright.config.ts"
+      }
+    ]
+  },
+  "harness": {
+    "services": [
+      {
+        "id": "aiedu-full-stack",
+        "command_id": "aiedu-full-stack-launch",
+        "readiness": {
+          "kind": "http",
+          "url": "http://127.0.0.1:18000/health/ready",
+          "expected_statuses": [
+            200
+          ],
+          "timeout_ms": 1200000,
+          "interval_ms": 1000,
+          "additional_checks": [
+            {
+              "kind": "http",
+              "url": "http://127.0.0.1:13000/",
+              "expected_statuses": [
+                200
+              ],
+              "timeout_ms": 1200000,
+              "interval_ms": 1000
+            }
+          ]
+        },
+        "shutdown": {
+          "grace_ms": 30000,
+          "run": "docker compose --project-name \"$DEVHARNESS_RUN_ID\" -f docker-compose.yml -f docker-compose.dev.yml -f /Users/kaimaplespark/GAC/git/film-making/DevHarness/local-projects/aiedu-demo/docker-compose.devharness.yml down --volumes --remove-orphans",
+          "timeout_ms": 120000
+        }
+      }
+    ],
+    "verifications": [
+      {
+        "command_id": "web-playwright",
+        "service_ids": [
+          "aiedu-full-stack"
+        ],
+        "warmup": [
+          {
+            "kind": "http",
+            "url": "http://127.0.0.1:13000/home",
+            "expected_statuses": [
+              200
+            ],
+            "timeout_ms": 120000,
+            "interval_ms": 1000
+          },
+          {
+            "kind": "http",
+            "url": "http://127.0.0.1:13000/parent",
+            "expected_statuses": [
+              200
+            ],
+            "timeout_ms": 120000,
+            "interval_ms": 1000
+          },
+          {
+            "kind": "http",
+            "url": "http://127.0.0.1:13000/teacher",
+            "expected_statuses": [
+              200
+            ],
+            "timeout_ms": 120000,
+            "interval_ms": 1000
+          },
+          {
+            "kind": "http",
+            "url": "http://127.0.0.1:13000/admin",
+            "expected_statuses": [
+              200
+            ],
+            "timeout_ms": 120000,
+            "interval_ms": 1000
+          },
+          {
+            "kind": "http",
+            "url": "http://127.0.0.1:13000/progress",
+            "expected_statuses": [
+              200
+            ],
+            "timeout_ms": 120000,
+            "interval_ms": 1000
+          },
+          {
+            "kind": "http",
+            "url": "http://127.0.0.1:13000/achievements",
+            "expected_statuses": [
+              200
+            ],
+            "timeout_ms": 120000,
+            "interval_ms": 1000
+          },
+          {
+            "kind": "http",
+            "url": "http://127.0.0.1:13000/profile",
+            "expected_statuses": [
+              200
+            ],
+            "timeout_ms": 120000,
+            "interval_ms": 1000
+          },
+          {
+            "kind": "http",
+            "url": "http://127.0.0.1:13000/onboarding",
+            "expected_statuses": [
+              200
+            ],
+            "timeout_ms": 120000,
+            "interval_ms": 1000
+          },
+          {
+            "kind": "http",
+            "url": "http://127.0.0.1:13000/signup",
+            "expected_statuses": [
+              200
+            ],
+            "timeout_ms": 120000,
+            "interval_ms": 1000
+          },
+          {
+            "kind": "http",
+            "url": "http://127.0.0.1:13000/subject-selection",
+            "expected_statuses": [
+              200
+            ],
+            "timeout_ms": 120000,
+            "interval_ms": 1000
+          },
+          {
+            "kind": "http",
+            "url": "http://127.0.0.1:13000/profiling",
+            "expected_statuses": [
+              200
+            ],
+            "timeout_ms": 120000,
+            "interval_ms": 1000
+          }
+        ]
+      }
+    ]
+  },
+  "autonomy": {
+    "required_gates": [
+      "scope",
+      "delivery"
+    ]
+  },
+  "delivery": {
+    "provider": "github",
+    "target": "pull-request"
+  }
+}
