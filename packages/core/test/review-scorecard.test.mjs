@@ -84,3 +84,44 @@ test("cross-run evidence is rejected by delivery readiness projection", () => {
   const scorecard = createReviewScorecard(value);
   assert.equal(scorecard.criteria[0].status, "blocked");
 });
+
+test("docs-only profile is ready when scope is approved and unknowns are cleared", () => {
+  const value = input();
+  value.criteria = [];
+  value.requirements = [];
+  value.criticalFlows = [];
+  value.traces = [];
+  value.reviewVerdicts = [];
+  value.reviewChecks = [];
+  value.evidence = [];
+  value.unknowns = [];
+  value.profile = "docs-only";
+  value.title = "Docs-only verification";
+  const scorecard = createReviewScorecard(value);
+  assert.equal(scorecard.verdict, "ready");
+  assert.equal(scorecard.exception_counts.blocking, 0);
+  assert.ok(scorecard.hard_gates.every((gate) => gate.status === "pass"));
+});
+
+test("docs-only profile stays not-ready while verify-pending unknown remains", () => {
+  const value = input();
+  value.criteria = [];
+  value.requirements = [];
+  value.criticalFlows = [];
+  value.traces = [];
+  value.reviewVerdicts = [];
+  value.reviewChecks = [];
+  value.evidence = [];
+  value.unknowns = [{
+    id: "verify-pending",
+    title: "Verification evidence pending",
+    summary: "Declared quality verification still needs execute/attest."
+  }];
+  value.profile = "docs-only";
+  value.title = "Post-scope delivery";
+  const scorecard = createReviewScorecard(value);
+  assert.notEqual(scorecard.verdict, "ready");
+  assert.equal(scorecard.exception_counts.blocking, 1);
+  assert.equal(scorecard.exception_counts.unknowns, 1);
+  assert.equal(scorecard.exceptions.some((item) => item.type === "review"), false);
+});

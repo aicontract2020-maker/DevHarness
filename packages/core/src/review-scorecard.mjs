@@ -104,7 +104,8 @@ export function createReviewScorecard({
   omittedItemCount = 0,
   generatedAt = new Date().toISOString(),
   dataSource = "runtime",
-  trustContext
+  trustContext,
+  profile = "full"
 }) {
   if (!run?.id || !run?.current_head_sha || !run?.repository?.identity) {
     throw new Error("Review scorecard requires a run id, repository identity and current head.");
@@ -124,7 +125,8 @@ export function createReviewScorecard({
     reviewVerdicts,
     findings,
     implementationActorIds,
-    trustContext
+    trustContext,
+    profile
   });
 
   const criterionRows = sorted(criteria).map((criterion) => {

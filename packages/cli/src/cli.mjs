@@ -6,7 +6,7 @@ import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { createInitialGoalRun } from "../../core/src/goal-run.mjs";
+import { createInitialGoalRun, createRunEvent } from "../../core/src/goal-run.mjs";
 import { createReviewScorecard } from "../../core/src/review-scorecard.mjs";
 import { loadTrustedEvaluationContext } from "../../core/src/trusted-context.mjs";
 import { evaluateVerificationExecutionAuthority } from "../../core/src/execution-authority.mjs";
@@ -623,6 +623,92 @@ async function resolveContinueResearchRecipes(options, services = {}) {
   });
 }
 
+
+async function maybeRefreshDocsOnlyScorecardAfterVerify({
+  snapshot,
+  dataRoot,
+  runId,
+  commandId,
+  receipt,
+  evidence,
+  generatedAt = new Date().toISOString()
+}) {
+  if (!runId || !evidence) return null;
+  const run = await loadGoalRun(dataRoot, snapshot.repository.identity, runId);
+  if (!["verifying", "reviewing"].includes(run.state)) return null;
+
+  let docsOnly = commandId === "docs-readiness-summary";
+  if (!docsOnly) {
+    try {
+      await loadRunSourceArtifact(dataRoot, snapshot.repository.identity, runId, "artifact-readiness-summary");
+      docsOnly = true;
+    } catch {
+      docsOnly = false;
+    }
+  }
+  if (!docsOnly) return null;
+
+  const packet = await loadRunInteraction(dataRoot, snapshot.repository.identity, runId);
+  if (!packet) throw new Error("Docs-only verify refresh requires a current interaction packet.");
+  const artifacts = [];
+  for (const source of packet.source_artifacts) {
+    const loaded = await loadRunSourceArtifact(dataRoot, snapshot.repository.identity, runId, source.id);
+    artifacts.push({ id: loaded.source.id, kind: loaded.source.kind, value: loaded.value, sha256: loaded.source.sha256 });
+  }
+
+  const paths = runStoragePaths(dataRoot, snapshot.repository.identity, runId);
+  const pointer = JSON.parse(await readFile(paths.current, "utf8"));
+  const nextSequence = (Number.isInteger(pointer?.sequence) ? pointer.sequence : 1) + 1;
+  let trustContext;
+  try {
+    trustContext = await loadTrustedEvaluationContext({ snapshot });
+  } catch {
+    trustContext = undefined;
+  }
+
+  const nextRun = structuredClone(run);
+  nextRun.timestamps.updated_at = generatedAt;
+  const event = createRunEvent({
+    runId: run.id,
+    sequence: nextSequence,
+    at: generatedAt,
+    type: "evidence.recorded",
+    data: {
+      receipt_id: receipt.id,
+      evidence_manifest_id: evidence.manifest?.id ?? null,
+      command_id: commandId,
+      outcome: receipt.outcome?.status ?? null
+    }
+  });
+  const scorecard = createReviewScorecard({
+    run: nextRun,
+    scopeHash: createHash("sha256").update(JSON.stringify({ goal: run.goal.original, scope_version: run.goal.scope_version })).digest("hex"),
+    harnessVersion: "unbound",
+    title: `Docs-only verification: ${run.goal.original}`,
+    reviewVerdicts: [],
+    reviewChecks: [],
+    findings: [],
+    unknowns: [],
+    sourceArtifactCount: artifacts.length,
+    omittedItemCount: packet.compression?.omitted_item_count ?? 0,
+    generatedAt,
+    dataSource: "runtime",
+    profile: "docs-only",
+    trustContext
+  });
+  const stored = await appendGoalRunCheckpoint({
+    dataRoot,
+    repositoryIdentity: snapshot.repository.identity,
+    runId: run.id,
+    events: [event],
+    nextRun,
+    scorecard,
+    packet,
+    artifacts
+  });
+  return { scorecard, path: stored.paths.checkpoint, run: nextRun };
+}
+
 export async function runCli(argv, io = console, services = {}) {
   const options = parseArguments(argv);
   if (!options.command || options.command === "help") {
@@ -1081,7 +1167,8 @@ export async function runCli(argv, io = console, services = {}) {
         sourceArtifactCount: checkpoint.artifacts.length,
         omittedItemCount: checkpoint.packet.compression.omitted_item_count,
         generatedAt,
-        dataSource: "runtime"
+        dataSource: "runtime",
+        profile: "docs-only"
       });
       const stored = await appendGoalRunCheckpoint({
         dataRoot,
@@ -1434,7 +1521,46 @@ export async function runCli(argv, io = console, services = {}) {
         attestation = { status: "issued", reason: null, summary: "Supervisor passing evidence was issued." };
       }
     }
-    io.log(formatVerificationExecutionResult({ receipt, receiptPath: plan.paths.receipt, evidence, attestation, format: options.format }));
+    let scorecardRefresh = null;
+    if (options.attest && evidence && receipt.outcome.status === "pass") {
+      try {
+        scorecardRefresh = await maybeRefreshDocsOnlyScorecardAfterVerify({
+          snapshot,
+          dataRoot,
+          runId: options.runId,
+          commandId: options.commandId,
+          receipt,
+          evidence,
+          generatedAt: services.now?.() ?? new Date().toISOString()
+        });
+      } catch (error) {
+        scorecardRefresh = { error: error.message };
+      }
+    }
+    if (options.format === "json") {
+      const payload = {
+        receipt,
+        evidence_manifest: evidence?.manifest ?? null,
+        attestation
+      };
+      if (scorecardRefresh?.error) payload.scorecard_refresh = { error: scorecardRefresh.error };
+      else if (scorecardRefresh?.scorecard) {
+        payload.scorecard_refresh = {
+          verdict: scorecardRefresh.scorecard.verdict,
+          title: scorecardRefresh.scorecard.title,
+          blocking: scorecardRefresh.scorecard.exception_counts.blocking,
+          path: scorecardRefresh.path
+        };
+      }
+      io.log(JSON.stringify(payload, null, 2));
+    } else {
+      io.log(formatVerificationExecutionResult({ receipt, receiptPath: plan.paths.receipt, evidence, attestation, format: options.format }));
+      if (scorecardRefresh?.scorecard) {
+        io.log(`Docs-only scorecard: ${scorecardRefresh.scorecard.verdict} (${scorecardRefresh.scorecard.exception_counts.blocking} blocking)\nStored: ${scorecardRefresh.path}`);
+      } else if (scorecardRefresh?.error) {
+        io.log(`Docs-only scorecard refresh failed: ${scorecardRefresh.error}`);
+      }
+    }
     if (receipt.outcome.status !== "pass") return 3;
     return options.attest && !evidence ? 4 : 0;
   }

@@ -134,3 +134,55 @@ test("scope approval and an independent current-head review are mandatory", () =
   assert.ok(reasonCodes(result).includes("scope_not_approved"));
   assert.ok(reasonCodes(result).includes("independent_review_missing"));
 });
+
+test("docs-only profile skips product-delivery review gates when criteria are empty", () => {
+  const input = {
+    run: {
+      id: "run-1",
+      current_head_sha: sha,
+      gates: { scope: { status: "approved" }, delivery: { status: "pending" } }
+    },
+    criteria: [],
+    reviewVerdicts: [],
+    findings: [],
+    profile: "docs-only"
+  };
+  const result = evaluateDeliveryReadiness(input);
+  assert.equal(result.ready, true);
+  assert.deepEqual(reasonCodes(result), []);
+});
+
+test("docs-only profile still requires an approved scope gate", () => {
+  const input = {
+    run: {
+      id: "run-1",
+      current_head_sha: sha,
+      gates: { scope: { status: "pending" }, delivery: { status: "pending" } }
+    },
+    criteria: [],
+    reviewVerdicts: [],
+    findings: [],
+    profile: "docs-only"
+  };
+  const result = evaluateDeliveryReadiness(input);
+  assert.equal(result.ready, false);
+  assert.ok(reasonCodes(result).includes("scope_not_approved"));
+  assert.equal(reasonCodes(result).includes("current_review_missing"), false);
+});
+
+test("full profile still blocks on missing review when criteria are empty", () => {
+  const input = {
+    run: {
+      id: "run-1",
+      current_head_sha: sha,
+      gates: { scope: { status: "approved" }, delivery: { status: "pending" } }
+    },
+    criteria: [],
+    reviewVerdicts: [],
+    findings: []
+  };
+  const result = evaluateDeliveryReadiness(input);
+  assert.equal(result.ready, false);
+  assert.ok(reasonCodes(result).includes("trusted_delivery_context_missing"));
+  assert.ok(reasonCodes(result).includes("current_review_missing"));
+});

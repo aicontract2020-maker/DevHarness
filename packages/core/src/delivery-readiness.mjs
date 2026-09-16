@@ -19,11 +19,13 @@ export function evaluateDeliveryReadiness({
   reviewVerdicts,
   findings,
   implementationActorIds = [],
-  trustContext
+  trustContext,
+  profile = "full"
 }) {
   const reasons = [];
+  const docsOnly = profile === "docs-only";
   const trusted = isTrustedEvaluationContext(trustContext);
-  if (!trusted) {
+  if (!trusted && !(docsOnly && (criteria?.length ?? 0) === 0)) {
     addReason(reasons, "trusted_delivery_context_missing", "Delivery readiness requires Supervisor-verified evidence; caller evidence arrays are ignored.");
   }
   void evidence;
@@ -122,30 +124,32 @@ export function evaluateDeliveryReadiness({
     }
   }
 
-  const currentReviews = reviewVerdicts.filter(
-    (review) => review.head_sha === run.current_head_sha && review.status === "pass"
-  );
-
-  if (currentReviews.length === 0) {
-    addReason(reasons, "current_review_missing", "No passing review exists for the current head.");
-  } else if (!currentReviews.some((review) => isIndependent(review.reviewer.id, implementers))) {
-    addReason(
-      reasons,
-      "independent_review_missing",
-      "No passing review was produced independently of the implementation agents."
+  if (!docsOnly) {
+    const currentReviews = reviewVerdicts.filter(
+      (review) => review.head_sha === run.current_head_sha && review.status === "pass"
     );
-  }
-  const trustedReviewIds = new Set(trustedEvidence
-    .filter((record) =>
-      record.type === "review-report" &&
-      record.run_id === run.id &&
-      record.subject?.commit_sha === run.current_head_sha &&
-      record.observation?.result === "pass"
-    )
-    .map((record) => record.observation?.data?.review_verdict_id)
-    .filter(Boolean));
-  if (!currentReviews.some((review) => trustedReviewIds.has(review.id))) {
-    addReason(reasons, "trusted_review_evidence_missing", "No Supervisor-verified review report is bound to a passing current-head verdict.");
+
+    if (currentReviews.length === 0) {
+      addReason(reasons, "current_review_missing", "No passing review exists for the current head.");
+    } else if (!currentReviews.some((review) => isIndependent(review.reviewer.id, implementers))) {
+      addReason(
+        reasons,
+        "independent_review_missing",
+        "No passing review was produced independently of the implementation agents."
+      );
+    }
+    const trustedReviewIds = new Set(trustedEvidence
+      .filter((record) =>
+        record.type === "review-report" &&
+        record.run_id === run.id &&
+        record.subject?.commit_sha === run.current_head_sha &&
+        record.observation?.result === "pass"
+      )
+      .map((record) => record.observation?.data?.review_verdict_id)
+      .filter(Boolean));
+    if (!currentReviews.some((review) => trustedReviewIds.has(review.id))) {
+      addReason(reasons, "trusted_review_evidence_missing", "No Supervisor-verified review report is bound to a passing current-head verdict.");
+    }
   }
 
   for (const finding of findings) {

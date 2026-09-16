@@ -1433,6 +1433,10 @@ test("post-scope advance after scope approval writes external summary and prepar
   assert.match(await readFile(advanced.delivery.summary_path, "utf8"), /Readiness summary/);
   assert.equal(advanced.verify?.authority_allowed, false);
   assert.match(advanced.next_action, /service-runtime|Capability gate/i);
+  assert.equal(advanced.scorecard.exception_counts.blocking, 1);
+  assert.equal(advanced.scorecard.exception_counts.unknowns, 1);
+  assert.equal(advanced.scorecard.exceptions.some((item) => item.type === "review"), false);
+  assert.equal(advanced.scorecard.exceptions.some((item) => /trusted review/i.test(item.title)), false);
   assert.equal(execFileSync("git", ["-C", root, "status", "--porcelain=v1"], { encoding: "utf8" }), "");
 
   const verifyOutput = capture();
