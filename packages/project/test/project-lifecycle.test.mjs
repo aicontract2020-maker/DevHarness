@@ -317,6 +317,10 @@ test("onboarding remains honest about detected web and database capabilities", a
   assert.ok(agentRuntime.scope.some((item) => item.startsWith("revision:")));
   assert.ok(agentRuntime.scope.some((item) => item.startsWith("provider-origin:")));
   assert.ok(agentRuntime.scope.includes("no-consumer-write"));
+  const vcsWrite = plan.capability_requests.find((request) => request.capability === "vcs-write");
+  assert.ok(vcsWrite);
+  assert.equal(vcsWrite.authority, "human-only");
+  assert.ok(vcsWrite.scope.includes("isolated-worktree-only"));
   assert.equal(JSON.stringify(plan).includes("super-secret-test-value"), false);
   assert.equal(plan.coverage.find((item) => item.domain === "repository").status, "unverified");
   assert.ok(plan.preflight.clarification_questions.length > 0);

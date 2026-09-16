@@ -125,6 +125,29 @@ function staticAgentRuntimeSubject(snapshot, descriptor) {
   };
 }
 
+
+function staticVcsWriteCapabilityRequest(snapshot) {
+  if (!snapshot?.repository?.identity || !snapshot?.repository?.git?.head_sha) return null;
+  return {
+    id: "vcs-write",
+    capability: "vcs-write",
+    operation: "bounded-consumer-change",
+    target: snapshot.repository.git.head_sha,
+    scope: [
+      `repository:${snapshot.repository.identity}`,
+      `revision:${snapshot.repository.git.head_sha}`,
+      "isolated-worktree-only",
+      "no-force-push",
+      "no-main-checkout-mutation"
+    ],
+    reason: "Apply a Gate-1-approved, bounded consumer change inside an isolated Git worktree before verification.",
+    risk: "high",
+    authority: "human-only",
+    reversibility: "Worktree commits stay outside the main checkout until an explicit promote/PR step; worktree can be removed.",
+    decision: "pending"
+  };
+}
+
 function staticAgentRuntimeCapabilityRequest(snapshot) {
   const descriptor = staticAgentRuntimeDescriptor();
   const subject = staticAgentRuntimeSubject(snapshot, descriptor);
@@ -845,6 +868,8 @@ export async function createOnboardingPlan(snapshot, { report, config = null, co
   const capabilityRequests = [];
   const agentRuntimeCapability = staticAgentRuntimeCapabilityRequest(snapshot);
   if (agentRuntimeCapability) capabilityRequests.push(agentRuntimeCapability);
+  const vcsWriteCapability = staticVcsWriteCapabilityRequest(snapshot);
+  if (vcsWriteCapability) capabilityRequests.push(vcsWriteCapability);
   if (snapshot.inventory.manifests.length > 0) capabilityRequests.push(capability("dependency-install", "dependency-install", "Reproduce dependencies from committed lockfiles in isolation.", snapshot.inventory.manifests, "medium"));
   if (snapshot.detected.platforms.includes("web")) capabilityRequests.push(capability("browser-runtime", "browser-runtime", "Open and exercise the real user interface with screenshots, console and network evidence.", ["local-browser"], "medium"));
   if (snapshot.detected.platforms.includes("mobile")) capabilityRequests.push(capability("simulator-runtime", "simulator-runtime", "Build and exercise the application in a simulator or approved device.", ["local-simulator"], "medium"));

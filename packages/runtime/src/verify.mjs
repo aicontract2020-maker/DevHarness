@@ -56,7 +56,8 @@ export async function createVerificationPlan({
   goalRunId = null,
   dataRoot = defaultDataRoot(),
   timeoutMs = 10 * 60 * 1000,
-  environment = process.env
+  environment = process.env,
+  commitSha = null
 }) {
   if (goalRunId !== null && !/^[A-Za-z][A-Za-z0-9._:-]{0,127}$/.test(goalRunId)) {
     throw new Error("Goal Run id is invalid.");
@@ -66,6 +67,12 @@ export async function createVerificationPlan({
   }
   if (snapshot.repository.git.dirty) {
     throw new Error("Verification requires a clean committed baseline.");
+  }
+  const resolvedCommitSha = commitSha ?? snapshot.repository.git.head_sha;
+  if (commitSha) {
+    if (!/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(commitSha)) {
+      throw new Error("Verification --commit must be a full Git commit SHA.");
+    }
   }
   const blockedSubmodules = snapshot.submodules.filter((submodule) => submodule.status !== "initialized");
   if (blockedSubmodules.length > 0) {
@@ -111,7 +118,7 @@ export async function createVerificationPlan({
     ...(goalRunId ? { goal_run_id: goalRunId } : {}),
     repository_root: repositoryRoot,
     repository_identity: snapshot.repository.identity,
-    commit_sha: snapshot.repository.git.head_sha,
+    commit_sha: resolvedCommitSha,
     command: verification.command,
     harness: {
       id: harness.id,

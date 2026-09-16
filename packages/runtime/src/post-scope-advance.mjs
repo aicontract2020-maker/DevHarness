@@ -9,6 +9,12 @@ import { assertContract } from "../../project/src/contracts.mjs";
 import { hashContract } from "../../project/src/harness.mjs";
 import { canonicalPath, isWithin } from "../../project/src/path-policy.mjs";
 import { projectDataDirectory } from "./data-store.mjs";
+import {
+  applyBoundedControlledChange,
+  commitControlledChange,
+  createControlledChangeWorktree,
+  resolveControlledChangeWorktreePath
+} from "./controlled-change.mjs";
 
 const POST_SCOPE_PIPELINE = Object.freeze([
   "clarifying",
@@ -100,6 +106,50 @@ function buildReadinessMarkdown({ run, snapshot, plan, summaryPath, verifyComman
   return `${lines.join("\n")}\n`;
 }
 
+
+function buildControlledChangeMarkdown({ run, snapshot, plan, summaryPath, worktreePath, changeCommitSha, changePath, verifyCommandId, generatedAt }) {
+  const lines = [
+    "# Controlled-change summary",
+    "",
+    `- Generated at: ${generatedAt}`,
+    `- Goal Run: ${run.id}`,
+    `- Repository: ${run.repository.identity}`,
+    `- Baseline revision: ${run.current_head_sha}`,
+    `- Change revision: ${changeCommitSha}`,
+    `- Goal: ${run.goal.refined ?? run.goal.original}`,
+    `- Scope gate: ${run.gates.scope.status}`,
+    `- Capability: vcs-write (approved)`,
+    "",
+    "## Bounded change",
+    "",
+    "This controlled delivery mutates an **isolated Git worktree** only. The consumer main checkout stays clean until an explicit promote/PR step.",
+    "",
+    `Worktree: \`${worktreePath}\``,
+    `Changed path: \`${changePath}\``,
+    `Summary path: \`${summaryPath}\``,
+    "",
+    "## Plan",
+    "",
+    `- Plan id: ${plan.id}`,
+    `- Integration owner: ${plan.integration_owner_task_id}`,
+    `- Tasks: ${plan.nodes.map((node) => node.task_id).join(", ")}`,
+    "",
+    "## Repository snapshot",
+    "",
+    `- Name: ${snapshot.repository.name}`,
+    `- Files discovered: ${snapshot.inventory?.file_count ?? "unknown"}`,
+    `- Platforms: ${(snapshot.detected?.platforms ?? []).join(", ") || "none"}`,
+    "",
+    "## Next verify",
+    "",
+    verifyCommandId
+      ? `Run \`devharness verify --run ${run.id} --command ${verifyCommandId} --commit ${changeCommitSha} --execute --attest\` with current capability authority.`
+      : `Declare a quality command, then run \`devharness verify --run ${run.id} --command <id> --commit ${changeCommitSha} --execute --attest\`.`,
+    ""
+  ];
+  return `${lines.join("\n")}\n`;
+}
+
 /**
  * After gates.scope is approved, advance a Goal Run through planning → staffing →
  * executing → verifying, write an external docs-only readiness summary, and publish
@@ -112,6 +162,9 @@ export async function createPostScopeAdvanceCheckpoint({
   priorArtifacts = [],
   artifactDir = null,
   verifyCommandId = null,
+  deliveryMode = "docs-only",
+  vcsWriteAuthorized = false,
+  changeSpec = null,
   nextSequence,
   generatedAt = new Date().toISOString()
 }) {
@@ -132,6 +185,12 @@ export async function createPostScopeAdvanceCheckpoint({
   if (snapshot.repository.git.head_sha !== run.current_head_sha) {
     throw new Error("Repository revision does not match the Goal Run revision.");
   }
+  if (!["docs-only", "controlled-change"].includes(deliveryMode)) {
+    throw new Error(`Unknown post-scope delivery mode: ${deliveryMode}`);
+  }
+  if (deliveryMode === "controlled-change" && vcsWriteAuthorized !== true) {
+    throw new Error("Controlled-change advance requires an approved vcs-write capability.");
+  }
 
   const onboarding = priorArtifacts.find((entry) => entry.id === "artifact-onboarding-plan");
   if (!onboarding) {
@@ -149,50 +208,102 @@ export async function createPostScopeAdvanceCheckpoint({
   await mkdir(deliveryDir, { recursive: true, mode: 0o700 });
   const summaryPath = path.join(deliveryDir, "readiness-summary.md");
 
+  const controlled = deliveryMode === "controlled-change";
+  const taskId = controlled ? "task-apply-controlled-change" : "task-write-readiness-summary";
+  const criterionId = controlled ? "criterion-controlled-change" : "criterion-readiness-summary";
   const plan = {
     schema_version: 1,
     id: `plan-post-scope-${run.id.slice(-12)}`,
     run_id: run.id,
     head_sha: run.current_head_sha,
     max_parallelism: 1,
-    integration_owner_task_id: "task-write-readiness-summary",
+    integration_owner_task_id: taskId,
     progress_interval_seconds: 60,
     nodes: [{
-      task_id: "task-write-readiness-summary",
+      task_id: taskId,
       depends_on: [],
-      expected_duration_seconds: 30,
+      expected_duration_seconds: controlled ? 120 : 30,
       resources: [
         { kind: "path", id: "delivery/readiness-summary.md", mode: "exclusive" },
         { kind: "workspace", id: "workspace-post-scope", mode: "exclusive" },
         { kind: "external", id: "git:integration-branch", mode: "exclusive" }
       ],
       workspace_id: "workspace-post-scope",
-      proof_criterion_ids: ["criterion-readiness-summary"],
+      proof_criterion_ids: [criterionId],
       long_running: false
     }]
   };
   await assertContract("execution-plan", plan);
 
-  const markdown = buildReadinessMarkdown({
-    run,
-    snapshot,
-    plan,
-    summaryPath,
-    verifyCommandId,
-    generatedAt
-  });
+  let changeMeta = null;
+  if (controlled) {
+    const worktreePath = resolveControlledChangeWorktreePath({
+      dataRoot,
+      repositoryIdentity: run.repository.identity,
+      runId: run.id
+    });
+    await createControlledChangeWorktree({
+      repositoryRoot,
+      worktreePath,
+      headSha: run.current_head_sha
+    });
+    const applied = await applyBoundedControlledChange({
+      worktreePath,
+      change: changeSpec,
+      runId: run.id,
+      generatedAt
+    });
+    const committed = commitControlledChange({
+      worktreePath,
+      message: `devharness: controlled change for ${run.id}`
+    });
+    changeMeta = {
+      worktree_path: worktreePath,
+      change_commit_sha: committed.change_commit_sha,
+      relative_path: applied.relative_path,
+      contents_sha256: applied.contents_sha256
+    };
+  }
+
+  const markdown = controlled
+    ? buildControlledChangeMarkdown({
+      run,
+      snapshot,
+      plan,
+      summaryPath,
+      worktreePath: changeMeta.worktree_path,
+      changeCommitSha: changeMeta.change_commit_sha,
+      changePath: changeMeta.relative_path,
+      verifyCommandId,
+      generatedAt
+    })
+    : buildReadinessMarkdown({
+      run,
+      snapshot,
+      plan,
+      summaryPath,
+      verifyCommandId,
+      generatedAt
+    });
   await writeFile(summaryPath, markdown, { encoding: "utf8", mode: 0o600 });
 
   const readinessRecord = {
     schema_version: 1,
-    kind: "readiness-summary",
+    kind: controlled ? "controlled-change-summary" : "readiness-summary",
     run_id: run.id,
     head_sha: run.current_head_sha,
     generated_at: generatedAt,
     path: summaryPath,
     content_sha256: hashContract(markdown),
-    consumer_mutation: false,
-    verify_command_id: verifyCommandId
+    consumer_mutation: controlled,
+    delivery_mode: deliveryMode,
+    verify_command_id: verifyCommandId,
+    ...(changeMeta ? {
+      change_worktree: changeMeta.worktree_path,
+      change_commit_sha: changeMeta.change_commit_sha,
+      change_path: changeMeta.relative_path,
+      change_contents_sha256: changeMeta.contents_sha256
+    } : {})
   };
 
   const planArtifact = artifact("artifact-execution-plan", "execution-plan", plan);
@@ -249,7 +360,7 @@ export async function createPostScopeAdvanceCheckpoint({
         sequence,
         at: generatedAt,
         type: "task.dispatched",
-        data: { task_id: "task-write-readiness-summary", plan_id: plan.id }
+        data: { task_id: taskId, plan_id: plan.id }
       }));
       sequence += 1;
       events.push(createRunEvent({
@@ -265,7 +376,7 @@ export async function createPostScopeAdvanceCheckpoint({
         sequence,
         at: generatedAt,
         type: "task.finished",
-        data: { task_id: "task-write-readiness-summary", outcome: "pass" }
+        data: { task_id: taskId, outcome: "pass" }
       }));
       sequence += 1;
     }
@@ -279,7 +390,7 @@ export async function createPostScopeAdvanceCheckpoint({
       items: [
         item(
           "post-scope-plan-summary",
-          `Bounded plan ${plan.id} staffs one docs-only delivery task at revision ${run.current_head_sha.slice(0, 12)}.`,
+          `Bounded plan ${plan.id} staffs one ${controlled ? "controlled-change" : "docs-only"} delivery task at revision ${run.current_head_sha.slice(0, 12)}.`,
           "confirmed",
           "info",
           [planArtifact.id]
@@ -292,7 +403,9 @@ export async function createPostScopeAdvanceCheckpoint({
       items: [
         item(
           "post-scope-readiness-summary",
-          `Wrote external readiness summary at ${summaryPath} without modifying the consumer repository.`,
+          controlled
+          ? `Applied bounded consumer change at ${changeMeta.change_commit_sha.slice(0, 12)} in isolated worktree ${changeMeta.worktree_path}.`
+          : `Wrote external readiness summary at ${summaryPath} without modifying the consumer repository.`,
           "confirmed",
           "info",
           [readinessArtifact.id]
@@ -324,7 +437,9 @@ export async function createPostScopeAdvanceCheckpoint({
     head_sha: run.current_head_sha,
     title: `Post-scope delivery · ${run.goal.original}`,
     verdict: "informational",
-    summary: "Scope is approved. A bounded external readiness summary was written; verify is the next governed step.",
+    summary: controlled
+      ? "Scope is approved. A bounded consumer change was committed in an isolated worktree; verify the change revision next."
+      : "Scope is approved. A bounded external readiness summary was written; verify is the next governed step.",
     attention: { required: false, count: 0, reasons: [] },
     sections,
     decisions: [],
@@ -369,7 +484,14 @@ export async function createPostScopeAdvanceCheckpoint({
     delivery: {
       summary_path: summaryPath,
       plan_id: plan.id,
-      verify_command_id: verifyCommandId
+      verify_command_id: verifyCommandId,
+      delivery_mode: deliveryMode,
+      consumer_mutation: controlled,
+      ...(changeMeta ? {
+        change_worktree: changeMeta.worktree_path,
+        change_commit_sha: changeMeta.change_commit_sha,
+        change_path: changeMeta.relative_path
+      } : {})
     }
   };
 }

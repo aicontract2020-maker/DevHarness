@@ -54,7 +54,7 @@ import { issueCommandSystemEvidence, issueCommandTestEvidence } from "../../runt
 import { createSupervisorApprovalRequest, listPendingApprovalRequestsForRun, recordInteractiveApprovalDecisions } from "../../runtime/src/supervisor-approval.mjs";
 import { applyRunGateFromApprovalReceipt, reconcileRunGatesFromApprovals } from "../../runtime/src/run-gate-approval.mjs";
 import { initializeSupervisorIdentity } from "../../runtime/src/supervisor-store.mjs";
-import { loadCapabilityAuthorizationView, requestCapabilityAuthorization, resolveCapabilityApprovalContext } from "../../runtime/src/capability-authorization.mjs";
+import { findApprovedVcsWrite, loadCapabilityAuthorizationView, requestCapabilityAuthorization, resolveCapabilityApprovalContext } from "../../runtime/src/capability-authorization.mjs";
 import { createVerificationPlan, executeVerificationPlan, formatVerificationPlan } from "../../runtime/src/verify.mjs";
 import { createPostScopeAdvanceCheckpoint, postScopeAdvanceSupported } from "../../runtime/src/post-scope-advance.mjs";
 import { startReviewServer } from "../../runtime/src/review-server.mjs";
@@ -70,9 +70,9 @@ Usage:
   devharness request-approval --run ID --gate GATE --subject ID --subject-sha SHA [--repo PATH]
   devharness request-capability --run ID --capability ID [--expires-minutes N] [--repo PATH] [--data-dir PATH]
   devharness approve (--request ID [--request ID ...] | --run ID --pending) [--repo PATH] [--data-dir PATH]
-  devharness verify --command ID [--repo PATH] [--config PATH] [--data-dir PATH] [--run ID --execute] [--attest] [--timeout-seconds N] [--format text|json]
+  devharness verify --command ID [--repo PATH] [--config PATH] [--data-dir PATH] [--run ID --execute] [--commit SHA] [--attest] [--timeout-seconds N] [--format text|json]
   devharness goal --goal TEXT [--repo PATH] [--data-dir PATH] [--format text|json]
-  devharness advance --run ID [--repo PATH] [--data-dir PATH] [--artifact-dir PATH] [--command ID] [--format text|json]
+  devharness advance --run ID [--mode docs-only|controlled-change] [--repo PATH] [--data-dir PATH] [--artifact-dir PATH] [--command ID] [--format text|json]
   devharness align --run ID [--continue|--tick] [--agent ID] [--agent-profile ID] [--research-recipes PATH] [--repo PATH] [--data-dir PATH] [--format text|json]
   devharness answer --run ID --decision ID --option ID [--decision ID --option ID ...] [--packet SHA] [--repo PATH] [--data-dir PATH] [--format text|json]
   devharness request-scope --run ID [--repo PATH] [--data-dir PATH] [--format text|json]
@@ -89,11 +89,13 @@ Commands:
   supervisor-init  Create or load the fixed external signing identity. Never exposes its private key.
   request-approval Create a signed, revision-bound pending request; this does not approve it.
   request-capability Request exactly one bounded capability from the current Alignment Brief.
-             Defaults: agent-runtime 720m, network-research 480m, others 60m (max 1440). Re-request expired/stale without losing the Goal Run.
+             Defaults: agent-runtime/vcs-write 720m, network-research 480m, others 60m (max 1440). Re-request expired/stale without losing the Goal Run.
+             After Gate 1, request `vcs-write` then TTY-approve before `advance --mode controlled-change`.
   approve    Record one or more decisions in a single foreground TTY confirmation (--request repeated, or --run + --pending). JSON and pipes are refused; never silently auto-approves.
   verify    Plan an isolated command. Execution requires a Goal Run and its current signed capabilities.
   goal      Create a durable Goal Run at the current committed revision. Does not execute an agent.
   advance   Perform the next safe Goal Run step: static understanding from received, or post-scope plan→change→verify prep after gates.scope approval.
+             --mode docs-only (default) writes an external readiness summary. --mode controlled-change requires approved vcs-write and commits a bounded change in an isolated worktree.
   align     Bootstrap a live Alignment bundle, or tick it with --continue after answers/approvals.
              --continue loads exact HTTPS recipes from --research-recipes or <config-dir>/research-recipes.json
              and registers builtin adapters: codex (real Codex CLI + parent provider proxy) and
@@ -144,7 +146,9 @@ function parseArguments(argv) {
     allowDirty: false,
     continueLive: false,
     researchRecipesPath: null,
-    artifactDir: null
+    artifactDir: null,
+    deliveryMode: "docs-only",
+    commitSha: null
   };
 
   for (let index = 1; index < argv.length; index += 1) {
@@ -225,6 +229,16 @@ function parseArguments(argv) {
       const parsed = new URL(value);
       if (!["http:", "https:"].includes(parsed.protocol) || parsed.origin !== value) throw new Error("--ui-origin must be an exact HTTP origin without a path");
       options.uiOrigin = parsed.origin;
+    } else if (argument === "--mode") {
+      options.deliveryMode = argv[++index];
+      if (!["docs-only", "controlled-change"].includes(options.deliveryMode)) {
+        throw new Error("--mode must be docs-only or controlled-change");
+      }
+    } else if (argument === "--commit") {
+      options.commitSha = argv[++index];
+      if (!options.commitSha || !/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(options.commitSha)) {
+        throw new Error("--commit requires a full Git commit SHA");
+      }
     } else if (argument === "--artifact-dir") {
       options.artifactDir = argv[++index];
       if (!options.artifactDir) throw new Error("--artifact-dir requires a path");
@@ -1131,6 +1145,23 @@ export async function runCli(argv, io = console, services = {}) {
     const generatedAt = services.now?.() ?? new Date().toISOString();
 
     if (postScopeAdvanceSupported(currentRun)) {
+      const deliveryMode = options.deliveryMode ?? "docs-only";
+      let vcsWriteAuthorized = false;
+      if (deliveryMode === "controlled-change") {
+        const supervisorRoot = services.supervisorRoot ?? defaultSupervisorRoot();
+        const authorizationView = await loadCapabilityAuthorizationView({
+          dataRoot,
+          supervisorRoot,
+          repositoryIdentity: snapshot.repository.identity,
+          runId: options.runId,
+          now: new Date(services.now?.() ?? Date.now())
+        });
+        const vcs = findApprovedVcsWrite(authorizationView);
+        if (!vcs.allowed) {
+          throw new Error(`Controlled-change requires approved vcs-write: ${vcs.reasons.join(" ")} Request with \`devharness request-capability --run ${options.runId} --capability vcs-write\` then TTY approve.`);
+        }
+        vcsWriteAuthorized = true;
+      }
       const priorArtifacts = [];
       for (const artifactId of ["artifact-onboarding-plan", "artifact-goal-input", "artifact-repository-snapshot"]) {
         try {
@@ -1150,6 +1181,8 @@ export async function runCli(argv, io = console, services = {}) {
         priorArtifacts,
         artifactDir: options.artifactDir,
         verifyCommandId: options.commandId,
+        deliveryMode,
+        vcsWriteAuthorized,
         nextSequence,
         generatedAt
       });
@@ -1157,18 +1190,23 @@ export async function runCli(argv, io = console, services = {}) {
         run: checkpoint.run,
         scopeHash: createHash("sha256").update(JSON.stringify({ goal: currentRun.goal.original, scope_version: currentRun.goal.scope_version })).digest("hex"),
         harnessVersion: "unbound",
-        title: `Post-scope delivery: ${currentRun.goal.original}`,
+        title: `${deliveryMode === "controlled-change" ? "Controlled-change delivery" : "Post-scope delivery"}: ${currentRun.goal.original}`,
         reviewVerdicts: [],
         reviewChecks: [],
         findings: [],
-        unknowns: [
-          { id: "verify-pending", title: "Verification evidence pending", summary: "Bounded change is recorded; declared quality verification still needs capability-backed execute/attest.", source_refs: ["artifact-readiness-summary"] }
-        ],
+        unknowns: deliveryMode === "controlled-change"
+          ? [
+            { id: "verify-pending", title: "Verification evidence pending", summary: "Bounded consumer change is committed in an isolated worktree; verify the change revision with --commit <sha> --execute --attest.", source_refs: ["artifact-readiness-summary"] },
+            { id: "review-pending", title: "Independent review pending", summary: "Controlled consumer changes still require independent review before Gate 2 delivery approval.", source_refs: ["artifact-readiness-summary"] }
+          ]
+          : [
+            { id: "verify-pending", title: "Verification evidence pending", summary: "Bounded change is recorded; declared quality verification still needs capability-backed execute/attest.", source_refs: ["artifact-readiness-summary"] }
+          ],
         sourceArtifactCount: checkpoint.artifacts.length,
         omittedItemCount: checkpoint.packet.compression.omitted_item_count,
         generatedAt,
         dataSource: "runtime",
-        profile: "docs-only"
+        profile: deliveryMode === "controlled-change" ? "full" : "docs-only"
       });
       const stored = await appendGoalRunCheckpoint({
         dataRoot,
@@ -1184,13 +1222,15 @@ export async function runCli(argv, io = console, services = {}) {
       if (options.commandId) {
         try {
           const { config } = await loadConfiguredProject(snapshot, options);
+          const changeCommit = checkpoint.delivery.change_commit_sha ?? null;
           const plan = await createVerificationPlan({
             snapshot,
             config,
             commandId: options.commandId,
             goalRunId: options.runId,
             dataRoot,
-            timeoutMs: options.timeoutMs
+            timeoutMs: options.timeoutMs,
+            commitSha: changeCommit
           });
           const supervisorRoot = services.supervisorRoot ?? defaultSupervisorRoot();
           const authorizationView = await loadCapabilityAuthorizationView({
@@ -1201,14 +1241,16 @@ export async function runCli(argv, io = console, services = {}) {
             now: new Date(services.now?.() ?? Date.now())
           });
           const authority = evaluateVerificationExecutionAuthority(plan, authorizationView);
+          const commitFlag = changeCommit ? ` --commit ${changeCommit}` : "";
           verifyProbe = {
             command_id: options.commandId,
+            commit_sha: changeCommit ?? plan.commit_sha,
             authority_allowed: authority.allowed,
             required_capability_ids: authority.required_capability_ids,
             missing: authority.missing,
             reasons: authority.reasons,
             next_action: authority.allowed
-              ? `devharness verify --run ${options.runId} --command ${options.commandId} --execute --attest`
+              ? `devharness verify --run ${options.runId} --command ${options.commandId}${commitFlag} --execute --attest`
               : `Capability gate: ${authority.reasons.map((reason) => reason.message).join(" ")}`
           };
         } catch (error) {
@@ -1470,7 +1512,8 @@ export async function runCli(argv, io = console, services = {}) {
       commandId: options.commandId,
       goalRunId: options.runId,
       dataRoot: options.dataRoot,
-      timeoutMs: options.timeoutMs
+      timeoutMs: options.timeoutMs,
+      commitSha: options.commitSha
     });
     if (!options.execute) {
       io.log(options.format === "json" ? JSON.stringify({ plan, execute: false }, null, 2) : `${formatVerificationPlan(plan)}\nDry run only. Add --execute to run this approved command.`);

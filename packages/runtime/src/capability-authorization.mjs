@@ -6,6 +6,7 @@ import { listVerifiedApprovalReceipts, listVerifiedApprovalRequests } from "./su
 
 const CAPABILITY_PRIORITY = new Map([
   "agent-runtime",
+  "vcs-write",
   "browser-runtime",
   "simulator-runtime",
   "database-runtime",
@@ -27,6 +28,7 @@ export const DEFAULT_CAPABILITY_EXPIRES_IN_MINUTES = 60;
  */
 export const LONG_LIVED_CAPABILITY_EXPIRES_IN_MINUTES = Object.freeze({
   "agent-runtime": 12 * 60,
+  "vcs-write": 12 * 60,
   "network-research": 8 * 60
 });
 
@@ -190,7 +192,7 @@ export async function requestCapabilityAuthorization({
   const { run, plan } = await currentPlan(dataRoot, repositoryIdentity, runId);
   const view = await loadCapabilityAuthorizationView({ dataRoot, supervisorRoot, repositoryIdentity, runId, now: current });
   const exactCapability = plan.capability_requests.find((candidate) => candidate.id === capabilityId);
-  const aliasCapability = exactCapability ?? (["network-research", "agent-runtime"].includes(capabilityId)
+  const aliasCapability = exactCapability ?? (["network-research", "agent-runtime", "vcs-write"].includes(capabilityId)
     ? plan.capability_requests.find((candidate) => candidate.capability === capabilityId
       && REQUESTABLE_STATUSES.has(view.capabilities.find((item) => item.request.id === candidate.id)?.status ?? "unrequested"))
     : null);
@@ -351,3 +353,5 @@ export async function resolveNetworkResearchAuthorityFromCapabilityGrants({
   const epoch = Math.max(1, Number.isInteger(previousEpoch) && previousEpoch > 0 ? previousEpoch : 1);
   return buildNetworkResearchAuthorityFromReceipt(chosen, { epoch });
 }
+
+export { findApprovedVcsWrite } from "./controlled-change.mjs";

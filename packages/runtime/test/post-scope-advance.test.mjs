@@ -247,3 +247,196 @@ test("post-scope advance rejects missing scope approval", async () => {
     /gates\.scope\.status=approved/
   );
 });
+
+test("controlled-change post-scope refuses without vcs-write authority", async (t) => {
+  const root = await fixtureRepo();
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const snapshot = await discoverRepository(root);
+  const identity = snapshot.repository.identity;
+  const head = snapshot.repository.git.head_sha;
+  const created = createInitialGoalRun({
+    id: "run-post-scope-controlled-denied",
+    repository: {
+      identity,
+      root_uri: snapshot.repository.root_uri,
+      base_ref: snapshot.repository.git.default_branch ?? "main"
+    },
+    originalGoal: "Apply a tiny controlled consumer change",
+    headSha: head,
+    now: "2026-09-16T12:00:00.000Z"
+  });
+  const run = structuredClone(created.run);
+  run.state = "clarifying";
+  run.gates.scope = {
+    status: "approved",
+    decided_at: "2026-09-16T12:10:00.000Z",
+    decided_by: { id: "developer", kind: "human", role: "developer-approver" },
+    artifact_hash: "c".repeat(64)
+  };
+  const plan = minimalOnboarding(identity, head);
+  const planArtifact = { id: "artifact-onboarding-plan", kind: "onboarding-plan", value: plan, sha256: hashContract(plan) };
+  const dataRoot = await mkdtemp(path.join(os.tmpdir(), "devharness-post-scope-denied-"));
+  t.after(() => rm(dataRoot, { recursive: true, force: true }));
+  await assert.rejects(
+    () => createPostScopeAdvanceCheckpoint({
+      run,
+      snapshot,
+      dataRoot,
+      priorArtifacts: [planArtifact],
+      nextSequence: 2,
+      deliveryMode: "controlled-change",
+      vcsWriteAuthorized: false,
+      generatedAt: "2026-09-16T12:15:00.000Z"
+    }),
+    /approved vcs-write/i
+  );
+});
+
+
+test("controlled-change post-scope commits in an isolated worktree when vcs-write is authorized", async (t) => {
+  const dataRoot = await mkdtemp(path.join(os.tmpdir(), "devharness-post-scope-controlled-data-"));
+  const root = await fixtureRepo();
+  t.after(() => Promise.all([
+    rm(root, { recursive: true, force: true }),
+    rm(dataRoot, { recursive: true, force: true })
+  ]));
+
+  const snapshot = await discoverRepository(root);
+  const identity = snapshot.repository.identity;
+  const head = snapshot.repository.git.head_sha;
+  const created = createInitialGoalRun({
+    id: "run-post-scope-controlled-1",
+    repository: {
+      identity,
+      root_uri: snapshot.repository.root_uri,
+      base_ref: snapshot.repository.git.default_branch ?? "main"
+    },
+    originalGoal: "Apply a tiny controlled consumer change",
+    headSha: head,
+    now: "2026-09-16T12:00:00.000Z"
+  });
+  await createStoredGoalRun({
+    dataRoot,
+    run: created.run,
+    event: created.event,
+    scorecard: createReviewScorecard({
+      run: created.run,
+      scopeHash: "a".repeat(64),
+      harnessVersion: "unbound",
+      title: "fixture",
+      sourceArtifactCount: 0,
+      generatedAt: "2026-09-16T12:00:00.000Z",
+      dataSource: "runtime"
+    })
+  });
+
+  const plan = minimalOnboarding(identity, head);
+  plan.capability_requests.push({
+    id: "vcs-write",
+    capability: "vcs-write",
+    operation: "bounded-consumer-change",
+    target: head,
+    scope: [`repository:${identity}`, `revision:${head}`, "isolated-worktree-only"],
+    reason: "Apply bounded change",
+    risk: "high",
+    authority: "human-only",
+    reversibility: "worktree-only",
+    decision: "pending"
+  });
+  const planArtifact = { id: "artifact-onboarding-plan", kind: "onboarding-plan", value: plan, sha256: hashContract(plan) };
+  const goalValue = { run_id: created.run.id, original_goal: created.run.goal.original, scope_version: 1 };
+  const goalArtifact = { id: "artifact-goal-input", kind: "goal-input", value: goalValue, sha256: hashContract(goalValue) };
+  const clarifyingRun = structuredClone(created.run);
+  clarifyingRun.state = "clarifying";
+  clarifyingRun.gates.scope = {
+    status: "approved",
+    decided_at: "2026-09-16T12:10:00.000Z",
+    decided_by: { id: "developer", kind: "human", role: "developer-approver" },
+    artifact_hash: "c".repeat(64)
+  };
+  clarifyingRun.timestamps.updated_at = "2026-09-16T12:10:00.000Z";
+
+  const packetBody = {
+    schema_version: 1,
+    run_id: clarifyingRun.id,
+    kind: "progress-pulse",
+    generated_at: "2026-09-16T12:10:00.000Z",
+    head_sha: head,
+    title: "Scope approved",
+    verdict: "informational",
+    summary: "Scope approved for controlled-change fixture.",
+    attention: { required: false, count: 0, reasons: [] },
+    sections: [{
+      id: "scope",
+      title: "Scope",
+      items: [{
+        id: "scope-approved",
+        text: "Scope gate approved.",
+        confidence: "confirmed",
+        severity: "info",
+        source_refs: ["artifact-onboarding-plan"]
+      }]
+    }],
+    decisions: [],
+    actions: [{ id: "inspect-scope", label: "Inspect scope", kind: "inspect", recommended: true }],
+    source_artifacts: [
+      { id: planArtifact.id, kind: planArtifact.kind, sha256: planArtifact.sha256, uri: `artifacts/${planArtifact.id}.json` },
+      { id: goalArtifact.id, kind: goalArtifact.kind, sha256: goalArtifact.sha256, uri: `artifacts/${goalArtifact.id}.json` }
+    ],
+    traceability: [{ item_id: "scope-approved", source_refs: ["artifact-onboarding-plan"] }],
+    compression: { source_artifact_count: 2, surfaced_item_count: 1, omitted_item_count: 0 }
+  };
+  const packet = { ...packetBody, id: `packet-${hashContract(packetBody).slice(0, 32)}` };
+  await appendGoalRunCheckpoint({
+    dataRoot,
+    repositoryIdentity: identity,
+    runId: clarifyingRun.id,
+    events: [
+      createRunEvent({ runId: clarifyingRun.id, sequence: 2, at: "2026-09-16T12:01:00.000Z", type: "state.transitioned", data: { from: "received", to: "discovering" } }),
+      createRunEvent({ runId: clarifyingRun.id, sequence: 3, at: "2026-09-16T12:02:00.000Z", type: "state.transitioned", data: { from: "discovering", to: "clarifying" } }),
+      createRunEvent({
+        runId: clarifyingRun.id,
+        sequence: 4,
+        at: "2026-09-16T12:10:00.000Z",
+        type: "gate.decided",
+        data: { gate: "scope", decision: clarifyingRun.gates.scope, receipt_id: "receipt-scope", request_id: "request-scope" }
+      })
+    ],
+    nextRun: clarifyingRun,
+    scorecard: createReviewScorecard({
+      run: clarifyingRun,
+      scopeHash: "a".repeat(64),
+      harnessVersion: "unbound",
+      title: "scope approved",
+      sourceArtifactCount: 2,
+      generatedAt: "2026-09-16T12:10:00.000Z",
+      dataSource: "runtime"
+    }),
+    packet,
+    artifacts: [planArtifact, goalArtifact]
+  });
+
+  const approved = await loadGoalRun(dataRoot, identity, clarifyingRun.id);
+  const paths = runStoragePaths(dataRoot, identity, clarifyingRun.id);
+  const pointer = JSON.parse(await readFile(paths.current, "utf8"));
+  const checkpoint = await createPostScopeAdvanceCheckpoint({
+    run: approved,
+    snapshot,
+    dataRoot,
+    priorArtifacts: [planArtifact, goalArtifact],
+    nextSequence: pointer.sequence + 1,
+    deliveryMode: "controlled-change",
+    vcsWriteAuthorized: true,
+    generatedAt: "2026-09-16T12:20:00.000Z"
+  });
+
+  assert.equal(checkpoint.run.state, "verifying");
+  assert.equal(checkpoint.delivery.delivery_mode, "controlled-change");
+  assert.equal(checkpoint.delivery.consumer_mutation, true);
+  assert.match(checkpoint.delivery.change_commit_sha, /^[0-9a-f]{40}$/);
+  assert.notEqual(checkpoint.delivery.change_commit_sha, head);
+  assert.equal(execFileSync("git", ["-C", root, "status", "--porcelain=v1"], { encoding: "utf8" }), "");
+  const summary = await readFile(checkpoint.delivery.summary_path, "utf8");
+  assert.match(summary, /Controlled-change summary/);
+  assert.match(summary, /vcs-write/);
+});
