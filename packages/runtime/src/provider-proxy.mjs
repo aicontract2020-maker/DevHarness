@@ -192,8 +192,11 @@ function extractUsage(payload) {
   return normalizeUsage(payload?.usage);
 }
 
-function upstreamHeaders({ parentCredential }) {
-  return { authorization: `Bearer ${parentCredential}` };
+function upstreamHeaders({ parentCredential, includeJsonContentType = false }) {
+  return {
+    authorization: `Bearer ${parentCredential}`,
+    ...(includeJsonContentType ? { "content-type": "application/json" } : {})
+  };
 }
 
 async function parseJSONResponse(response, maxResponseBytes) {
@@ -259,6 +262,13 @@ export function createProviderProxyResponder({
     const maxOutputTokens = Number.isInteger(payload?.max_output_tokens) && payload.max_output_tokens >= 0 && payload.max_output_tokens <= 600000
       ? payload.max_output_tokens
       : 0;
+    // DevHarness accounting requires a single JSON completion with usage; force non-streaming.
+    let forwardBody = requestBody;
+    if (payload && typeof payload === "object" && !Array.isArray(payload) && payload.stream === true) {
+      const nextPayload = { ...payload, stream: false };
+      delete nextPayload.stream_options;
+      forwardBody = serializeBody(nextPayload);
+    }
     const reservation = requestReservation({
       operationId,
       attemptId,
@@ -267,7 +277,7 @@ export function createProviderProxyResponder({
       targetOrigin: selectedOrigin,
       proxyPolicySha256,
       targetDescriptorSha256,
-      bodySha256: createHash("sha256").update(requestBody, "utf8").digest("hex")
+      bodySha256: createHash("sha256").update(forwardBody, "utf8").digest("hex")
     });
     await publishReservation(reservation);
     const startedAt = now().toISOString();
@@ -277,8 +287,11 @@ export function createProviderProxyResponder({
     while (true) {
       const upstreamResponse = await fetchImpl(currentUrl, {
         method,
-        headers: upstreamHeaders({ parentCredential }),
-        body: method === "GET" ? undefined : requestBody,
+        headers: upstreamHeaders({
+          parentCredential,
+          includeJsonContentType: method !== "GET" && forwardBody.length > 0
+        }),
+        body: method === "GET" ? undefined : forwardBody,
         redirect: "manual"
       });
 

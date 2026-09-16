@@ -56,6 +56,7 @@ test("provider proxy requires the child token, injects the parent credential, an
   assert.equal(calls[0].reservation.reserved_input_tokens > 0, true);
   assert.equal(calls[0].reservation.reserved_output_tokens, 32);
   assert.equal(calls[1].url, "https://api.example.com/v1/responses");
+  assert.equal(calls[1].init.headers["content-type"], "application/json");
   assert.equal(calls[1].init.body.includes(parentCredential), false);
   assert.equal(calls[1].init.body.includes(childToken), false);
   assert.equal(calls.at(-1).receipt.status, "completed");
@@ -99,4 +100,31 @@ test("provider proxy rejects wrong child credentials, cross-origin redirects, an
   const result = await missingUsage(request());
   assert.equal(result.status, 502);
   assert.match(JSON.parse(result.body).error, /usage_unavailable/);
+});
+
+test("provider proxy forces stream false and still forwards JSON content-type", async () => {
+  let forwarded;
+  const respond = createProviderProxyResponder({
+    exactOrigins,
+    childToken,
+    parentCredential,
+    operationId: "operation-1",
+    attemptId: "attempt-1",
+    fetchImpl: async (_url, init) => {
+      forwarded = init;
+      return new Response(JSON.stringify({ id: "resp-2", usage: { input_tokens: 3, output_tokens: 1, total_tokens: 4 } }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    },
+    now: () => new Date(now)
+  });
+  const response = await respond(request({
+    body: JSON.stringify({ model: "gpt-approved", input: "hello", max_output_tokens: 8, stream: true, stream_options: { include_usage: true } })
+  }));
+  assert.equal(response.status, 200);
+  assert.equal(forwarded.headers["content-type"], "application/json");
+  const body = JSON.parse(forwarded.body);
+  assert.equal(body.stream, false);
+  assert.equal(Object.hasOwn(body, "stream_options"), false);
 });
