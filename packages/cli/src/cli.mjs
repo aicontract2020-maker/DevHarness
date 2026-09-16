@@ -61,6 +61,11 @@ import {
   createDeliveryAdvanceCheckpoint,
   deliveryAdvanceSupported
 } from "../../runtime/src/delivery-advance.mjs";
+import {
+  defaultPromoteBranchName,
+  promoteControlledChange,
+  promoteSupported
+} from "../../runtime/src/promote-change.mjs";
 import { startReviewServer } from "../../runtime/src/review-server.mjs";
 
 const HELP = `DevHarness
@@ -81,6 +86,7 @@ Usage:
   devharness answer --run ID --decision ID --option ID [--decision ID --option ID ...] [--packet SHA] [--repo PATH] [--data-dir PATH] [--format text|json]
   devharness request-scope --run ID [--repo PATH] [--data-dir PATH] [--format text|json]
   devharness request-delivery --run ID [--repo PATH] [--data-dir PATH] [--format text|json]
+  devharness promote --run ID [--branch NAME] [--base BRANCH] [--push] [--pr] [--repo PATH] [--data-dir PATH] [--format text|json]
   devharness retry --run ID --operation ID [--repo PATH] [--data-dir PATH] [--format text|json]
   devharness cancel --run ID --operation ID [--repo PATH] [--data-dir PATH] [--format text|json]
   devharness status --run ID [--repo PATH] [--data-dir PATH] [--format text|json]
@@ -109,6 +115,7 @@ Commands:
              --agent codex forces Codex; --agent devharness-cli-local-agent forces the stub.
   request-scope Request scope approval for a ready Alignment Brief.
   request-delivery Request Gate 2 delivery approval for a ready Delivery Brief.
+  promote   After Gate 2, publish the isolated controlled-change commit onto a branch (optional --push/--pr). Never force-pushes or merges.
   retry     Retry the last failed live Alignment phase once.
   cancel    Cancel the current live Alignment operation through the shared fence.
   status    Restore one Goal Run from its event stream and show a compact current verdict.
@@ -154,6 +161,10 @@ function parseArguments(argv) {
     researchRecipesPath: null,
     artifactDir: null,
     deliveryMode: "docs-only",
+    branchName: null,
+    baseRef: null,
+    push: false,
+    createPr: false,
     commitSha: null
   };
 
@@ -211,6 +222,16 @@ function parseArguments(argv) {
       if (!requestId) throw new Error("--request requires an approval request id");
       options.requestIds.push(requestId);
       if (!options.requestId) options.requestId = requestId;
+    } else if (argument === "--branch") {
+      options.branchName = argv[++index];
+      if (!options.branchName) throw new Error("--branch requires a name");
+    } else if (argument === "--base") {
+      options.baseRef = argv[++index];
+      if (!options.baseRef) throw new Error("--base requires a branch name");
+    } else if (argument === "--push") {
+      options.push = true;
+    } else if (argument === "--pr") {
+      options.createPr = true;
     } else if (argument === "--pending") {
       options.pending = true;
     } else if (argument === "--operation") {
@@ -306,7 +327,10 @@ function nextRunAction(run) {
     return "If verification already attested and the tip scorecard is ready, run `devharness advance --run ID` to open Gate 2; otherwise verify --execute --attest first.";
   }
   if (run.state === "awaiting_delivery_approval") return "Review the Delivery Brief and decide the delivery gate.";
-  if (["completed", "blocked", "cancelled"].includes(run.state)) return "Inspect the final verdict and its evidence.";
+  if (run.state === "completed") {
+    return "Inspect the final verdict, or run `devharness promote --run ID` to publish an isolated controlled-change onto a branch (add --push/--pr as needed).";
+  }
+  if (["blocked", "cancelled"].includes(run.state)) return "Inspect the final verdict and its evidence.";
   return "Continue the governed Goal Run from its recorded state.";
 }
 
@@ -756,7 +780,7 @@ export async function runCli(argv, io = console, services = {}) {
     return 0;
   }
 
-  if (!["onboard", "init", "doctor", "build", "supervisor-init", "request-approval", "request-capability", "approve", "verify", "goal", "advance", "align", "answer", "request-scope", "request-delivery", "retry", "cancel", "status", "review"].includes(options.command)) {
+  if (!["onboard", "init", "doctor", "build", "supervisor-init", "request-approval", "request-capability", "approve", "verify", "goal", "advance", "align", "answer", "request-scope", "request-delivery", "promote", "retry", "cancel", "status", "review"].includes(options.command)) {
     throw new Error(`Unknown command: ${options.command}`);
   }
 
@@ -1057,6 +1081,49 @@ export async function runCli(argv, io = console, services = {}) {
     io.log(options.format === "json"
       ? JSON.stringify(result, null, 2)
       : `Delivery approval requested: ${request.id}\nBrief: ${brief.source.id}\nRevision: ${run.current_head_sha.slice(0, 12)}\nNext: ${result.next_action}`);
+    return 0;
+  }
+
+  if (options.command === "promote") {
+    if (!options.runId) throw new Error("promote requires --run ID");
+    if (options.createPr && !options.push) options.push = true;
+    const { dataRoot } = resolveExternalDataRoot(snapshot.repository.root_uri, options.dataRoot);
+    const run = await loadGoalRun(dataRoot, snapshot.repository.identity, options.runId);
+    let readiness;
+    try {
+      readiness = (await loadRunSourceArtifact(dataRoot, snapshot.repository.identity, options.runId, "artifact-readiness-summary")).value;
+    } catch {
+      throw new Error("promote requires artifact-readiness-summary from a controlled-change delivery.");
+    }
+    const support = promoteSupported({ run, readiness });
+    if (!support.ok) throw new Error(support.reason);
+    const record = await promoteControlledChange({
+      repositoryRoot: fileURLToPath(snapshot.repository.root_uri),
+      dataRoot,
+      repositoryIdentity: snapshot.repository.identity,
+      run,
+      readiness,
+      branchName: options.branchName,
+      baseRef: options.baseRef,
+      push: options.push,
+      createPr: options.createPr,
+      generatedAt: services.now?.() ?? new Date().toISOString(),
+      gitExec: services.gitExec,
+      ghExec: services.ghExec
+    });
+    const result = {
+      mode: "promote",
+      run_id: run.id,
+      record,
+      next_action: record.pr_url
+        ? `Review PR ${record.pr_url} (DevHarness does not auto-merge).`
+        : record.pushed
+          ? `Branch ${record.branch} pushed. Open a PR when ready; DevHarness does not auto-merge.`
+          : `Local branch ${record.branch} points at ${record.change_commit_sha.slice(0, 12)}. Add --push/--pr to publish.`
+    };
+    io.log(options.format === "json"
+      ? JSON.stringify(result, null, 2)
+      : `Promoted: ${record.branch}\nChange: ${record.change_commit_sha.slice(0, 12)}\nPushed: ${record.pushed ? "yes" : "no"}\nPR: ${record.pr_url ?? "not created"}\nCheckout HEAD unchanged: ${run.current_head_sha.slice(0, 12)}\nNext: ${result.next_action}`);
     return 0;
   }
 
