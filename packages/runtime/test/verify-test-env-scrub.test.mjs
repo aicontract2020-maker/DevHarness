@@ -9,6 +9,6 @@ test("verify.mjs scrubs host DB env for kind=test unless env_keys opts in", () =
   const source = readFileSync(file, "utf8");
   assert.match(source, /HOST_DB_ENV/);
   assert.match(source, /scrubHostDbForUnitTests/);
-  assert.match(source, /command\.kind === "test"/);
+  assert.match(source, /plan\.command\?\.kind === "test"/);
   assert.match(source, /explicitCommandKeys\.has\(key\)/);
 });
