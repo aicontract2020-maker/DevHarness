@@ -239,6 +239,148 @@ export function deriveEntitiesFromRepositoryRoot(root, {
   };
 }
 
+
+/**
+ * Static role/permission scan from USER_ROLES and role gates in source.
+ */
+export function deriveRolesFromRepositoryRoot(root) {
+  if (!root || !existsSync(root)) return { roles: [], authScheme: null, sources: [] };
+
+  const roleSet = new Set();
+  const permissionsByRole = new Map();
+  const sources = [];
+  let authScheme = null;
+
+  const addPerm = (role, perm) => {
+    const list = permissionsByRole.get(role) ?? new Set();
+    list.add(perm);
+    permissionsByRole.set(role, list);
+  };
+
+  const candidateDirs = [];
+  const queue = [root];
+  while (queue.length > 0) {
+    const current = queue.pop();
+    let entries;
+    try {
+      entries = readdirSync(current, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (entry.name.startsWith(".") && entry.isDirectory() && entry.name !== ".github") continue;
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        if (SKIP_DIRS.has(entry.name)) continue;
+        if (entry.name === "database") continue;
+        if (["api", "services", "models", "middleware", "auth", "security"].includes(entry.name)) {
+          candidateDirs.push(full);
+        }
+        queue.push(full);
+      }
+    }
+  }
+
+  const files = [];
+  const seen = new Set();
+  for (const dir of candidateDirs.length ? candidateDirs : [root]) {
+    for (const file of walkFiles(dir, { maxFiles: 2500 })) {
+      if (seen.has(file)) continue;
+      seen.add(file);
+      if (file.endsWith(".py") || file.endsWith(".ts") || file.endsWith(".tsx") || file.endsWith(".js")) files.push(file);
+    }
+  }
+
+  for (const file of files) {
+    let text = "";
+    try { text = readFileSync(file, "utf8"); } catch { continue; }
+    const rel = path.relative(root, file).replaceAll("\\", "/");
+
+    if (/Authorization:\s*Bearer|Bearer\s+|jwt|JSONWebToken|create_access_token|HTTPBearer/i.test(text)) {
+      authScheme = authScheme ?? "bearer-jwt";
+    }
+
+    for (const match of text.matchAll(/USER_ROLES\s*=\s*\(([^)]*)\)/g)) {
+      sources.push(rel);
+      for (const role of match[1].matchAll(/["']([A-Za-z][A-Za-z0-9_-]*)["']/g)) {
+        roleSet.add(role[1]);
+        addPerm(role[1], "identity:authenticated");
+      }
+    }
+
+    for (const match of text.matchAll(/\brole\s*(?:==|!=)\s*["']([A-Za-z][A-Za-z0-9_-]*)["']/g)) {
+      roleSet.add(match[1]);
+    }
+    for (const match of text.matchAll(/\brole\s+(?:not\s+)?in\s*\(([^)]*)\)/g)) {
+      for (const role of match[1].matchAll(/["']([A-Za-z][A-Za-z0-9_-]*)["']/g)) roleSet.add(role[1]);
+    }
+    for (const match of text.matchAll(/\b(?:allowed_roles|ROLES)\s*=\s*\(([^)]*)\)/g)) {
+      for (const role of match[1].matchAll(/["']([A-Za-z][A-Za-z0-9_-]*)["']/g)) roleSet.add(role[1]);
+    }
+
+    // Gate permissions from API/service modules
+    const moduleSlug = rel
+      .replace(/^backend\/src\//, "")
+      .replace(/\.(py|ts|tsx|js)$/, "")
+      .replaceAll("/", ".");
+    if (/payload\.get\(\s*["']role["']\s*\)\s*!=\s*["']admin["']|role\s*!=\s*["']admin["']|Admin role required/i.test(text)) {
+      roleSet.add("admin");
+      addPerm("admin", `gate:${moduleSlug}`);
+      sources.push(rel);
+    }
+    if (/payload\.get\(\s*["']role["']\s*\)\s*!=\s*["']teacher["']|role\s*!=\s*["']teacher["']|assert role == teacher/i.test(text)) {
+      roleSet.add("teacher");
+      addPerm("teacher", `gate:${moduleSlug}`);
+      sources.push(rel);
+    }
+    if (/payload\.get\(\s*["']role["']\s*\)\s*!=\s*["']parent["']|role\s*!=\s*["']parent["']/i.test(text)) {
+      roleSet.add("parent");
+      addPerm("parent", `gate:${moduleSlug}`);
+      sources.push(rel);
+    }
+    if (/payload\.get\(\s*["']role["']\s*\)\s*!=\s*["']schooladmin["']/i.test(text)) {
+      roleSet.add("schooladmin");
+      addPerm("schooladmin", `gate:${moduleSlug}`);
+      sources.push(rel);
+    }
+    if (/role["']?\s+not\s+in\s*\{\s*["']overseer["']|role\s+not\s+in\s*\(.*overseer/i.test(text) || /["']overseer["']\s*,\s*["']admin["']/.test(text) && /role/.test(text)) {
+      if (/overseer/.test(text) && /role/.test(text)) {
+        roleSet.add("overseer");
+        addPerm("overseer", `gate:${moduleSlug}`);
+      }
+    }
+    if (/role not in \("teacher", "admin"\)|role not in \('teacher', 'admin'\)/.test(text)) {
+      roleSet.add("teacher");
+      roleSet.add("admin");
+      addPerm("teacher", `gate:${moduleSlug}`);
+      addPerm("admin", `gate:${moduleSlug}`);
+      sources.push(rel);
+    }
+  }
+
+  // Baseline permissions every discovered role gets
+  for (const role of roleSet) {
+    addPerm(role, `role:${role}`);
+  }
+
+  const preferred = ["student", "parent", "teacher", "overseer", "schooladmin", "admin"];
+  const ordered = [
+    ...preferred.filter((role) => roleSet.has(role)),
+    ...[...roleSet].filter((role) => !preferred.includes(role)).sort()
+  ];
+
+  const roles = ordered.slice(0, 24).map((role) => ({
+    id: `role-${role}`.slice(0, 128),
+    permissions: [...(permissionsByRole.get(role) ?? new Set())].sort().slice(0, 32)
+  }));
+
+  return {
+    roles,
+    authScheme,
+    sources: [...new Set(sources)].slice(0, 32)
+  };
+}
+
 function detectHealthReadySource(root) {
   if (!root || !existsSync(root)) return null;
   const candidates = [
@@ -342,20 +484,22 @@ export function buildDraftSystemModelFromOnboardingPlan(plan, { snapshot = null,
     });
   }
 
-  const trust_boundaries = [];
+  const root = repositoryRoot ?? repositoryRootFromSnapshot(snapshot);
   const frontend = components.find((item) => item.kind === "frontend");
   const backend = components.find((item) => item.kind === "backend");
+  const roleDerived = deriveRolesFromRepositoryRoot(root);
+  const roles = roleDerived.roles;
+  const trust_boundaries = [];
   if (frontend && backend) {
     trust_boundaries.push({
       id: "boundary-frontend-backend",
       from_component_id: frontend.id,
       to_component_id: backend.id,
-      authentication: "unverified",
-      authorization: "unverified"
+      authentication: roleDerived.authScheme ?? "unverified",
+      authorization: roles.length > 0 ? "role-gated" : "unverified"
     });
   }
 
-  const root = repositoryRoot ?? repositoryRootFromSnapshot(snapshot);
   const ownerComponentId = backend?.id ?? components[0].id;
   const derived = stores.length > 0
     ? deriveEntitiesFromRepositoryRoot(root, { storeId: "store-primary", ownerComponentId })
@@ -365,7 +509,6 @@ export function buildDraftSystemModelFromOnboardingPlan(plan, { snapshot = null,
   const flows = buildCriticalReadinessFlow({ components, entities, healthReadySource });
 
   const unknowns = [
-    "Role and permission matrix is not yet modeled from code or runtime.",
     "Invariants and disposable-store proof are not yet established.",
     "Flow steps cite static source paths only; live evidence manifests are still required for ready."
   ];
@@ -375,6 +518,8 @@ export function buildDraftSystemModelFromOnboardingPlan(plan, { snapshot = null,
   if (!flows.length) unknowns.push("No critical readiness flow was inferred from /health/ready.");
   else unknowns.push("Critical /health/ready flow is modeled from source, not yet runtime-observed.");
   if (!trust_boundaries.length) unknowns.push("No trust boundary could be inferred from detected components.");
+  if (!roles.length) unknowns.push("Role and permission matrix could not be derived from USER_ROLES or role gates.");
+  else unknowns.push(`Roles/permissions are static (${roles.length} roles from source gates); runtime authz proof is still missing.`);
 
   const risks = [];
   for (const claim of claims.filter((item) => item.status === "conflict").slice(0, 8)) {
@@ -402,7 +547,7 @@ export function buildDraftSystemModelFromOnboardingPlan(plan, { snapshot = null,
     stores,
     entities,
     trust_boundaries,
-    roles: [],
+    roles,
     flows,
     invariants: [],
     risks,

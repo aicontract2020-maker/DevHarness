@@ -1,32 +1,26 @@
 # AIedu demo · auditable understanding baseline
 
-Generated from DevHarness Phase 1 bundle with code/migration-derived entities and a critical readiness flow.
+Generated from DevHarness Phase 1 bundle with entities, critical readiness flow, and code-derived roles/permissions.
 
 - Date: 2026-09-17 (America/Toronto)
 - Repo under study: `aiedu-demo` / AI-education-demo
-- Baseline id: `understanding-baseline-f420b0a74d728d9e8d3c4d7f` · verdict `needs-evidence`
-- System model draft: `system-model-draft-40c60fefa6087924b2a7f156` · entities **14** · flow `flow-health-ready`
+- Baseline id: `understanding-baseline-405742be58d85f6e4cebba9b` · verdict `needs-evidence`
+- System model draft: `system-model-draft-9b2f632e9820458a8b868fc2` · entities **14** · roles **6** · flow `flow-health-ready`
 - Design strategy draft: `design-strategy-draft-52f80b3989f08e1a05d7cd5b` · status `proposed`
-- Coverage flags: database=true · security=false · flows=true
+- Coverage flags: database=True · security=True · flows=True
+- Auth boundary: bearer-jwt / role-gated
+- Roles: role-student, role-parent, role-teacher, role-overseer, role-schooladmin, role-admin
 - Commit: `7f32844e6d4e3bb721191f41479f01c57dbc51ac`
 - Working copy: `local-projects/aiedu-demo/worktree-dogfood-clean`
-
-### Critical flow sketch
-```text
-Operator or orchestrator probes GET /health/ready
-  -> Probe GET /health/ready (or rely on platform checks)
-  -> Run database_readiness and return ready/503
-  => API reports ready only when configured databases respond; otherwise 503 with readiness detail
-```
 
 ---
 
 # Repository Understanding Brief (Phase 1)
 
-- Baseline id: `understanding-baseline-f420b0a74d728d9e8d3c4d7f`
+- Baseline id: `understanding-baseline-405742be58d85f6e4cebba9b`
 - Repository: `github.com/Maple-Spark-Ai/AI-education-demo`
 - Revision: `7f32844e6d4e3bb721191f41479f01c57dbc51ac`
-- Captured: 2026-09-17T04:02:49.153Z
+- Captured: 2026-09-17T04:04:57.353Z
 - Verdict: **needs-evidence** (static Phase 1 never claims ready without runtime/test proof)
 
 ## Required domains
@@ -98,7 +92,7 @@ Operator or orchestrator probes GET /health/ready
 
 ## Model / strategy coverage (honest gaps)
 
-- System model: `system-model-draft-40c60fefa6087924b2a7f156` · database=true · security=false · feature_flows=true
+- System model: `system-model-draft-9b2f632e9820458a8b868fc2` · database=true · security=true · feature_flows=true
 - Strategy: `design-strategy-draft-52f80b3989f08e1a05d7cd5b` v1 · proposed
 
 ## Onboarding rollup

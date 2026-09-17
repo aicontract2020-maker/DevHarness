@@ -1,6 +1,8 @@
 from sqlalchemy import Column, String, Boolean
 from .base import Base
 
+USER_ROLES = ("student", "parent", "teacher", "overseer", "admin", "schooladmin")
+
 class User(Base):
     __tablename__ = "users"
     id = Column(String, primary_key=True)

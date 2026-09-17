@@ -8,7 +8,8 @@ import {
   buildDraftSystemModelFromOnboardingPlan,
   buildProposedDesignStrategyFromOnboardingPlan,
   createValidatedPhase1DraftsFromOnboardingPlan,
-  deriveEntitiesFromRepositoryRoot
+  deriveEntitiesFromRepositoryRoot,
+  deriveRolesFromRepositoryRoot
 } from "../src/phase1-drafts.mjs";
 
 const fixtureRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "phase1-repo");
@@ -39,6 +40,14 @@ test("deriveEntitiesFromRepositoryRoot reads SQLAlchemy tables and migration ref
   assert.ok(users.migration_refs.some((ref) => ref.includes("001_add_users.py")));
 });
 
+test("deriveRolesFromRepositoryRoot reads USER_ROLES and role gates", () => {
+  const derived = deriveRolesFromRepositoryRoot(fixtureRoot);
+  assert.ok(derived.roles.some((role) => role.id === "role-admin"));
+  assert.ok(derived.roles.some((role) => role.id === "role-teacher"));
+  const admin = derived.roles.find((role) => role.id === "role-admin");
+  assert.ok(admin.permissions.some((perm) => perm.includes("gate:")));
+});
+
 test("draft system model includes entities and critical health-ready flow", async () => {
   const model = buildDraftSystemModelFromOnboardingPlan(plan(), {
     snapshot: {
@@ -54,6 +63,8 @@ test("draft system model includes entities and critical health-ready flow", asyn
   assert.equal(model.flows.length, 1);
   assert.equal(model.flows[0].id, "flow-health-ready");
   assert.ok(model.flows[0].steps.some((step) => step.reads.includes("entity-users")));
+  assert.ok(model.roles.some((role) => role.id === "role-admin"));
+  assert.equal(model.trust_boundaries[0]?.authorization, "role-gated");
   assert.ok(model.unknowns.some((item) => /static source paths|runtime-observed/i.test(item)));
 });
 
@@ -74,5 +85,6 @@ test("validated phase1 drafts assert both contracts", async () => {
   });
   assert.equal(systemModel.verdict, "needs-evidence");
   assert.ok(systemModel.entities.length >= 1);
+  assert.ok(systemModel.roles.length >= 1);
   assert.equal(strategy.status, "proposed");
 });
