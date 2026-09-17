@@ -21,3 +21,7 @@ Wired disposable `aiedu-postgres-redis` service onto `python-tests` (TCP readine
 
 Launch path now migrates KB+user schemas and light-seeds users before TCP readiness completes for dependents. See triage note.
 
+## 2026-09-17 migrate/seed attest
+
+`python-tests` with owned Postgres+Redis + migrate/seed: **48 failed / 3757 passed / 47 errors** (`verify-1789659292950-f92d362a`). Harness path is honest; remaining fails are product/test-contract.
+

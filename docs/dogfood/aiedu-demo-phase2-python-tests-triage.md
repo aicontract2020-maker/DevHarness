@@ -78,3 +78,13 @@ Host wiring works. Remaining failures are no longer “no DB”; next slice is *
 
 Smoke: 82 user tables, 6 seeded users, KB schema present.
 
+## 2026-09-17 after migrate/seed (+ patch restore)
+
+Receipt `verify-1789659292950-f92d362a`:
+- Service readiness/teardown **pass**; `dirty_after: false` (ephemeral 030/035 patches restored after alembic)
+- KB reconcile ran (subjects refreshed)
+- Pytest: **48 failed / 3757 passed / 2 skipped / 47 errors** (~57s)
+- `:5432` / `UndefinedTable`: **0**
+
+Remaining FAIL bucket is mostly product/test-contract (gemini failover mocks, bulk admin CSV, loadtest scripts, a few review/mix asserts) — not harness DB plumbing. ERROR lines still include client/setup CancelledError noise to triage separately.
+
