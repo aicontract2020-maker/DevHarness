@@ -482,6 +482,7 @@ test("help documents init's explicit write boundary", async () => {
   assert.match(output.lines.join("\n"), /cancel --run ID --operation ID/);
   assert.match(output.lines.join("\n"), /request-delivery/);
   assert.match(output.lines.join("\n"), /agent-propose/);
+  assert.match(output.lines.join("\n"), /for-verify/);
 });
 
 test("help presents onboard as a read-only understanding plan", async () => {
@@ -1433,7 +1434,7 @@ test("post-scope advance after scope approval writes external summary and prepar
   assert.match(advanced.delivery.summary_path, /readiness-summary\.md$/);
   assert.match(await readFile(advanced.delivery.summary_path, "utf8"), /Readiness summary/);
   assert.equal(advanced.verify?.authority_allowed, false);
-  assert.match(advanced.next_action, /service-runtime|Capability gate/i);
+  assert.match(advanced.next_action, /service-runtime|Capability gate|request-capability --run .*--for-verify/i);
   assert.equal(advanced.scorecard.exception_counts.blocking, 1);
   assert.equal(advanced.scorecard.exception_counts.unknowns, 1);
   assert.equal(advanced.scorecard.exceptions.some((item) => item.type === "review"), false);

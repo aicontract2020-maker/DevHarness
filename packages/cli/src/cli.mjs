@@ -55,6 +55,7 @@ import { createSupervisorApprovalRequest, listPendingApprovalRequestsForRun, rec
 import { applyRunGateFromApprovalReceipt, reconcileRunGatesFromApprovals } from "../../runtime/src/run-gate-approval.mjs";
 import { initializeSupervisorIdentity } from "../../runtime/src/supervisor-store.mjs";
 import { findApprovedVcsWrite, loadCapabilityAuthorizationView, requestCapabilityAuthorization, resolveCapabilityApprovalContext } from "../../runtime/src/capability-authorization.mjs";
+import { requestMissingVerifyCapabilities, resolveVerifyDefaultsFromReadiness } from "../../runtime/src/verify-capabilities.mjs";
 import { createVerificationPlan, executeVerificationPlan, formatVerificationPlan } from "../../runtime/src/verify.mjs";
 import { createPostScopeAdvanceCheckpoint, postScopeAdvanceSupported } from "../../runtime/src/post-scope-advance.mjs";
 import { proposeControlledChangeWithAgent } from "../../runtime/src/change-proposal.mjs";
@@ -79,7 +80,7 @@ Usage:
   devharness build [--repo PATH] [--config PATH] [--write] [--format text|json]
   devharness supervisor-init [--format text|json]
   devharness request-approval --run ID --gate GATE --subject ID --subject-sha SHA [--repo PATH]
-  devharness request-capability --run ID --capability ID [--expires-minutes N] [--repo PATH] [--data-dir PATH]
+  devharness request-capability --run ID (--capability ID | --for-verify [--command ID] [--commit SHA] [--approve]) [--expires-minutes N] [--repo PATH] [--data-dir PATH]
   devharness approve (--request ID [--request ID ...] | --run ID --pending) [--repo PATH] [--data-dir PATH]
   devharness verify --command ID [--repo PATH] [--config PATH] [--data-dir PATH] [--run ID --execute] [--commit SHA] [--attest] [--timeout-seconds N] [--format text|json]
   devharness goal --goal TEXT [--repo PATH] [--data-dir PATH] [--format text|json]
@@ -101,7 +102,8 @@ Commands:
   build     Compile the accepted project declaration. Does not write unless --write is present.
   supervisor-init  Create or load the fixed external signing identity. Never exposes its private key.
   request-approval Create a signed, revision-bound pending request; this does not approve it.
-  request-capability Request exactly one bounded capability from the current Alignment Brief.
+  request-capability Request bounded capability approval from the current Goal Run plan.
+             --capability ID requests one. --for-verify requests every capability still blocking the current verify plan (from readiness/--command/--commit), optionally --approve in one TTY batch.
              Defaults: agent-runtime/vcs-write 720m, network-research 480m, others 60m (max 1440). Re-request expired/stale without losing the Goal Run.
              After Gate 1, request vcs-write then TTY-approve before advance --mode controlled-change.
   approve    Record one or more decisions in a single foreground TTY confirmation (--request repeated, or --run + --pending). JSON and pipes are refused; never silently auto-approves.
@@ -250,6 +252,10 @@ function parseArguments(argv) {
     } else if (argument === "--capability") {
       options.capabilityId = argv[++index];
       if (!options.capabilityId) throw new Error("--capability requires a capability id");
+    } else if (argument === "--for-verify") {
+      options.forVerify = true;
+    } else if (argument === "--approve") {
+      options.approveAfterRequest = true;
     } else if (argument === "--expires-minutes") {
       options.expiresInMinutes = Number(argv[++index]);
       if (!Number.isInteger(options.expiresInMinutes)) throw new Error("--expires-minutes requires an integer");
@@ -1454,7 +1460,7 @@ export async function runCli(argv, io = console, services = {}) {
             reasons: authority.reasons,
             next_action: authority.allowed
               ? `devharness verify --run ${options.runId} --command ${verifyCommandId}${commitFlag} --execute --attest`
-              : `Capability gate: ${authority.reasons.map((reason) => reason.message).join(" ")}`
+              : `devharness request-capability --run ${options.runId} --for-verify --command ${verifyCommandId}${changeCommit ? ` --commit ${changeCommit}` : ""} --approve`
           };
         } catch (error) {
           verifyProbe = {
@@ -1651,11 +1657,116 @@ export async function runCli(argv, io = console, services = {}) {
   }
 
   if (options.command === "request-capability") {
-    if (!options.runId || !options.capabilityId) throw new Error("request-capability requires --run and --capability");
+    if (!options.runId) throw new Error("request-capability requires --run");
+    if (options.forVerify && options.capabilityId) {
+      throw new Error("Pass only one of --capability or --for-verify.");
+    }
+    if (!options.forVerify && !options.capabilityId) {
+      throw new Error("request-capability requires --capability ID or --for-verify");
+    }
+    if (options.approveAfterRequest && !options.forVerify) {
+      throw new Error("--approve is only valid with --for-verify");
+    }
     if (!snapshot.repository.git.head_sha || snapshot.repository.git.dirty) throw new Error("Capability requests require a clean committed repository revision.");
     const { dataRoot } = resolveExternalDataRoot(snapshot.repository.root_uri, options.dataRoot);
     const supervisorRoot = services.supervisorRoot ?? defaultSupervisorRoot();
     await initializeSupervisorIdentity(supervisorRoot);
+    const now = () => new Date(services.now?.() ?? Date.now());
+
+    if (options.forVerify) {
+      const defaults = await resolveVerifyDefaultsFromReadiness({
+        dataRoot,
+        repositoryIdentity: snapshot.repository.identity,
+        runId: options.runId,
+        commandId: options.commandId,
+        commitSha: options.commitSha
+      });
+      if (!defaults.command_id) {
+        throw new Error("request-capability --for-verify needs --command ID or a readiness summary with verify_command_id from advance.");
+      }
+      const { config } = await loadConfiguredProject(snapshot, options);
+      const plan = await createVerificationPlan({
+        snapshot,
+        config,
+        commandId: defaults.command_id,
+        goalRunId: options.runId,
+        dataRoot,
+        timeoutMs: options.timeoutMs,
+        commitSha: defaults.commit_sha
+      });
+      const authorizationView = await loadCapabilityAuthorizationView({
+        dataRoot,
+        supervisorRoot,
+        repositoryIdentity: snapshot.repository.identity,
+        runId: options.runId,
+        now: now()
+      });
+      const batch = await requestMissingVerifyCapabilities({
+        dataRoot,
+        supervisorRoot,
+        repositoryIdentity: snapshot.repository.identity,
+        runId: options.runId,
+        plan,
+        authorizationView,
+        controlledChange: defaults.controlled_change,
+        expiresInMinutes: options.expiresInMinutes,
+        now
+      });
+
+      let approval = null;
+      if (options.approveAfterRequest) {
+        if (options.format === "json") {
+          throw new Error("Approval is unavailable in JSON mode; omit --approve or use the foreground TTY without --format json.");
+        }
+        if (batch.approve_request_ids.length === 0) {
+          approval = { decision: "not-needed", request_ids: [], receipts: [] };
+        } else {
+          const capabilitiesByRequestId = {};
+          for (const requestId of batch.approve_request_ids) {
+            const capability = await resolveCapabilityApprovalContext({
+              dataRoot,
+              supervisorRoot,
+              repositoryIdentity: snapshot.repository.identity,
+              requestId,
+              now: now()
+            });
+            if (capability) capabilitiesByRequestId[requestId] = capability;
+          }
+          const recorded = await recordInteractiveApprovalDecisions({
+            supervisorRoot,
+            repositoryIdentity: snapshot.repository.identity,
+            requestIds: batch.approve_request_ids,
+            capabilitiesByRequestId,
+            responseProvider: services.approveResponse ?? null,
+            now
+          });
+          approval = {
+            decision: recorded.decision,
+            request_ids: recorded.request_ids,
+            receipts: recorded.receipts.map((receipt) => ({ id: receipt.id, request_id: receipt.request_id }))
+          };
+        }
+      }
+
+      const payload = { ...batch, approval };
+      if (options.format === "json") {
+        io.log(JSON.stringify(payload, null, 2));
+      } else if (batch.already_satisfied || (batch.gap.allowed && batch.approve_request_ids.length === 0)) {
+        io.log(`Verify capabilities already approved for ${defaults.command_id}.\nRequired: ${batch.gap.required_capability_ids.join(", ") || "none"}\nNext: devharness verify --run ${options.runId} --command ${defaults.command_id}${defaults.commit_sha ? ` --commit ${defaults.commit_sha}` : ""} --execute --attest`);
+      } else if (approval?.decision === "approved") {
+        io.log(`Verify capabilities approved (${approval.request_ids.length}).\nCommand: ${defaults.command_id}\nRequired: ${batch.gap.required_capability_ids.join(", ")}\nRequests: ${approval.request_ids.join(" ")}\nNext: devharness verify --run ${options.runId} --command ${defaults.command_id}${defaults.commit_sha ? ` --commit ${defaults.commit_sha}` : ""} --execute --attest`);
+      } else if (approval && approval.decision !== "not-needed") {
+        io.log(`Verify capability batch decision: ${approval.decision}\nRequests: ${(approval.request_ids ?? []).join(" ") || "none"}`);
+      } else {
+        const reqList = batch.results.map((item) => `${item.capability_id}=${item.request_id}${item.reused ? ` (${item.reuse_kind})` : ""}`).join("\n");
+        const approveHint = batch.approve_request_ids.length
+          ? `devharness approve --repo ${fileURLToPath(snapshot.repository.root_uri)} --data-dir ${dataRoot} --run ${options.runId} --pending`
+          : `devharness verify --run ${options.runId} --command ${defaults.command_id}${defaults.commit_sha ? ` --commit ${defaults.commit_sha}` : ""} --execute --attest`;
+        io.log(`Verify capabilities requested for ${defaults.command_id}\nRequired: ${batch.gap.required_capability_ids.join(", ")}\n${reqList}\nNext: ${approveHint}`);
+      }
+      return (approval?.decision === "rejected") ? 2 : 0;
+    }
+
     const result = await requestCapabilityAuthorization({
       dataRoot,
       supervisorRoot,
@@ -1663,7 +1774,7 @@ export async function runCli(argv, io = console, services = {}) {
       runId: options.runId,
       capabilityId: options.capabilityId,
       expiresInMinutes: options.expiresInMinutes,
-      now: () => new Date(services.now?.() ?? Date.now())
+      now
     });
     if (options.format === "json") {
       io.log(JSON.stringify(result, null, 2));
