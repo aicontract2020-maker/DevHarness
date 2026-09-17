@@ -96,8 +96,7 @@ enough that feature work will not be debugging unknown rot.
 | 2 | `verify --execute --attest` and project test commands; bugfix under a Goal Run aimed at **baseline health**, not new features |
 | 3 | Goal Run whose acceptance criteria describe **new** user-visible behavior; Gates 1 and 2 |
 
-v0 is incomplete: onboarding still returns `needs-evidence` until richer drivers exist, and
-CLI live alignment does not fully replace human-led phase 1 depth. The **methodology still
+v0 progress: Phase 1 can now reach understanding-ready (auditable baseline + complete model + approved strategy + live evidence). Phase 2 still requires attesting the configured quality ladder (`doctor` prints the Phase 2 command ladder). CLI live alignment does not fully replace human-led depth for hard conflicts. The **methodology still
 holds** — implementers and operators must not jump to phase 3 because a smoke verify passed.
 
 

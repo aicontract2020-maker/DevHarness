@@ -89,7 +89,7 @@ function currentBehaviorEvidence(snapshot, evidence, behaviorReceipt) {
   return requiredTypeGroups.every((types) => current.some((record) => types.includes(record.type))) ? current : [];
 }
 
-function currentSupervisorManifest(snapshot, config, trustContext, kind) {
+export function currentSupervisorManifest(snapshot, config, trustContext, kind) {
   if (!config || !isTrustedEvaluationContext(trustContext)) return null;
   const configured = new Map(config.quality.commands.map((command) => [command.id, command]));
   return (trustContext.manifests ?? []).find((manifest) => {

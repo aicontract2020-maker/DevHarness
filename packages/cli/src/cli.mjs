@@ -24,6 +24,7 @@ import { reconcileBaselineClaimsWithModel } from "../../project/src/phase1-recon
 import { applyEvidenceToUnderstandingBaseline } from "../../project/src/apply-evidence-to-baseline.mjs";
 import { listVerifiedEvidenceManifests } from "../../runtime/src/supervisor-store.mjs";
 import { evaluatePhase1ReadyGaps } from "../../project/src/understanding-ready-gaps.mjs";
+import { evaluatePhase2BaselineLadder, formatPhase2BaselineLadder } from "../../project/src/phase2-baseline.mjs";
 import { createGoalUnderstandingCheckpoint } from "../../project/src/alignment.mjs";
 import { resolveExternalDataRoot } from "../../project/src/path-policy.mjs";
 import { defaultDataRoot, defaultSupervisorRoot, onboardingPlanPath, understandingBaselinePath, systemModelPath, designStrategyPath, projectHarnessPath, writeOnboardingPlan, writeUnderstandingBaseline, writeSystemModel, writeDesignStrategy, writeProjectHarness, readJsonIfExists } from "../../runtime/src/data-store.mjs";
@@ -2158,7 +2159,16 @@ export async function runCli(argv, io = console, services = {}) {
     }
     const trustContext = snapshot.repository.git.head_sha ? await loadTrustedEvaluationContext({ snapshot }) : undefined;
     const report = evaluateReadiness(snapshot, { trustContext, config, configError, configSource });
-    io.log(options.format === "json" ? JSON.stringify({ snapshot, report }, null, 2) : formatReadinessReport(report));
+    const phase2 = (config && trustContext)
+      ? evaluatePhase2BaselineLadder({ snapshot, config, trustContext, understandingReady: true })
+      : null;
+    if (options.format === "json") {
+      io.log(JSON.stringify({ snapshot, report, phase2_baseline: phase2 }, null, 2));
+    } else {
+      const phase2Text = phase2 ? `
+${formatPhase2BaselineLadder(phase2)}` : "";
+      io.log(`${formatReadinessReport(report)}${phase2Text}`);
+    }
     return report.overall.verdict === "ready" ? 0 : 2;
   }
 
