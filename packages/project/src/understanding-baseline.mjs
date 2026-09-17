@@ -178,7 +178,7 @@ export function formatAuditableUnderstandingBrief(baseline, {
     `- Repository: \`${baseline.repository_identity}\``,
     `- Revision: \`${baseline.commit_sha}\``,
     `- Captured: ${baseline.captured_at}`,
-    `- Verdict: **${baseline.verdict}** (static Phase 1 never claims ready without runtime/test proof)`,
+    `- Verdict: **${baseline.verdict}**${baseline.verdict === "ready" ? "" : " (static Phase 1 never claims ready without runtime/test proof)"}`,
     "",
     "## Required domains",
     "",

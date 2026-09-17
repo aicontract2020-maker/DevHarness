@@ -1,10 +1,10 @@
 # Repository Understanding Brief (Phase 1)
 
-- Baseline id: `understanding-baseline-72b6c2c0c8bfb684e7b5c19b`
+- Baseline id: `understanding-baseline-a5f778b6764e3e12c70f2ffa`
 - Repository: `github.com/Maple-Spark-Ai/AI-education-demo`
 - Revision: `7f32844e6d4e3bb721191f41479f01c57dbc51ac`
-- Captured: 2026-09-17T04:32:11.099Z
-- Verdict: **needs-evidence** (static Phase 1 never claims ready without runtime/test proof)
+- Captured: 2026-09-17T04:46:04.365Z
+- Verdict: **ready**
 
 ## Required domains
 
@@ -66,7 +66,7 @@
 
 ### strategy
 
-- `design-strategy` · **not-covered** · blocking: No developer-approved design and architecture strategy baseline has been established.
+- `design-strategy` · **test-confirmed** · info: Design strategy was approved by the human strategy gate for this revision; bind live evidence next.
 
 ### testing
 
@@ -75,7 +75,7 @@
 ## Model / strategy coverage (honest gaps)
 
 - System model: `system-model-draft-96a21a76ef5e555dda807804` · database=true · security=true · feature_flows=true
-- Strategy: `design-strategy-draft-52f80b3989f08e1a05d7cd5b` v1 · proposed
+- Strategy: `design-strategy-draft-52f80b3989f08e1a05d7cd5b` v1 · approved
 
 ## Onboarding rollup
 
@@ -95,21 +95,16 @@
 
 ## Path to understanding-ready
 
-- Verdict: **not ready** (4 blockers)
-
-- `baseline_verdict_not_ready`: Baseline artifact verdict is needs-evidence.
-- `domain_unproved`: Required domain strategy has no evidence-backed claim. · subject `strategy`
-- `blocking_claim`: Required domain strategy retains blocking claim design-strategy. · subject `design-strategy`
-- `strategy_not_approved`: Both the referenced strategy and baseline require an independent approved human gate receipt. · subject `design-strategy-draft-52f80b3989f08e1a05d7cd5b`
+- Verdict: **ready**
 
 ### Strategy gate
 
-- Current strategy: `design-strategy-draft-52f80b3989f08e1a05d7cd5b` · status **proposed**
-- Next: `devharness request-approval --run <ID> --for-strategy` then foreground `approve`
+- Current strategy: `design-strategy-draft-52f80b3989f08e1a05d7cd5b` · status **approved**
+- Strategy status is approved; ensure a matching strategy-gate receipt exists for this revision
 
 ### Baseline verdict field
 
-- Stored baseline verdict remains `needs-evidence` until live proof promotes it (static onboard never writes `ready`).
+- Stored baseline verdict remains `ready` until live proof promotes it (static onboard never writes `ready`).
 
 ## Audit notes
 
