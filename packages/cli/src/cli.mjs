@@ -57,6 +57,7 @@ import { initializeSupervisorIdentity } from "../../runtime/src/supervisor-store
 import { findApprovedVcsWrite, loadCapabilityAuthorizationView, requestCapabilityAuthorization, resolveCapabilityApprovalContext } from "../../runtime/src/capability-authorization.mjs";
 import { createVerificationPlan, executeVerificationPlan, formatVerificationPlan } from "../../runtime/src/verify.mjs";
 import { createPostScopeAdvanceCheckpoint, postScopeAdvanceSupported } from "../../runtime/src/post-scope-advance.mjs";
+import { proposeControlledChangeWithAgent } from "../../runtime/src/change-proposal.mjs";
 import {
   createDeliveryAdvanceCheckpoint,
   deliveryAdvanceSupported
@@ -81,7 +82,7 @@ Usage:
   devharness approve (--request ID [--request ID ...] | --run ID --pending) [--repo PATH] [--data-dir PATH]
   devharness verify --command ID [--repo PATH] [--config PATH] [--data-dir PATH] [--run ID --execute] [--commit SHA] [--attest] [--timeout-seconds N] [--format text|json]
   devharness goal --goal TEXT [--repo PATH] [--data-dir PATH] [--format text|json]
-  devharness advance --run ID [--mode docs-only|controlled-change] [--change-json PATH] [--repo PATH] [--data-dir PATH] [--artifact-dir PATH] [--command ID] [--format text|json]
+  devharness advance --run ID [--mode docs-only|controlled-change] [--change-json PATH | --agent-propose [--agent ID]] [--repo PATH] [--data-dir PATH] [--artifact-dir PATH] [--command ID] [--format text|json]
   devharness align --run ID [--continue|--tick] [--agent ID] [--agent-profile ID] [--research-recipes PATH] [--repo PATH] [--data-dir PATH] [--format text|json]
   devharness answer --run ID --decision ID --option ID [--decision ID --option ID ...] [--packet SHA] [--repo PATH] [--data-dir PATH] [--format text|json]
   devharness request-scope --run ID [--repo PATH] [--data-dir PATH] [--format text|json]
@@ -107,6 +108,7 @@ Commands:
   goal      Create a durable Goal Run at the current committed revision. Does not execute an agent.
   advance   Perform the next safe Goal Run step: static understanding from received, post-scope plan→change→verify prep after Gate 1, or Delivery Brief prep after a ready tip scorecard.
              --mode docs-only (default) writes an external readiness summary. --mode controlled-change requires approved vcs-write and commits a bounded change in an isolated worktree.
+             For controlled-change, pass --change-json PATH or --agent-propose (Codex/local agent proposes a validated changeSpec; runtime still applies it).
   align     Bootstrap a live Alignment bundle, or tick it with --continue after answers/approvals.
              --continue loads exact HTTPS recipes from --research-recipes or <config-dir>/research-recipes.json
              and registers builtin adapters: codex (real Codex CLI + parent provider proxy) and
@@ -226,6 +228,8 @@ function parseArguments(argv) {
     } else if (argument === "--change-json") {
       options.changeJsonPath = argv[++index];
       if (!options.changeJsonPath) throw new Error("--change-json requires a path");
+    } else if (argument === "--agent-propose") {
+      options.agentPropose = true;
     } else if (argument === "--branch") {
       options.branchName = argv[++index];
       if (!options.branchName) throw new Error("--branch requires a name");
@@ -1308,8 +1312,28 @@ export async function runCli(argv, io = console, services = {}) {
       const currentPointer = JSON.parse(await readFile(paths.current, "utf8"));
       const nextSequence = (Number.isInteger(currentPointer?.sequence) ? currentPointer.sequence : 1) + 1;
       let changeSpec = null;
+      let agentProposal = null;
+      if (options.changeJsonPath && options.agentPropose) {
+        throw new Error("Pass only one of --change-json or --agent-propose.");
+      }
       if (options.changeJsonPath) {
         changeSpec = JSON.parse(await readFile(options.changeJsonPath, "utf8"));
+      } else if (options.agentPropose) {
+        if (deliveryMode !== "controlled-change") {
+          throw new Error("--agent-propose requires --mode controlled-change.");
+        }
+        const registry = createDefaultContinueAdapterRegistry(services);
+        agentProposal = await proposeControlledChangeWithAgent({
+          snapshot,
+          run: currentRun,
+          dataRoot,
+          adapterRegistry: registry,
+          adapterName: options.agentId ?? null,
+          agentProfileId: options.agentProfileId ?? null,
+          environment: process.env,
+          clock: () => new Date(services.now?.() ?? Date.now())
+        });
+        changeSpec = agentProposal.change_spec;
       }
       const checkpoint = await createPostScopeAdvanceCheckpoint({
         run: currentRun,

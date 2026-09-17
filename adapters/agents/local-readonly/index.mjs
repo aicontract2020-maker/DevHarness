@@ -97,12 +97,48 @@ export function createLocalReadonlyAnalysisAdapter({
         };
       }
       const phase = invocation?.phase ?? "analysis-plan";
-      const payload = buildLocalReadonlyAdapterPayload({
-        phase,
-        invocation,
-        profileId,
-        adapterId: ADAPTER_ID
-      });
+      let payload;
+      if (phase === "change-proposal") {
+        const seeded = invocation?.fixture_change;
+        if (seeded && typeof seeded === "object") {
+          payload = {
+            schema_version: 1,
+            phase: "change-proposal",
+            summary: typeof seeded.summary === "string" ? seeded.summary : "Local readonly change proposal from fixture_change.",
+            changes: Array.isArray(seeded.changes) ? seeded.changes : [seeded],
+            notes: ["emitted-by-local-readonly-adapter"]
+          };
+        } else {
+          const goalText = invocation?.goal?.refined ?? invocation?.goal?.original ?? "DevHarness controlled change";
+          payload = {
+            schema_version: 1,
+            phase: "change-proposal",
+            summary: `Local readonly proposal for: ${String(goalText).slice(0, 180)}`,
+            changes: [{
+              kind: "ensure-file",
+              relative_path: "DEVHARNESS_AGENT_PROPOSED_CHANGE.md",
+              contents: [
+                "# DevHarness agent-proposed change",
+                "",
+                `- Goal: ${goalText}`,
+                `- Adapter: ${ADAPTER_ID}`,
+                "",
+                "Emitted by the local readonly adapter under change-proposal phase.",
+                "Runtime applies this only after schema validation inside controlled-change.",
+                ""
+              ].join("\n")
+            }],
+            notes: ["emitted-by-local-readonly-adapter"]
+          };
+        }
+      } else {
+        payload = buildLocalReadonlyAdapterPayload({
+          phase,
+          invocation,
+          profileId,
+          adapterId: ADAPTER_ID
+        });
+      }
       await writeResult(executionContext.resultPath, payload);
       const completedAt = nowIso(clock);
       return {

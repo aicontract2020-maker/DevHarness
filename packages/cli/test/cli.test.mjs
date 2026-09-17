@@ -480,7 +480,8 @@ test("help documents init's explicit write boundary", async () => {
   assert.match(output.lines.join("\n"), /request-scope --run ID/);
   assert.match(output.lines.join("\n"), /retry --run ID --operation ID/);
   assert.match(output.lines.join("\n"), /cancel --run ID --operation ID/);
-  assert.doesNotMatch(output.lines.join("\n"), /request-delivery|delivery request/);
+  assert.match(output.lines.join("\n"), /request-delivery/);
+  assert.match(output.lines.join("\n"), /agent-propose/);
 });
 
 test("help presents onboard as a read-only understanding plan", async () => {
