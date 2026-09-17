@@ -11,7 +11,7 @@
       "additionalProperties": false,
       "required": ["kind", "url", "expected_statuses", "timeout_ms", "interval_ms"],
       "properties": {
-        "kind": { "const": "http" },
+        "kind": { "enum": ["http", "tcp"] },
         "url": { "type": "string", "format": "uri" },
         "expected_statuses": {
           "type": "array",
@@ -109,7 +109,7 @@
                 "additionalProperties": false,
                 "required": ["kind", "url", "expected_statuses", "timeout_ms", "interval_ms"],
                 "properties": {
-                  "kind": { "const": "http" },
+                  "kind": { "enum": ["http", "tcp"] },
                   "url": { "type": "string", "format": "uri" },
                   "expected_statuses": {
                     "type": "array",

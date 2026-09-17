@@ -153,7 +153,7 @@ test("invalid harness references and unsafe readiness targets are rejected", asy
 
   const wrongVerificationKind = structuredClone(fixture.config);
   wrongVerificationKind.harness.verifications.push({ command_id: "root-build", service_ids: [] });
-  await assert.rejects(compileProjectHarness(fixture.snapshot, wrongVerificationKind), /must reference a verify command/);
+  await assert.rejects(compileProjectHarness(fixture.snapshot, wrongVerificationKind), /must reference a verify or test command/);
 
   const unsafe = structuredClone(unknown);
   unsafe.harness.services[0].command_id = "root-start-service";

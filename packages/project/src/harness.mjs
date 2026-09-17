@@ -23,15 +23,32 @@ export function assertSafeReadiness(readiness) {
   }
   const hostname = target.hostname.toLowerCase();
   const loopback = hostname === "localhost" || hostname === "::1" || hostname === "[::1]" || /^127(?:\.[0-9]{1,3}){3}$/.test(hostname);
-  if (
-    target.protocol !== "http:" ||
-    !loopback ||
-    target.username ||
-    target.password ||
-    target.search ||
-    target.hash
-  ) {
-    throw new Error(`Unsafe readiness target: ${readiness.url}. v0 permits credential-free loopback HTTP URLs without query strings or fragments.`);
+  const kind = readiness.kind ?? "http";
+  if (kind === "tcp") {
+    if (
+      target.protocol !== "tcp:" ||
+      !loopback ||
+      target.username ||
+      target.password ||
+      target.search ||
+      target.hash ||
+      !target.port
+    ) {
+      throw new Error(`Unsafe readiness target: ${readiness.url}. v0 TCP readiness permits credential-free loopback tcp://host:port URLs.`);
+    }
+  } else if (kind === "http") {
+    if (
+      target.protocol !== "http:" ||
+      !loopback ||
+      target.username ||
+      target.password ||
+      target.search ||
+      target.hash
+    ) {
+      throw new Error(`Unsafe readiness target: ${readiness.url}. v0 permits credential-free loopback HTTP URLs without query strings or fragments.`);
+    }
+  } else {
+    throw new Error(`Unsupported readiness kind: ${kind}`);
   }
   for (const check of readiness.additional_checks ?? []) assertSafeReadiness(check);
   return readiness;
@@ -87,7 +104,9 @@ export async function compileProjectHarness(snapshot, config, options = {}) {
   const verifications = harnessConfig.verifications.map((verification) => {
     const command = commandsById.get(verification.command_id);
     if (!command) throw new Error(`Verification references unknown command: ${verification.command_id}`);
-    if (command.kind !== "verify") throw new Error(`Verification must reference a verify command: ${verification.command_id}`);
+    if (command.kind !== "verify" && command.kind !== "test") {
+      throw new Error(`Verification must reference a verify or test command: ${verification.command_id}`);
+    }
     for (const serviceId of verification.service_ids) {
       if (!servicesById.has(serviceId)) {
         throw new Error(`Verification ${verification.command_id} references unknown service: ${serviceId}`);

@@ -12,3 +12,7 @@ Next on the doctor Phase 2 ladder: continue remaining unproved quality commands 
 - Caps re-approved; scrub commits `322b994` / `cd8c633` in effect.
 - Receipt `verify-1789653847210-6e27af06`: still **121 failed / 47 errors / 3446 passed** (same as pre-scrub).
 - Root cause corrected: product settings defaults → localhost:5432, not host env leak. See `aiedu-demo-phase2-python-tests-triage.md`.
+
+## 2026-09-17 postgres+redis for python-tests
+
+Wired disposable `aiedu-postgres-redis` service onto `python-tests` (TCP readiness). Local-only under `local-projects/aiedu-demo/` (gitignored). DevHarness core: test+TCP verification support.

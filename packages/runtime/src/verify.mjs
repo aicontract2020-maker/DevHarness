@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { execFileSync, spawn } from "node:child_process";
 import { copyFileSync, createWriteStream, existsSync, mkdirSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
+import net from "node:net";
 import path from "node:path";
 import process from "node:process";
 import { finished } from "node:stream/promises";
@@ -327,6 +328,37 @@ export async function probeHttpReadiness(readiness, timeoutMs, fetchImplementati
   return { status: response.status, summary: `HTTP ${response.status}` };
 }
 
+export async function probeTcpReadiness(readiness, timeoutMs) {
+  const target = new URL(readiness.url);
+  const host = target.hostname === "[::1]" ? "::1" : target.hostname;
+  const port = Number(target.port);
+  await new Promise((resolve, reject) => {
+    const socket = net.connect({ host, port });
+    const timer = setTimeout(() => {
+      socket.destroy();
+      reject(new Error(`TCP probe timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+    timer.unref?.();
+    socket.once("connect", () => {
+      clearTimeout(timer);
+      socket.end();
+      resolve();
+    });
+    socket.once("error", (error) => {
+      clearTimeout(timer);
+      socket.destroy();
+      reject(error);
+    });
+  });
+  // Reuse HTTP expected_statuses convention: 200 means the TCP port accepted a connection.
+  return { status: 200, summary: `TCP ${host}:${port} open` };
+}
+
+export async function probeReadiness(readiness, timeoutMs, fetchImplementation = fetch) {
+  if (readiness.kind === "tcp") return probeTcpReadiness(readiness, timeoutMs);
+  return probeHttpReadiness(readiness, timeoutMs, fetchImplementation);
+}
+
 async function waitForReadinessCheck(handle, readiness, readinessProbe) {
   const deadline = Date.now() + readiness.timeout_ms;
   let lastObservation = "No HTTP response was received.";
@@ -580,7 +612,7 @@ async function stopOwnedService(plan, handle, hostEnvironment) {
 
 export async function executeVerificationPlan(plan, {
   environment = process.env,
-  readinessProbe = probeHttpReadiness
+  readinessProbe = probeReadiness
 } = {}) {
   const started = Date.now();
   const startedAt = new Date(started).toISOString();

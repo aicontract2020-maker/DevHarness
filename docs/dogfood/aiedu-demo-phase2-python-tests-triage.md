@@ -45,3 +45,17 @@ node packages/cli/src/cli.mjs verify \
 ```
 
 Caps: `dependency-install` + `service-runtime` (TTY APPROVE phrase).
+
+## 2026-09-17 harness services path
+
+DevHarness now allows:
+- `harness.verifications` on **test** (as well as verify) commands
+- TCP readiness (`kind: tcp`, `tcp://127.0.0.1:port`) for DB/cache ports
+
+aiedu local config (gitignored `local-projects/aiedu-demo/`):
+- launch `aiedu-postgres-redis-launch` → `scripts/start-postgres-redis-for-tests.sh`
+- service `aiedu-postgres-redis` (TCP 55432 + 56379 from compose overlay)
+- `python-tests` bound to that service; command inlines KB/USER/REDIS URLs to overlay ports
+
+Re-attest after caps approve.
+
