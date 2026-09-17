@@ -132,3 +132,43 @@ test("ignores manifests for a different commit", () => {
   assert.deepEqual(promotedClaimIds, []);
   assert.equal(next.id, baseline.id);
 });
+
+test("rebinds system-model flow evidence_refs to evidence ids", async () => {
+  const { applyEvidenceToSystemModel } = await import("../src/apply-evidence-to-baseline.mjs");
+  const model = {
+    schema_version: 1,
+    id: "system-model-draft-test",
+    repository_identity: "github.com/example/demo",
+    commit_sha: "a".repeat(40),
+    components: [{ id: "component-backend", kind: "backend", owner: "backend" }],
+    stores: [{ id: "store-primary", kind: "postgresql", disposable_test_available: false }],
+    entities: [],
+    trust_boundaries: [],
+    roles: [],
+    flows: [{
+      id: "flow-health-ready",
+      trigger: "probe",
+      outcome: "ready",
+      steps: [{
+        sequence: 1,
+        component_id: "component-backend",
+        action: "ready",
+        reads: [],
+        writes: [],
+        calls: [],
+        evidence_refs: ["backend/src/main.py"]
+      }]
+    }],
+    invariants: [],
+    risks: [],
+    unknowns: [],
+    verdict: "needs-evidence"
+  };
+  const evidenceId = "evidence-" + "e".repeat(32);
+  const { model: next, reboundFlowIds } = applyEvidenceToSystemModel(model, {
+    manifests: [passingManifest({ evidenceId })]
+  });
+  assert.deepEqual(reboundFlowIds, ["flow-health-ready"]);
+  assert.deepEqual(next.flows[0].steps[0].evidence_refs, [evidenceId]);
+  assert.notEqual(next.id, model.id);
+});

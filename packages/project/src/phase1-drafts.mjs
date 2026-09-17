@@ -530,7 +530,7 @@ export function buildDraftSystemModelFromOnboardingPlan(plan, { snapshot = null,
       evidence_refs: (claim.evidence_refs ?? []).slice(0, 8)
     });
   }
-  for (const claim of claims.filter((item) => ["not-covered", "unverified"].includes(item.status) && ["database", "security", "strategy"].includes(item.domain)).slice(0, 8)) {
+  for (const claim of claims.filter((item) => ["not-covered", "unverified"].includes(item.status) && ["database", "security"].includes(item.domain)).slice(0, 8)) {
     risks.push({
       id: `risk-gap-${claim.id}`.slice(0, 128),
       classification: "unverified",

@@ -1,9 +1,9 @@
 # Repository Understanding Brief (Phase 1)
 
-- Baseline id: `understanding-baseline-0ef4096e3d1a7c80bb1db81c`
+- Baseline id: `understanding-baseline-72b6c2c0c8bfb684e7b5c19b`
 - Repository: `github.com/Maple-Spark-Ai/AI-education-demo`
 - Revision: `7f32844e6d4e3bb721191f41479f01c57dbc51ac`
-- Captured: 2026-09-17T04:16:57.900Z
+- Captured: 2026-09-17T04:32:11.099Z
 - Verdict: **needs-evidence** (static Phase 1 never claims ready without runtime/test proof)
 
 ## Required domains
@@ -38,7 +38,7 @@
 - `database-migrations` · **test-confirmed** · info: Migration history is present or implied, but it has not been exercised.
 - `database-constraints` · **test-confirmed** · info: Constraints and transactional guarantees are not yet traced from source to store.
 - `database-queries` · **test-confirmed** · info: Query behavior and access patterns are not yet verified against a live database.
-- `database-ownership` · **not-covered** · blocking: Data ownership and lifecycle responsibilities are not yet modeled.
+- `database-ownership` · **test-confirmed** · info: Entity inventory was derived from models/migrations; lifecycle ownership still needs live proof.
 
 ### deployment
 
@@ -62,7 +62,7 @@
 
 ### security
 
-- `security-model` · **not-covered** · blocking: Roles, permissions, trust boundaries, state transitions, abuse cases and data lifecycle are not yet modeled.
+- `security-model` · **test-confirmed** · info: Roles and trust boundaries were derived from source gates; runtime authz proof still pending.
 
 ### strategy
 
@@ -74,7 +74,7 @@
 
 ## Model / strategy coverage (honest gaps)
 
-- System model: `system-model-draft-9b2f632e9820458a8b868fc2` · database=true · security=true · feature_flows=true
+- System model: `system-model-draft-96a21a76ef5e555dda807804` · database=true · security=true · feature_flows=true
 - Strategy: `design-strategy-draft-52f80b3989f08e1a05d7cd5b` v1 · proposed
 
 ## Onboarding rollup
@@ -95,18 +95,11 @@
 
 ## Path to understanding-ready
 
-- Verdict: **not ready** (11 blockers)
+- Verdict: **not ready** (4 blockers)
 
 - `baseline_verdict_not_ready`: Baseline artifact verdict is needs-evidence.
-- `blocking_claim`: Required domain database retains blocking claim database-ownership. · subject `database-ownership`
-- `domain_unproved`: Required domain security has no evidence-backed claim. · subject `security`
-- `live_domain_unproved`: Live domain security has not been test-confirmed or runtime-observed. · subject `security`
-- `blocking_claim`: Required domain security retains blocking claim security-model. · subject `security-model`
 - `domain_unproved`: Required domain strategy has no evidence-backed claim. · subject `strategy`
 - `blocking_claim`: Required domain strategy retains blocking claim design-strategy. · subject `design-strategy`
-- `system_flow_evidence_invalid`: Flow flow-health-ready references missing or stale evidence backend/src/main.py. · subject `flow-health-ready`
-- `system_flow_evidence_invalid`: Flow flow-health-ready references missing or stale evidence backend/src/main.py. · subject `flow-health-ready`
-- `system_model_incomplete`: The referenced system model is not complete. · subject `system-model-draft-9b2f632e9820458a8b868fc2`
 - `strategy_not_approved`: Both the referenced strategy and baseline require an independent approved human gate receipt. · subject `design-strategy-draft-52f80b3989f08e1a05d7cd5b`
 
 ### Strategy gate

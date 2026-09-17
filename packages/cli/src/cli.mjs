@@ -19,11 +19,14 @@ import { createProjectDeclarationReview } from "../../project/src/project-declar
 import { compileProjectHarness, formatProjectHarness } from "../../project/src/harness.mjs";
 import { hashContract } from "../../project/src/harness.mjs";
 import { createOnboardingPlan, formatRepositoryUnderstandingBrief } from "../../project/src/onboard.mjs";
-import { createValidatedPhase1UnderstandingBundleFromOnboardingPlan, formatAuditableUnderstandingBrief } from "../../project/src/understanding-baseline.mjs";
+import { createValidatedPhase1UnderstandingBundleFromOnboardingPlan, formatAuditableUnderstandingBrief, promoteBaselineVerdictIfOnlyMissingReadyFlag } from "../../project/src/understanding-baseline.mjs";
+import { reconcileBaselineClaimsWithModel } from "../../project/src/phase1-reconcile.mjs";
+import { applyEvidenceToUnderstandingBaseline } from "../../project/src/apply-evidence-to-baseline.mjs";
+import { listVerifiedEvidenceManifests } from "../../runtime/src/supervisor-store.mjs";
 import { evaluatePhase1ReadyGaps } from "../../project/src/understanding-ready-gaps.mjs";
 import { createGoalUnderstandingCheckpoint } from "../../project/src/alignment.mjs";
 import { resolveExternalDataRoot } from "../../project/src/path-policy.mjs";
-import { defaultDataRoot, defaultSupervisorRoot, onboardingPlanPath, understandingBaselinePath, systemModelPath, designStrategyPath, projectHarnessPath, writeOnboardingPlan, writeUnderstandingBaseline, writeSystemModel, writeDesignStrategy, writeProjectHarness } from "../../runtime/src/data-store.mjs";
+import { defaultDataRoot, defaultSupervisorRoot, onboardingPlanPath, understandingBaselinePath, systemModelPath, designStrategyPath, projectHarnessPath, writeOnboardingPlan, writeUnderstandingBaseline, writeSystemModel, writeDesignStrategy, writeProjectHarness, readJsonIfExists } from "../../runtime/src/data-store.mjs";
 import { loadRunInteraction, loadRunSourceArtifact, appendGoalRunCheckpoint, createStoredGoalRun, loadGoalRun, loadRunScorecard, runStoragePaths } from "../../runtime/src/goal-run-store.mjs";
 import {
   buildLiveAlignmentLease,
@@ -2035,13 +2038,13 @@ export async function runCli(argv, io = console, services = {}) {
     const trustContext = snapshot.repository.git.head_sha ? await loadTrustedEvaluationContext({ snapshot }) : undefined;
     const report = evaluateReadiness(snapshot, { trustContext, config, configError, configSource });
     const plan = await createOnboardingPlan(snapshot, { report, config, configError, configSource });
-    const phase1 = plan.commit_sha
-      ? await createValidatedPhase1UnderstandingBundleFromOnboardingPlan(plan, { snapshot })
-      : null;
-    const understandingBaseline = phase1?.baseline ?? null;
-    const systemModel = phase1?.systemModel ?? null;
-    const designStrategy = phase1?.strategy ?? null;
     const { dataRoot } = resolveExternalDataRoot(snapshot.repository.root_uri, options.dataRoot);
+    const phase1 = plan.commit_sha
+      ? await createValidatedPhase1UnderstandingBundleFromOnboardingPlan(plan, { snapshot, dataRoot })
+      : null;
+    let understandingBaseline = phase1?.baseline ?? null;
+    let systemModel = phase1?.systemModel ?? null;
+    let designStrategy = phase1?.strategy ?? null;
     const targetPath = onboardingPlanPath(dataRoot, snapshot.repository.identity, plan.id);
     const stored = options.write ? await writeOnboardingPlan(targetPath, plan) : { path: targetPath, written: false };
     let baselineStored = { path: null, written: false };
@@ -2057,7 +2060,32 @@ export async function runCli(argv, io = console, services = {}) {
     }
     if (options.write && designStrategy) {
       const strategyPath = designStrategyPath(dataRoot, snapshot.repository.identity, designStrategy.id);
-      strategyStored = await writeDesignStrategy(strategyPath, designStrategy);
+      const existingStrategy = await readJsonIfExists(strategyPath);
+      if (existingStrategy?.status === "approved" && existingStrategy.artifact_sha256 === designStrategy.artifact_sha256) {
+        designStrategy = existingStrategy;
+        strategyStored = { path: strategyPath, written: false, preserved_approved: true };
+        if (understandingBaseline?.strategy?.status !== "approved") {
+          understandingBaseline = {
+            ...understandingBaseline,
+            strategy: {
+              ...understandingBaseline.strategy,
+              status: "approved",
+              artifact_sha256: designStrategy.artifact_sha256
+            }
+          };
+          understandingBaseline = reconcileBaselineClaimsWithModel(understandingBaseline, {
+            systemModel,
+            strategy: designStrategy
+          });
+          const manifests = await listVerifiedEvidenceManifests(defaultSupervisorRoot(), snapshot.repository.identity);
+          understandingBaseline = applyEvidenceToUnderstandingBaseline(understandingBaseline, {
+            manifests,
+            commitSha: understandingBaseline.commit_sha
+          }).baseline;
+        }
+      } else {
+        strategyStored = await writeDesignStrategy(strategyPath, designStrategy);
+      }
     }
     let readyGaps = null;
     if (understandingBaseline && systemModel && designStrategy) {
@@ -2067,6 +2095,19 @@ export async function runCli(argv, io = console, services = {}) {
         systemModel,
         strategy: designStrategy
       });
+      const promoted = promoteBaselineVerdictIfOnlyMissingReadyFlag(understandingBaseline, readyGaps.evaluation);
+      if (promoted.verdict === "ready" && promoted.id !== understandingBaseline.id) {
+        understandingBaseline = promoted;
+        if (options.write) {
+          const baselinePath = understandingBaselinePath(dataRoot, snapshot.repository.identity, understandingBaseline.id);
+          baselineStored = await writeUnderstandingBaseline(baselinePath, understandingBaseline);
+        }
+        readyGaps = await evaluatePhase1ReadyGaps(repoPath, {
+          baseline: understandingBaseline,
+          systemModel,
+          strategy: designStrategy
+        });
+      }
     }
     const brief = understandingBaseline
       ? formatAuditableUnderstandingBrief(understandingBaseline, {

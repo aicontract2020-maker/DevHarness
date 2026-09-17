@@ -5,9 +5,14 @@
  */
 
 import { expectedDomainsFromSnapshot } from "../../core/src/trusted-context.mjs";
-import { defaultSupervisorRoot } from "../../runtime/src/data-store.mjs";
+import { defaultDataRoot, defaultSupervisorRoot, designStrategyPath, readJsonIfExists } from "../../runtime/src/data-store.mjs";
 import { listVerifiedEvidenceManifests } from "../../runtime/src/supervisor-store.mjs";
-import { applyEvidenceToUnderstandingBaseline } from "./apply-evidence-to-baseline.mjs";
+import { applyEvidenceToSystemModel, applyEvidenceToUnderstandingBaseline } from "./apply-evidence-to-baseline.mjs";
+import {
+  promoteBaselineVerdictIfOnlyMissingReadyFlag,
+  reconcileBaselineClaimsWithModel,
+  reconcileSystemModelHonesty
+} from "./phase1-reconcile.mjs";
 import { assertContract } from "./contracts.mjs";
 import { hashContract } from "./harness.mjs";
 import { buildDraftSystemModelFromOnboardingPlan, buildProposedDesignStrategyFromOnboardingPlan, createValidatedPhase1DraftsFromOnboardingPlan } from "./phase1-drafts.mjs";
@@ -248,30 +253,73 @@ export function formatAuditableUnderstandingBrief(baseline, {
 }
 
 export async function createValidatedPhase1UnderstandingBundleFromOnboardingPlan(plan, options = {}) {
-  const { systemModel, strategy } = await createValidatedPhase1DraftsFromOnboardingPlan(plan, options);
+  let { systemModel, strategy } = await createValidatedPhase1DraftsFromOnboardingPlan(plan, options);
+  const dataRoot = options.dataRoot ?? defaultDataRoot();
+  try {
+    const existingStrategy = await readJsonIfExists(designStrategyPath(dataRoot, plan.repository_identity, strategy.id));
+    if (
+      existingStrategy?.status === "approved" &&
+      existingStrategy.artifact_sha256 === strategy.artifact_sha256 &&
+      existingStrategy.commit_sha === strategy.commit_sha
+    ) {
+      strategy = existingStrategy;
+    }
+  } catch {
+    // Keep the freshly proposed draft when no approved twin is stored.
+  }
+  systemModel = reconcileSystemModelHonesty(systemModel, {
+    snapshot: options.snapshot,
+    strategy,
+    repositoryRoot: options.repositoryRoot ?? null
+  });
+
   let baseline = buildRepositoryUnderstandingBaselineFromOnboardingPlan(plan, {
     ...options,
     systemModel,
     strategy
   });
+  baseline = reconcileBaselineClaimsWithModel(baseline, { systemModel, strategy });
+
   let evidenceApply = { promotedClaimIds: [], reboundClaimIds: [], evidenceIdsUsed: [] };
+  let modelEvidenceApply = { reboundFlowIds: [], evidenceIdsUsed: [] };
   const snapshot = options.snapshot;
   if (snapshot?.repository?.identity && snapshot?.repository?.git?.head_sha) {
     const manifests = await listVerifiedEvidenceManifests(
       options.supervisorRoot ?? defaultSupervisorRoot(),
       snapshot.repository.identity
     );
-    evidenceApply = applyEvidenceToUnderstandingBaseline(baseline, {
-      manifests,
-      commitSha: snapshot.repository.git.head_sha
-    });
+    const commitSha = snapshot.repository.git.head_sha;
+    evidenceApply = applyEvidenceToUnderstandingBaseline(baseline, { manifests, commitSha });
     baseline = evidenceApply.baseline;
+    modelEvidenceApply = applyEvidenceToSystemModel(systemModel, { manifests, commitSha });
+    systemModel = modelEvidenceApply.model;
+    // Re-run honesty after flow evidence bind so complete promotion can fire.
+    systemModel = reconcileSystemModelHonesty(systemModel, {
+      snapshot,
+      strategy,
+      repositoryRoot: options.repositoryRoot ?? null
+    });
+    // Keep baseline.models.system_model_id aligned after rehash.
+    if (baseline.models?.system_model_id !== systemModel.id) {
+      const { id: _omit, ...rest } = baseline;
+      const body = {
+        ...rest,
+        models: { ...baseline.models, system_model_id: systemModel.id }
+      };
+      baseline = {
+        ...body,
+        id: `understanding-baseline-${hashContract(body).slice(0, 24)}`
+      };
+    }
   }
+  await assertContract("system-model", systemModel);
   await assertContract("repository-understanding-baseline", baseline);
-  return { baseline, systemModel, strategy, evidenceApply };
+  return { baseline, systemModel, strategy, evidenceApply, modelEvidenceApply };
 }
 
 export async function createValidatedUnderstandingBaselineFromOnboardingPlan(plan, options = {}) {
   const { baseline } = await createValidatedPhase1UnderstandingBundleFromOnboardingPlan(plan, options);
   return baseline;
 }
+
+export { promoteBaselineVerdictIfOnlyMissingReadyFlag } from "./phase1-reconcile.mjs";

@@ -6,6 +6,7 @@ import { strategyArtifactHash } from "../../core/src/trusted-context.mjs";
 import { assertContract } from "../../project/src/contracts.mjs";
 import { loadRunSourceArtifact, loadGoalRun } from "./goal-run-store.mjs";
 import {
+  defaultSupervisorRoot,
   designStrategyPath,
   understandingBaselinePath,
   overwriteDesignStrategy,
@@ -13,6 +14,9 @@ import {
   readJsonIfExists
 } from "./data-store.mjs";
 import { createSupervisorApprovalRequest } from "./supervisor-approval.mjs";
+import { listVerifiedEvidenceManifests } from "./supervisor-store.mjs";
+import { applyEvidenceToUnderstandingBaseline } from "../../project/src/apply-evidence-to-baseline.mjs";
+import { reconcileBaselineClaimsWithModel } from "../../project/src/phase1-reconcile.mjs";
 
 export async function loadDesignStrategyForRun({ dataRoot, repositoryIdentity, runId }) {
   const artifact = await loadRunSourceArtifact(dataRoot, repositoryIdentity, runId, "artifact-design-strategy");
@@ -116,7 +120,7 @@ export async function applyStrategyApprovalReceipt({
     const baselinePath = understandingBaselinePath(dataRoot, repositoryIdentity, resolvedBaselineId);
     const baseline = await readJsonIfExists(baselinePath);
     if (baseline?.strategy?.strategy_id === promoted.id) {
-      const next = {
+      let next = {
         ...baseline,
         strategy: {
           ...baseline.strategy,
@@ -124,6 +128,19 @@ export async function applyStrategyApprovalReceipt({
           artifact_sha256: promoted.artifact_sha256
         }
       };
+      next = reconcileBaselineClaimsWithModel(next, { strategy: promoted });
+      try {
+        const manifests = await listVerifiedEvidenceManifests(
+          defaultSupervisorRoot(),
+          repositoryIdentity
+        );
+        next = applyEvidenceToUnderstandingBaseline(next, {
+          manifests,
+          commitSha: next.commit_sha
+        }).baseline;
+      } catch {
+        // Evidence binding is best-effort on approve; strategy status still lands.
+      }
       baselineStored = await overwriteUnderstandingBaseline(baselinePath, next);
     }
   }

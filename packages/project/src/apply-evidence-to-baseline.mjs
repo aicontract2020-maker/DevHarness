@@ -1,17 +1,18 @@
 /**
- * Bind supervisor test-result evidence into a Phase 1 understanding baseline.
- * Promotes eligible claims to test-confirmed with evidence record ids (not file paths).
+ * Bind supervisor test-result evidence into Phase 1 understanding artifacts.
+ * Promotes eligible baseline claims and rebinds system-model flow evidence_refs
+ * to evidence record ids (not file paths).
  */
 
 import { hashContract } from "./harness.mjs";
 
 const ELIGIBLE = new Set(["detected", "unverified", "documented", "code-confirmed", "test-confirmed"]);
 
-function looksLikeEvidenceId(ref) {
+export function looksLikeEvidenceId(ref) {
   return /^evidence-[0-9a-f]{8,}$/i.test(String(ref ?? ""));
 }
 
-function collectPassingTestResults(manifests, { repositoryIdentity, commitSha }) {
+export function collectPassingTestResults(manifests, { repositoryIdentity, commitSha }) {
   const byId = new Map();
   for (const manifest of manifests ?? []) {
     if (manifest?.commit_sha && manifest.commit_sha !== commitSha) continue;
@@ -29,6 +30,24 @@ function collectPassingTestResults(manifests, { repositoryIdentity, commitSha })
     }
   }
   return [...byId.values()];
+}
+
+function rehashBaseline(baseline, claims) {
+  const { id: _omit, ...rest } = baseline;
+  const body = { ...rest, claims };
+  return {
+    ...body,
+    id: `understanding-baseline-${hashContract(body).slice(0, 24)}`
+  };
+}
+
+function rehashSystemModel(model, patch) {
+  const { id: _omit, ...rest } = model;
+  const body = { ...rest, ...patch };
+  return {
+    ...body,
+    id: `system-model-draft-${hashContract(body).slice(0, 24)}`
+  };
 }
 
 /**
@@ -59,21 +78,14 @@ export function applyEvidenceToUnderstandingBaseline(baseline, {
     const alreadyBound = existingIds.some((id) => evidenceIdsUsed.includes(id));
     if (claim.status === "test-confirmed" && alreadyBound) return claim;
 
-    const nextRefs = evidenceIdsUsed.slice(0, 8);
-    const wasProved = claim.status === "test-confirmed" || claim.status === "code-confirmed";
-    if (wasProved && alreadyBound === false && claim.status === "test-confirmed") {
-      reboundClaimIds.push(claim.id);
-    } else if (claim.status !== "test-confirmed") {
-      promotedClaimIds.push(claim.id);
-    } else {
-      reboundClaimIds.push(claim.id);
-    }
+    if (claim.status !== "test-confirmed") promotedClaimIds.push(claim.id);
+    else reboundClaimIds.push(claim.id);
 
     return {
       ...claim,
       status: "test-confirmed",
       severity: "info",
-      evidence_refs: nextRefs,
+      evidence_refs: evidenceIdsUsed.slice(0, 8),
       affected_paths: Array.isArray(claim.affected_paths) ? claim.affected_paths : []
     };
   });
@@ -82,11 +94,58 @@ export function applyEvidenceToUnderstandingBaseline(baseline, {
     return { baseline, promotedClaimIds: [], reboundClaimIds: [], evidenceIdsUsed };
   }
 
-  const { id: _omit, ...rest } = baseline;
-  const body = { ...rest, claims };
-  const next = {
-    ...body,
-    id: `understanding-baseline-${hashContract(body).slice(0, 24)}`
+  return {
+    baseline: rehashBaseline(baseline, claims),
+    promotedClaimIds,
+    reboundClaimIds,
+    evidenceIdsUsed
   };
-  return { baseline: next, promotedClaimIds, reboundClaimIds, evidenceIdsUsed };
 }
+
+/**
+ * Replace path-like flow evidence_refs with current test-result evidence ids.
+ */
+export function applyEvidenceToSystemModel(model, {
+  manifests = [],
+  commitSha = null
+} = {}) {
+  if (!model?.repository_identity || !model?.commit_sha) {
+    throw new Error("applyEvidenceToSystemModel requires a model with identity and commit_sha.");
+  }
+  const sha = commitSha ?? model.commit_sha;
+  const records = collectPassingTestResults(manifests, {
+    repositoryIdentity: model.repository_identity,
+    commitSha: sha
+  });
+  const evidenceIdsUsed = records.map((record) => record.id);
+  if (evidenceIdsUsed.length === 0) {
+    return { model, reboundFlowIds: [], evidenceIdsUsed: [] };
+  }
+
+  const nextRefs = evidenceIdsUsed.slice(0, 8);
+  const reboundFlowIds = [];
+  const flows = (model.flows ?? []).map((flow) => {
+    let changed = false;
+    const steps = (flow.steps ?? []).map((step) => {
+      const refs = step.evidence_refs ?? [];
+      const needsRebind = refs.length === 0 || refs.some((ref) => !looksLikeEvidenceId(ref));
+      if (!needsRebind && refs.every((ref) => evidenceIdsUsed.includes(ref))) return step;
+      changed = true;
+      return { ...step, evidence_refs: nextRefs };
+    });
+    if (changed) reboundFlowIds.push(flow.id);
+    return changed ? { ...flow, steps } : flow;
+  });
+
+  if (reboundFlowIds.length === 0) {
+    return { model, reboundFlowIds: [], evidenceIdsUsed };
+  }
+
+  return {
+    model: rehashSystemModel(model, { flows }),
+    reboundFlowIds,
+    evidenceIdsUsed
+  };
+}
+
+export { rehashBaseline, rehashSystemModel };
