@@ -58,6 +58,7 @@ import { findApprovedVcsWrite, loadCapabilityAuthorizationView, requestCapabilit
 import { createVerificationPlan, executeVerificationPlan, formatVerificationPlan } from "../../runtime/src/verify.mjs";
 import { createPostScopeAdvanceCheckpoint, postScopeAdvanceSupported } from "../../runtime/src/post-scope-advance.mjs";
 import { proposeControlledChangeWithAgent } from "../../runtime/src/change-proposal.mjs";
+import { selectVerifyCommandId, verifyHintFromReadiness } from "../../runtime/src/select-verify-command.mjs";
 import {
   createDeliveryAdvanceCheckpoint,
   deliveryAdvanceSupported
@@ -109,6 +110,7 @@ Commands:
   advance   Perform the next safe Goal Run step: static understanding from received, post-scope plan→change→verify prep after Gate 1, or Delivery Brief prep after a ready tip scorecard.
              --mode docs-only (default) writes an external readiness summary. --mode controlled-change requires approved vcs-write and commits a bounded change in an isolated worktree.
              For controlled-change, pass --change-json PATH or --agent-propose (Codex/local agent proposes a validated changeSpec; runtime still applies it).
+             If --command is omitted, advance picks a declared quality command from the harness when the goal/change uniquely matches.
   align     Bootstrap a live Alignment bundle, or tick it with --continue after answers/approvals.
              --continue loads exact HTTPS recipes from --research-recipes or <config-dir>/research-recipes.json
              and registers builtin adapters: codex (real Codex CLI + parent provider proxy) and
@@ -1263,7 +1265,16 @@ export async function runCli(argv, io = console, services = {}) {
     const capabilities = run.state === "clarifying"
       ? await loadCapabilityAuthorizationView({ dataRoot, supervisorRoot, repositoryIdentity: snapshot.repository.identity, runId: options.runId, now: statusNow })
       : null;
-    const result = { run, scorecard, ...(capabilities ? { capabilities } : {}), next_action: capabilities?.next_action ?? nextRunAction(run) };
+    let statusNext = capabilities?.next_action ?? nextRunAction(run);
+    if (run.state === "verifying" && !capabilities?.next_action) {
+      try {
+        const readiness = await loadRunSourceArtifact(dataRoot, snapshot.repository.identity, options.runId, "artifact-readiness-summary");
+        const hint = verifyHintFromReadiness(readiness.value, { runId: options.runId });
+        if (hint && scorecard?.verdict !== "ready") statusNext = `Run \`${hint}\`.`;
+        else if (hint && scorecard?.verdict === "ready") statusNext = `Tip scorecard is ready. Run \`devharness advance --run ${options.runId}\` to open Gate 2, or re-run \`${hint}\` if evidence went stale.`;
+      } catch {}
+    }
+    const result = { run, scorecard, ...(capabilities ? { capabilities } : {}), next_action: statusNext };
     io.log(options.format === "json"
       ? JSON.stringify(result, null, 2)
       : `Goal Run: ${run.id}\nGoal: ${run.goal.refined ?? run.goal.original}\nState: ${run.state}\nRevision: ${run.current_head_sha.slice(0, 12)}\nReview: ${scorecard.verdict} · proof ${scorecard.proof_coverage.score}/100 · ${scorecard.exception_counts.blocking} blocking${capabilities ? `\nCapabilities: ${capabilities.counts.approved} approved · ${capabilities.counts.pending} pending · ${capabilities.counts.unrequested} unrequested · ${capabilities.counts.rejected + capabilities.counts.expired + capabilities.counts.stale} blocked` : ""}\nNext: ${result.next_action}`);
@@ -1335,13 +1346,36 @@ export async function runCli(argv, io = console, services = {}) {
         });
         changeSpec = agentProposal.change_spec;
       }
+      let verifyCommandId = options.commandId ?? null;
+      let verifyCommandSelection = null;
+      if (!verifyCommandId) {
+        try {
+          const { config } = await loadConfiguredProject(snapshot, options);
+          verifyCommandSelection = selectVerifyCommandId({
+            commands: config?.quality?.commands ?? [],
+            goalText: currentRun.goal.refined ?? currentRun.goal.original,
+            changeSpec,
+            deliveryMode,
+            explicitCommandId: null
+          });
+          verifyCommandId = verifyCommandSelection.command_id;
+        } catch (error) {
+          verifyCommandSelection = {
+            command_id: null,
+            reason: error.message,
+            candidates: []
+          };
+        }
+      } else {
+        verifyCommandSelection = { command_id: verifyCommandId, reason: "explicit --command", candidates: [] };
+      }
       const checkpoint = await createPostScopeAdvanceCheckpoint({
         run: currentRun,
         snapshot,
         dataRoot,
         priorArtifacts,
         artifactDir: options.artifactDir,
-        verifyCommandId: options.commandId,
+        verifyCommandId,
         deliveryMode,
         vcsWriteAuthorized,
         changeSpec,
@@ -1381,14 +1415,14 @@ export async function runCli(argv, io = console, services = {}) {
         artifacts: checkpoint.artifacts
       });
       let verifyProbe = null;
-      if (options.commandId) {
+      if (verifyCommandId) {
         try {
           const { config } = await loadConfiguredProject(snapshot, options);
           const changeCommit = checkpoint.delivery.change_commit_sha ?? null;
           const plan = await createVerificationPlan({
             snapshot,
             config,
-            commandId: options.commandId,
+            commandId: verifyCommandId,
             goalRunId: options.runId,
             dataRoot,
             timeoutMs: options.timeoutMs,
@@ -1411,24 +1445,34 @@ export async function runCli(argv, io = console, services = {}) {
           const authority = evaluateVerificationExecutionAuthority(plan, authorizationView, { controlledChange });
           const commitFlag = changeCommit ? ` --commit ${changeCommit}` : "";
           verifyProbe = {
-            command_id: options.commandId,
+            command_id: verifyCommandId,
+            selection_reason: verifyCommandSelection?.reason ?? null,
             commit_sha: changeCommit ?? plan.commit_sha,
             authority_allowed: authority.allowed,
             required_capability_ids: authority.required_capability_ids,
             missing: authority.missing,
             reasons: authority.reasons,
             next_action: authority.allowed
-              ? `devharness verify --run ${options.runId} --command ${options.commandId}${commitFlag} --execute --attest`
+              ? `devharness verify --run ${options.runId} --command ${verifyCommandId}${commitFlag} --execute --attest`
               : `Capability gate: ${authority.reasons.map((reason) => reason.message).join(" ")}`
           };
         } catch (error) {
           verifyProbe = {
-            command_id: options.commandId,
+            command_id: verifyCommandId,
+            selection_reason: verifyCommandSelection?.reason ?? null,
             authority_allowed: false,
             reasons: [{ code: "verify_probe_failed", message: error.message }],
             next_action: error.message
           };
         }
+      } else if (verifyCommandSelection) {
+        verifyProbe = {
+          command_id: null,
+          selection_reason: verifyCommandSelection.reason,
+          candidates: verifyCommandSelection.candidates,
+          authority_allowed: false,
+          next_action: "Pass --command ID explicitly; no harness quality command matched this change."
+        };
       }
       const result = {
         mode: "post-scope",
@@ -1733,9 +1777,18 @@ export async function runCli(argv, io = console, services = {}) {
   }
 
   if (options.command === "verify") {
-    if (!options.commandId) throw new Error("verify requires --command ID");
     if (options.attest && !options.execute) throw new Error("--attest requires --execute; planned commands cannot become evidence");
     if (options.execute && !options.runId) throw new Error("Public execution requires --run ID so signed capability authority can be verified.");
+    const { dataRoot: verifyDataRoot } = resolveExternalDataRoot(snapshot.repository.root_uri, options.dataRoot);
+    if (!options.commandId && options.runId) {
+      try {
+        const readiness = await loadRunSourceArtifact(verifyDataRoot, snapshot.repository.identity, options.runId, "artifact-readiness-summary");
+        if (readiness.value?.verify_command_id) options.commandId = readiness.value.verify_command_id;
+      } catch {}
+    }
+    if (!options.commandId) {
+      throw new Error("verify requires --command ID (or a readiness summary that already selected one during advance)");
+    }
     const { config } = await loadConfiguredProject(snapshot, options);
     const plan = await createVerificationPlan({
       snapshot,
