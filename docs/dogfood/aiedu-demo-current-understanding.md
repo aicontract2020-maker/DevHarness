@@ -1,27 +1,25 @@
 # AIedu demo · auditable understanding baseline
 
-Generated from DevHarness Phase 1 `repository-understanding-baseline` (not a hand stub).
+Generated from DevHarness Phase 1 bundle (baseline + draft system-model + proposed design-strategy).
 
 - Date: 2026-09-16 (America/Toronto)
 - Repo under study: `aiedu-demo` / AI-education-demo
-- Baseline id: `understanding-baseline-52e375ff2ab315cb03c0ac78`
-- Verdict: `needs-evidence`
+- Baseline id: `understanding-baseline-0bd395993f0c6888652ae35f` · verdict `needs-evidence`
+- System model draft: `system-model-draft-0347787060f8d93400cd59d7` · verdict `needs-evidence`
+- Design strategy draft: `design-strategy-draft-52f80b3989f08e1a05d7cd5b` · status `proposed`
 - Commit: `7f32844e6d4e3bb721191f41479f01c57dbc51ac`
-- Artifact path: `/Users/kaimaplespark/.local/state/devharness/projects/3b5e3cf63c8008d4b848ec5ef0e6d33482b41e63c5da0288c9ee12b346df4b17/understanding/understanding-baseline-52e375ff2ab315cb03c0ac78.json`
+- Paths: baseline / system-models / strategies under DevHarness project state
 - Onboarding plan: `onboard-89c2e6b6bebf7243d6d24b66427705f9`
 - Working copy: `local-projects/aiedu-demo/worktree-dogfood-clean`
-- Goal run (advance dogfood): `run-7b0bd767-ae4a-4f0b-8d20-bf01365e1b96`
-- Advance baseline id: `understanding-baseline-184c07f92e7221b8dcc5a4df`
-- Checkpoint: `.../runs/run-7b0bd767-ae4a-4f0b-8d20-bf01365e1b96/checkpoints/00000007`
 
 ---
 
 # Repository Understanding Brief (Phase 1)
 
-- Baseline id: `understanding-baseline-52e375ff2ab315cb03c0ac78`
+- Baseline id: `understanding-baseline-0bd395993f0c6888652ae35f`
 - Repository: `github.com/Maple-Spark-Ai/AI-education-demo`
 - Revision: `7f32844e6d4e3bb721191f41479f01c57dbc51ac`
-- Captured: 2026-09-17T03:48:36.630Z
+- Captured: 2026-09-17T03:59:18.820Z
 - Verdict: **needs-evidence** (static Phase 1 never claims ready without runtime/test proof)
 
 ## Required domains
@@ -93,8 +91,8 @@ Generated from DevHarness Phase 1 `repository-understanding-baseline` (not a han
 
 ## Model / strategy coverage (honest gaps)
 
-- System model: `system-model-pending` · database=false · security=false · feature_flows=false
-- Strategy: `strategy-pending` v1 · proposed
+- System model: `system-model-draft-0347787060f8d93400cd59d7` · database=false · security=false · feature_flows=false
+- Strategy: `design-strategy-draft-52f80b3989f08e1a05d7cd5b` v1 · proposed
 
 ## Onboarding rollup
 
@@ -116,5 +114,5 @@ Generated from DevHarness Phase 1 `repository-understanding-baseline` (not a han
 
 - This brief is derived from the revision-bound onboarding plan + repository snapshot.
 - Detection and documentation are not promoted to runtime proof.
-- `system-model-pending` / `strategy-pending` mark missing Phase 1 products that still need evidence-backed modeling and human approval.
+- Draft `system-model` / `design-strategy` artifacts are revision-bound but remain `needs-evidence` / `proposed` until live proof and a human strategy gate.
 

@@ -19,10 +19,10 @@ import { createProjectDeclarationReview } from "../../project/src/project-declar
 import { compileProjectHarness, formatProjectHarness } from "../../project/src/harness.mjs";
 import { hashContract } from "../../project/src/harness.mjs";
 import { createOnboardingPlan, formatRepositoryUnderstandingBrief } from "../../project/src/onboard.mjs";
-import { createValidatedUnderstandingBaselineFromOnboardingPlan, formatAuditableUnderstandingBrief } from "../../project/src/understanding-baseline.mjs";
+import { createValidatedPhase1UnderstandingBundleFromOnboardingPlan, formatAuditableUnderstandingBrief } from "../../project/src/understanding-baseline.mjs";
 import { createGoalUnderstandingCheckpoint } from "../../project/src/alignment.mjs";
 import { resolveExternalDataRoot } from "../../project/src/path-policy.mjs";
-import { defaultDataRoot, defaultSupervisorRoot, onboardingPlanPath, understandingBaselinePath, projectHarnessPath, writeOnboardingPlan, writeUnderstandingBaseline, writeProjectHarness } from "../../runtime/src/data-store.mjs";
+import { defaultDataRoot, defaultSupervisorRoot, onboardingPlanPath, understandingBaselinePath, systemModelPath, designStrategyPath, projectHarnessPath, writeOnboardingPlan, writeUnderstandingBaseline, writeSystemModel, writeDesignStrategy, writeProjectHarness } from "../../runtime/src/data-store.mjs";
 import { loadRunInteraction, loadRunSourceArtifact, appendGoalRunCheckpoint, createStoredGoalRun, loadGoalRun, loadRunScorecard, runStoragePaths } from "../../runtime/src/goal-run-store.mjs";
 import {
   buildLiveAlignmentLease,
@@ -1638,10 +1638,21 @@ export async function runCli(argv, io = console, services = {}) {
       artifacts: checkpoint.artifacts
     });
     const understandingArtifact = checkpoint.artifacts.find((entry) => entry.id === "artifact-understanding-baseline") ?? null;
-    const result = { run: checkpoint.run, interaction: checkpoint.packet, scorecard, path: stored.paths.checkpoint, understanding_baseline_id: understandingArtifact?.value?.id ?? null, next_action: nextRunAction(checkpoint.run) };
+    const systemModelArtifact = checkpoint.artifacts.find((entry) => entry.id === "artifact-system-model") ?? null;
+    const strategyArtifact = checkpoint.artifacts.find((entry) => entry.id === "artifact-design-strategy") ?? null;
+    const result = {
+      run: checkpoint.run,
+      interaction: checkpoint.packet,
+      scorecard,
+      path: stored.paths.checkpoint,
+      understanding_baseline_id: understandingArtifact?.value?.id ?? null,
+      system_model_id: systemModelArtifact?.value?.id ?? null,
+      design_strategy_id: strategyArtifact?.value?.id ?? null,
+      next_action: nextRunAction(checkpoint.run)
+    };
     io.log(options.format === "json"
       ? JSON.stringify(result, null, 2)
-      : `Goal Run advanced: ${checkpoint.run.id}\nState: ${checkpoint.run.state}\nAlignment: ${checkpoint.packet.verdict}\nUnderstanding baseline: ${understandingArtifact?.value?.id ?? "n/a"} (${understandingArtifact?.value?.verdict ?? "n/a"})\nScope approval: unavailable\nMissing proof: ${onboardingPlan.blockers.length}\nNext: ${result.next_action}\nStored externally: ${stored.paths.checkpoint}`);
+      : `Goal Run advanced: ${checkpoint.run.id}\nState: ${checkpoint.run.state}\nAlignment: ${checkpoint.packet.verdict}\nUnderstanding baseline: ${understandingArtifact?.value?.id ?? "n/a"} (${understandingArtifact?.value?.verdict ?? "n/a"})\nSystem model: ${systemModelArtifact?.value?.id ?? "n/a"} (${systemModelArtifact?.value?.verdict ?? "n/a"})\nDesign strategy: ${strategyArtifact?.value?.id ?? "n/a"} (${strategyArtifact?.value?.status ?? "n/a"})\nScope approval: unavailable\nMissing proof: ${onboardingPlan.blockers.length}\nNext: ${result.next_action}\nStored externally: ${stored.paths.checkpoint}`);
     return checkpoint.packet.verdict === "ready" ? 0 : 2;
   }
 
@@ -1975,16 +1986,29 @@ export async function runCli(argv, io = console, services = {}) {
     const trustContext = snapshot.repository.git.head_sha ? await loadTrustedEvaluationContext({ snapshot }) : undefined;
     const report = evaluateReadiness(snapshot, { trustContext, config, configError, configSource });
     const plan = await createOnboardingPlan(snapshot, { report, config, configError, configSource });
-    const understandingBaseline = plan.commit_sha
-      ? await createValidatedUnderstandingBaselineFromOnboardingPlan(plan)
+    const phase1 = plan.commit_sha
+      ? await createValidatedPhase1UnderstandingBundleFromOnboardingPlan(plan, { snapshot })
       : null;
+    const understandingBaseline = phase1?.baseline ?? null;
+    const systemModel = phase1?.systemModel ?? null;
+    const designStrategy = phase1?.strategy ?? null;
     const { dataRoot } = resolveExternalDataRoot(snapshot.repository.root_uri, options.dataRoot);
     const targetPath = onboardingPlanPath(dataRoot, snapshot.repository.identity, plan.id);
     const stored = options.write ? await writeOnboardingPlan(targetPath, plan) : { path: targetPath, written: false };
     let baselineStored = { path: null, written: false };
+    let modelStored = { path: null, written: false };
+    let strategyStored = { path: null, written: false };
     if (options.write && understandingBaseline) {
       const baselinePath = understandingBaselinePath(dataRoot, snapshot.repository.identity, understandingBaseline.id);
       baselineStored = await writeUnderstandingBaseline(baselinePath, understandingBaseline);
+    }
+    if (options.write && systemModel) {
+      const modelPath = systemModelPath(dataRoot, snapshot.repository.identity, systemModel.id);
+      modelStored = await writeSystemModel(modelPath, systemModel);
+    }
+    if (options.write && designStrategy) {
+      const strategyPath = designStrategyPath(dataRoot, snapshot.repository.identity, designStrategy.id);
+      strategyStored = await writeDesignStrategy(strategyPath, designStrategy);
     }
     const brief = understandingBaseline
       ? formatAuditableUnderstandingBrief(understandingBaseline, { onboardingPlan: plan })
@@ -1995,17 +2019,25 @@ export async function runCli(argv, io = console, services = {}) {
         report,
         plan,
         understanding_baseline: understandingBaseline,
+        system_model: systemModel,
+        design_strategy: designStrategy,
         path: stored.path,
         written: stored.written,
         baseline_path: baselineStored.path,
-        baseline_written: baselineStored.written
+        baseline_written: baselineStored.written,
+        system_model_path: modelStored.path,
+        system_model_written: modelStored.written,
+        design_strategy_path: strategyStored.path,
+        design_strategy_written: strategyStored.written
       }, null, 2));
     } else {
       const storeLines = [];
       if (stored.written) storeLines.push(`Stored onboarding plan: ${stored.path}`);
       if (baselineStored.written) storeLines.push(`Stored understanding baseline: ${baselineStored.path}`);
-      if (!stored.written && !baselineStored.written) {
-        storeLines.push("Dry run only. Add --write to store the onboarding plan and understanding baseline outside the consumer repository.");
+      if (modelStored.written) storeLines.push(`Stored system model draft: ${modelStored.path}`);
+      if (strategyStored.written) storeLines.push(`Stored design strategy draft: ${strategyStored.path}`);
+      if (!stored.written && !baselineStored.written && !modelStored.written && !strategyStored.written) {
+        storeLines.push("Dry run only. Add --write to store the onboarding plan, understanding baseline, system model, and design strategy outside the consumer repository.");
       }
       io.log([brief, "", ...storeLines].join("\n"));
     }

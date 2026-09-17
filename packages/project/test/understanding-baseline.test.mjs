@@ -77,6 +77,8 @@ test("builds a schema-valid understanding baseline that is never ready from stat
   assert.ok(baseline.required_domains.includes("database"));
   assert.ok(!baseline.required_domains.includes("frontend"));
   assert.equal(baseline.models.database_covered, false);
+  assert.match(baseline.models.system_model_id, /^system-model-draft-/);
+  assert.match(baseline.strategy.strategy_id, /^design-strategy-draft-/);
   assert.equal(baseline.strategy.status, "proposed");
   const security = baseline.claims.find((claim) => claim.id === "security-model");
   assert.equal(security.severity, "blocking");
@@ -92,7 +94,9 @@ test("formatAuditableUnderstandingBrief is human-auditable markdown", () => {
   assert.match(md, /Verdict: \*\*needs-evidence\*\*/);
   assert.match(md, /### database/);
   assert.match(md, /security-model/);
-  assert.match(md, /system-model-pending/);
+  assert.match(md, /system-model-draft-/);
+  assert.match(md, /design-strategy-draft-/);
+  assert.match(md, /proposed/);
 });
 
 test("blocked plan without commit is rejected", () => {

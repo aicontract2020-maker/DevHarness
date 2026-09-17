@@ -6,6 +6,7 @@
 
 import { assertContract } from "./contracts.mjs";
 import { hashContract } from "./harness.mjs";
+import { buildDraftSystemModelFromOnboardingPlan, buildProposedDesignStrategyFromOnboardingPlan, createValidatedPhase1DraftsFromOnboardingPlan } from "./phase1-drafts.mjs";
 
 const PROVED = new Set(["code-confirmed", "test-confirmed", "runtime-observed"]);
 const PATHISH = /\/|\|\.(?:py|ts|tsx|js|jsx|json|yml|yaml|toml|md|lock|txt|sql)$/i;
@@ -102,7 +103,10 @@ function baselineVerdict(plan) {
  * Honest: never marks ready from static detection alone.
  */
 export function buildRepositoryUnderstandingBaselineFromOnboardingPlan(plan, {
-  capturedAt = new Date().toISOString()
+  capturedAt = new Date().toISOString(),
+  systemModel = null,
+  strategy = null,
+  snapshot = null
 } = {}) {
   if (!plan?.repository_identity) throw new Error("Understanding baseline requires an onboarding plan with repository_identity.");
   if (!plan.commit_sha) throw new Error("Understanding baseline requires a committed revision on the onboarding plan.");
@@ -110,16 +114,8 @@ export function buildRepositoryUnderstandingBaselineFromOnboardingPlan(plan, {
   const claims = (plan.claims ?? []).map(mapClaim);
   if (claims.length === 0) throw new Error("Understanding baseline requires at least one claim.");
 
-  const pendingStrategyBody = {
-    schema_version: 1,
-    id: "strategy-pending",
-    kind: "design-strategy-placeholder",
-    repository_identity: plan.repository_identity,
-    commit_sha: plan.commit_sha,
-    status: "proposed",
-    summary: "No developer-approved design strategy artifact yet; Phase 1 baseline records the gap honestly."
-  };
-  const strategyHash = hashContract(pendingStrategyBody);
+  const model = systemModel ?? buildDraftSystemModelFromOnboardingPlan(plan, { snapshot });
+  const designStrategy = strategy ?? buildProposedDesignStrategyFromOnboardingPlan(plan, { snapshot });
 
   const body = {
     schema_version: 1,
@@ -130,16 +126,16 @@ export function buildRepositoryUnderstandingBaselineFromOnboardingPlan(plan, {
     claims,
     conflicts: deriveConflicts(claims),
     models: {
-      system_model_id: "system-model-pending",
-      database_covered: false,
-      security_covered: false,
-      feature_flows_covered: false
+      system_model_id: model.id,
+      database_covered: (model.stores?.length ?? 0) > 0 && (model.entities?.length ?? 0) > 0,
+      security_covered: (model.roles?.length ?? 0) > 0 && (model.trust_boundaries?.length ?? 0) > 0,
+      feature_flows_covered: (model.flows?.length ?? 0) > 0
     },
     strategy: {
-      strategy_id: "strategy-pending",
-      version: 1,
-      status: "proposed",
-      artifact_sha256: strategyHash
+      strategy_id: designStrategy.id,
+      version: designStrategy.strategy_version,
+      status: designStrategy.status,
+      artifact_sha256: designStrategy.artifact_sha256
     },
     verdict: baselineVerdict(plan)
   };
@@ -233,14 +229,24 @@ export function formatAuditableUnderstandingBrief(baseline, {
     "",
     "- This brief is derived from the revision-bound onboarding plan + repository snapshot.",
     "- Detection and documentation are not promoted to runtime proof.",
-    "- `system-model-pending` / `strategy-pending` mark missing Phase 1 products that still need evidence-backed modeling and human approval.",
+    "- Draft `system-model` / `design-strategy` artifacts are revision-bound but remain `needs-evidence` / `proposed` until live proof and a human strategy gate.",
     ""
   );
   return lines.join("\n");
 }
 
-export async function createValidatedUnderstandingBaselineFromOnboardingPlan(plan, options = {}) {
-  const baseline = buildRepositoryUnderstandingBaselineFromOnboardingPlan(plan, options);
+export async function createValidatedPhase1UnderstandingBundleFromOnboardingPlan(plan, options = {}) {
+  const { systemModel, strategy } = await createValidatedPhase1DraftsFromOnboardingPlan(plan, options);
+  const baseline = buildRepositoryUnderstandingBaselineFromOnboardingPlan(plan, {
+    ...options,
+    systemModel,
+    strategy
+  });
   await assertContract("repository-understanding-baseline", baseline);
+  return { baseline, systemModel, strategy };
+}
+
+export async function createValidatedUnderstandingBaselineFromOnboardingPlan(plan, options = {}) {
+  const { baseline } = await createValidatedPhase1UnderstandingBundleFromOnboardingPlan(plan, options);
   return baseline;
 }

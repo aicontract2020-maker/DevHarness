@@ -50,6 +50,14 @@ export function understandingBaselinePath(dataRoot, identity, baselineId) {
   return path.join(projectDataDirectory(dataRoot, identity), "understanding", `${baselineId}.json`);
 }
 
+export function systemModelPath(dataRoot, identity, modelId) {
+  return path.join(projectDataDirectory(dataRoot, identity), "system-models", `${modelId}.json`);
+}
+
+export function designStrategyPath(dataRoot, identity, strategyId) {
+  return path.join(projectDataDirectory(dataRoot, identity), "strategies", `${strategyId}.json`);
+}
+
 export function onboardingPlanPath(dataRoot, identity, planId) {
   return path.join(projectDataDirectory(dataRoot, identity), "onboarding", `${planId}.json`);
 }
@@ -90,6 +98,24 @@ export async function writeUnderstandingBaseline(baselinePath, baseline) {
   await writeFile(temporary, `${JSON.stringify(baseline, null, 2)}\n`, { encoding: "utf8", mode: 0o600, flag: "wx" });
   await rename(temporary, baselinePath);
   return { path: baselinePath, written: true };
+}
+
+export async function writeSystemModel(modelPath, model) {
+  await assertContract("system-model", model);
+  await mkdir(path.dirname(modelPath), { recursive: true, mode: 0o700 });
+  const temporary = `${modelPath}.${process.pid}.tmp`;
+  await writeFile(temporary, `${JSON.stringify(model, null, 2)}\n`, { encoding: "utf8", mode: 0o600, flag: "wx" });
+  await rename(temporary, modelPath);
+  return { path: modelPath, written: true };
+}
+
+export async function writeDesignStrategy(strategyPath, strategy) {
+  await assertContract("design-strategy", strategy);
+  await mkdir(path.dirname(strategyPath), { recursive: true, mode: 0o700 });
+  const temporary = `${strategyPath}.${process.pid}.tmp`;
+  await writeFile(temporary, `${JSON.stringify(strategy, null, 2)}\n`, { encoding: "utf8", mode: 0o600, flag: "wx" });
+  await rename(temporary, strategyPath);
+  return { path: strategyPath, written: true };
 }
 
 export async function writeOnboardingPlan(planPath, plan) {
