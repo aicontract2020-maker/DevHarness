@@ -63,6 +63,14 @@ function derivedInventory(snapshot, goalImpact = {}) {
   };
 }
 
+export function expectedDomainsFromSnapshot(snapshot, goalImpact = {}) {
+  return derivedInventory(snapshot, goalImpact).expectedDomains;
+}
+
+export function inventoryFromSnapshot(snapshot, goalImpact = {}) {
+  return derivedInventory(snapshot, goalImpact);
+}
+
 export async function loadTrustedEvaluationContext({ snapshot, goalImpact = {} }) {
   if (!snapshot?.repository?.identity || !snapshot?.repository?.git?.head_sha) throw new Error("A live repository snapshot with identity and head is required.");
   const manifests = (await listVerifiedEvidenceManifests(defaultSupervisorRoot(), snapshot.repository.identity))

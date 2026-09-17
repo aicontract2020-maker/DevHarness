@@ -4,6 +4,10 @@
  * not a hand-written stub.
  */
 
+import { expectedDomainsFromSnapshot } from "../../core/src/trusted-context.mjs";
+import { defaultSupervisorRoot } from "../../runtime/src/data-store.mjs";
+import { listVerifiedEvidenceManifests } from "../../runtime/src/supervisor-store.mjs";
+import { applyEvidenceToUnderstandingBaseline } from "./apply-evidence-to-baseline.mjs";
 import { assertContract } from "./contracts.mjs";
 import { hashContract } from "./harness.mjs";
 import { buildDraftSystemModelFromOnboardingPlan, buildProposedDesignStrategyFromOnboardingPlan, createValidatedPhase1DraftsFromOnboardingPlan } from "./phase1-drafts.mjs";
@@ -106,7 +110,8 @@ export function buildRepositoryUnderstandingBaselineFromOnboardingPlan(plan, {
   capturedAt = new Date().toISOString(),
   systemModel = null,
   strategy = null,
-  snapshot = null
+  snapshot = null,
+  goalImpact = {}
 } = {}) {
   if (!plan?.repository_identity) throw new Error("Understanding baseline requires an onboarding plan with repository_identity.");
   if (!plan.commit_sha) throw new Error("Understanding baseline requires a committed revision on the onboarding plan.");
@@ -122,7 +127,9 @@ export function buildRepositoryUnderstandingBaselineFromOnboardingPlan(plan, {
     repository_identity: plan.repository_identity,
     commit_sha: plan.commit_sha,
     captured_at: capturedAt,
-    required_domains: requiredDomainsFrom(plan),
+    required_domains: snapshot
+      ? expectedDomainsFromSnapshot(snapshot, goalImpact)
+      : requiredDomainsFrom(plan),
     claims,
     conflicts: deriveConflicts(claims),
     models: {
@@ -242,13 +249,26 @@ export function formatAuditableUnderstandingBrief(baseline, {
 
 export async function createValidatedPhase1UnderstandingBundleFromOnboardingPlan(plan, options = {}) {
   const { systemModel, strategy } = await createValidatedPhase1DraftsFromOnboardingPlan(plan, options);
-  const baseline = buildRepositoryUnderstandingBaselineFromOnboardingPlan(plan, {
+  let baseline = buildRepositoryUnderstandingBaselineFromOnboardingPlan(plan, {
     ...options,
     systemModel,
     strategy
   });
+  let evidenceApply = { promotedClaimIds: [], reboundClaimIds: [], evidenceIdsUsed: [] };
+  const snapshot = options.snapshot;
+  if (snapshot?.repository?.identity && snapshot?.repository?.git?.head_sha) {
+    const manifests = await listVerifiedEvidenceManifests(
+      options.supervisorRoot ?? defaultSupervisorRoot(),
+      snapshot.repository.identity
+    );
+    evidenceApply = applyEvidenceToUnderstandingBaseline(baseline, {
+      manifests,
+      commitSha: snapshot.repository.git.head_sha
+    });
+    baseline = evidenceApply.baseline;
+  }
   await assertContract("repository-understanding-baseline", baseline);
-  return { baseline, systemModel, strategy };
+  return { baseline, systemModel, strategy, evidenceApply };
 }
 
 export async function createValidatedUnderstandingBaselineFromOnboardingPlan(plan, options = {}) {
