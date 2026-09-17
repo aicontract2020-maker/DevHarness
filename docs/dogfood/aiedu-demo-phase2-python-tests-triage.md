@@ -59,3 +59,12 @@ aiedu local config (gitignored `local-projects/aiedu-demo/`):
 
 Re-attest after caps approve.
 
+## 2026-09-17 after disposable Postgres+Redis
+
+Receipt `verify-1789657568042-dc37cf7d`:
+- Service `aiedu-postgres-redis`: readiness **pass** (TCP 55432+56379), teardown **pass**
+- `:5432` Connection refused: **0**
+- Pytest: **324 failed / 3481 passed / 2 skipped / 47 errors** (~54s)
+
+Host wiring works. Remaining failures are no longer “no DB”; next slice is **schema/migrate/seed** (and fixture expectations) against empty compose DBs — not more harness plumbing.
+

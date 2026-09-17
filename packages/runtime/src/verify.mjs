@@ -384,7 +384,9 @@ async function waitForReadinessCheck(handle, readiness, readinessProbe) {
         return {
           status: "pass",
           ready_at: new Date().toISOString(),
-          summary: `${readiness.url} returned HTTP ${observation.status}.`
+          summary: readiness.kind === "tcp"
+            ? `${readiness.url} open (${observation.summary})`
+            : `${readiness.url} returned HTTP ${observation.status}.`
         };
       }
     } catch (error) {
