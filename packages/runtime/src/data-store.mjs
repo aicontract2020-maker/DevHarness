@@ -46,6 +46,10 @@ export function projectHarnessPath(dataRoot, identity, harnessId) {
   return path.join(projectDataDirectory(dataRoot, identity), "harnesses", `${harnessId}.json`);
 }
 
+export function understandingBaselinePath(dataRoot, identity, baselineId) {
+  return path.join(projectDataDirectory(dataRoot, identity), "understanding", `${baselineId}.json`);
+}
+
 export function onboardingPlanPath(dataRoot, identity, planId) {
   return path.join(projectDataDirectory(dataRoot, identity), "onboarding", `${planId}.json`);
 }
@@ -77,6 +81,15 @@ export async function writeProjectHarness(harnessPath, manifest) {
   await writeFile(temporary, content, { encoding: "utf8", mode: 0o600, flag: "wx" });
   await rename(temporary, harnessPath);
   return { path: harnessPath, written: true };
+}
+
+export async function writeUnderstandingBaseline(baselinePath, baseline) {
+  await assertContract("repository-understanding-baseline", baseline);
+  await mkdir(path.dirname(baselinePath), { recursive: true, mode: 0o700 });
+  const temporary = `${baselinePath}.${process.pid}.tmp`;
+  await writeFile(temporary, `${JSON.stringify(baseline, null, 2)}\n`, { encoding: "utf8", mode: 0o600, flag: "wx" });
+  await rename(temporary, baselinePath);
+  return { path: baselinePath, written: true };
 }
 
 export async function writeOnboardingPlan(planPath, plan) {

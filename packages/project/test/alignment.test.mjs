@@ -165,7 +165,9 @@ test("static understanding compiles a traceable, non-approvable Alignment Brief"
   assert.match(formatRepositoryUnderstandingBrief(plan), /Critical path:/i);
   assert.equal(result.packet.sections.flatMap((section) => section.items).filter((item) => item.severity === "blocking").length > 0, true);
   assert.deepEqual(evaluateInteractionPacket(result.packet), { valid: true, reasons: [] });
-  assert.equal(result.artifacts.length, 3);
+  assert.equal(result.artifacts.length, 4);
+  assert.equal(result.artifacts.some((entry) => entry.id === "artifact-understanding-baseline" && entry.kind === "repository-understanding-baseline"), true);
+  assert.equal(result.artifacts.find((entry) => entry.id === "artifact-understanding-baseline")?.value?.verdict, "needs-evidence");
   assert.equal(result.artifacts.every((artifact) => result.packet.source_artifacts.some((source) => source.id === artifact.id && source.sha256 === artifact.sha256)), true);
 });
 

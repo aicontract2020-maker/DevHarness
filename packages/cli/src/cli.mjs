@@ -19,9 +19,10 @@ import { createProjectDeclarationReview } from "../../project/src/project-declar
 import { compileProjectHarness, formatProjectHarness } from "../../project/src/harness.mjs";
 import { hashContract } from "../../project/src/harness.mjs";
 import { createOnboardingPlan, formatRepositoryUnderstandingBrief } from "../../project/src/onboard.mjs";
+import { createValidatedUnderstandingBaselineFromOnboardingPlan, formatAuditableUnderstandingBrief } from "../../project/src/understanding-baseline.mjs";
 import { createGoalUnderstandingCheckpoint } from "../../project/src/alignment.mjs";
 import { resolveExternalDataRoot } from "../../project/src/path-policy.mjs";
-import { defaultDataRoot, defaultSupervisorRoot, onboardingPlanPath, projectHarnessPath, writeOnboardingPlan, writeProjectHarness } from "../../runtime/src/data-store.mjs";
+import { defaultDataRoot, defaultSupervisorRoot, onboardingPlanPath, understandingBaselinePath, projectHarnessPath, writeOnboardingPlan, writeUnderstandingBaseline, writeProjectHarness } from "../../runtime/src/data-store.mjs";
 import { loadRunInteraction, loadRunSourceArtifact, appendGoalRunCheckpoint, createStoredGoalRun, loadGoalRun, loadRunScorecard, runStoragePaths } from "../../runtime/src/goal-run-store.mjs";
 import {
   buildLiveAlignmentLease,
@@ -1636,10 +1637,11 @@ export async function runCli(argv, io = console, services = {}) {
       packet: checkpoint.packet,
       artifacts: checkpoint.artifacts
     });
-    const result = { run: checkpoint.run, interaction: checkpoint.packet, scorecard, path: stored.paths.checkpoint, next_action: nextRunAction(checkpoint.run) };
+    const understandingArtifact = checkpoint.artifacts.find((entry) => entry.id === "artifact-understanding-baseline") ?? null;
+    const result = { run: checkpoint.run, interaction: checkpoint.packet, scorecard, path: stored.paths.checkpoint, understanding_baseline_id: understandingArtifact?.value?.id ?? null, next_action: nextRunAction(checkpoint.run) };
     io.log(options.format === "json"
       ? JSON.stringify(result, null, 2)
-      : `Goal Run advanced: ${checkpoint.run.id}\nState: ${checkpoint.run.state}\nAlignment: ${checkpoint.packet.verdict}\nScope approval: unavailable\nMissing proof: ${onboardingPlan.blockers.length}\nNext: ${result.next_action}\nStored externally: ${stored.paths.checkpoint}`);
+      : `Goal Run advanced: ${checkpoint.run.id}\nState: ${checkpoint.run.state}\nAlignment: ${checkpoint.packet.verdict}\nUnderstanding baseline: ${understandingArtifact?.value?.id ?? "n/a"} (${understandingArtifact?.value?.verdict ?? "n/a"})\nScope approval: unavailable\nMissing proof: ${onboardingPlan.blockers.length}\nNext: ${result.next_action}\nStored externally: ${stored.paths.checkpoint}`);
     return checkpoint.packet.verdict === "ready" ? 0 : 2;
   }
 
@@ -1973,10 +1975,40 @@ export async function runCli(argv, io = console, services = {}) {
     const trustContext = snapshot.repository.git.head_sha ? await loadTrustedEvaluationContext({ snapshot }) : undefined;
     const report = evaluateReadiness(snapshot, { trustContext, config, configError, configSource });
     const plan = await createOnboardingPlan(snapshot, { report, config, configError, configSource });
+    const understandingBaseline = plan.commit_sha
+      ? await createValidatedUnderstandingBaselineFromOnboardingPlan(plan)
+      : null;
     const { dataRoot } = resolveExternalDataRoot(snapshot.repository.root_uri, options.dataRoot);
     const targetPath = onboardingPlanPath(dataRoot, snapshot.repository.identity, plan.id);
     const stored = options.write ? await writeOnboardingPlan(targetPath, plan) : { path: targetPath, written: false };
-    io.log(options.format === "json" ? JSON.stringify({ snapshot, report, plan, path: stored.path, written: stored.written }, null, 2) : `${formatRepositoryUnderstandingBrief(plan)}\n${stored.written ? `Stored externally: ${stored.path}` : "Dry run only. Add --write to store this plan outside the consumer repository."}`);
+    let baselineStored = { path: null, written: false };
+    if (options.write && understandingBaseline) {
+      const baselinePath = understandingBaselinePath(dataRoot, snapshot.repository.identity, understandingBaseline.id);
+      baselineStored = await writeUnderstandingBaseline(baselinePath, understandingBaseline);
+    }
+    const brief = understandingBaseline
+      ? formatAuditableUnderstandingBrief(understandingBaseline, { onboardingPlan: plan })
+      : formatRepositoryUnderstandingBrief(plan);
+    if (options.format === "json") {
+      io.log(JSON.stringify({
+        snapshot,
+        report,
+        plan,
+        understanding_baseline: understandingBaseline,
+        path: stored.path,
+        written: stored.written,
+        baseline_path: baselineStored.path,
+        baseline_written: baselineStored.written
+      }, null, 2));
+    } else {
+      const storeLines = [];
+      if (stored.written) storeLines.push(`Stored onboarding plan: ${stored.path}`);
+      if (baselineStored.written) storeLines.push(`Stored understanding baseline: ${baselineStored.path}`);
+      if (!stored.written && !baselineStored.written) {
+        storeLines.push("Dry run only. Add --write to store the onboarding plan and understanding baseline outside the consumer repository.");
+      }
+      io.log([brief, "", ...storeLines].join("\n"));
+    }
     return plan.verdict === "ready" ? 0 : 2;
   }
 

@@ -3,6 +3,7 @@ import { evaluateInteractionPacket } from "../../core/src/interaction-policy.mjs
 import { assertContract } from "./contracts.mjs";
 import { hashContract } from "./harness.mjs";
 import { summarizeGoalPlan } from "./onboard.mjs";
+import { createValidatedUnderstandingBaselineFromOnboardingPlan } from "./understanding-baseline.mjs";
 
 const PROVED_STATUSES = new Set(["code-confirmed", "test-confirmed", "runtime-observed"]);
 
@@ -33,10 +34,14 @@ export async function createGoalUnderstandingCheckpoint({ run, snapshot, onboard
     throw new Error("Repository revision does not match the Goal Run revision.");
   }
 
+  const understandingBaseline = await createValidatedUnderstandingBaselineFromOnboardingPlan(onboardingPlan, {
+    capturedAt: generatedAt
+  });
   const artifacts = [
     artifact("artifact-goal-input", "goal-input", { run_id: run.id, original_goal: run.goal.original, scope_version: run.goal.scope_version }),
     artifact("artifact-repository-snapshot", "repository-snapshot", snapshot),
-    artifact("artifact-onboarding-plan", "onboarding-plan", onboardingPlan)
+    artifact("artifact-onboarding-plan", "onboarding-plan", onboardingPlan),
+    artifact("artifact-understanding-baseline", "repository-understanding-baseline", understandingBaseline)
   ];
   const source = Object.fromEntries(artifacts.map((entry) => [entry.id, entry]));
   const confirmedClaims = onboardingPlan.claims.filter((claim) => PROVED_STATUSES.has(claim.status));

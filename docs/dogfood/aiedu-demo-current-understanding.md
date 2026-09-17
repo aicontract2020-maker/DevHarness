@@ -1,81 +1,120 @@
-# AIedu demo · current understanding snapshot
+# AIedu demo · auditable understanding baseline
 
-- Date: 2026-09-03
-- Repo under study: `AIedu_demo`
-- Goal run: `run-7b3fd1fe-ad78-4d84-ad83-9995c50d3ec5`
-- Base revision: `7f32844e6d4e3bb721191f41479f01c57dbc51ac`
-- Working copy used for analysis: `/private/tmp/aiedu-clean`
+Generated from DevHarness Phase 1 `repository-understanding-baseline` (not a hand stub).
 
-## What DevHarness has confirmed
+- Date: 2026-09-16 (America/Toronto)
+- Repo under study: `aiedu-demo` / AI-education-demo
+- Baseline id: `understanding-baseline-52e375ff2ab315cb03c0ac78`
+- Verdict: `needs-evidence`
+- Commit: `7f32844e6d4e3bb721191f41479f01c57dbc51ac`
+- Artifact path: `/Users/kaimaplespark/.local/state/devharness/projects/3b5e3cf63c8008d4b848ec5ef0e6d33482b41e63c5da0288c9ee12b346df4b17/understanding/understanding-baseline-52e375ff2ab315cb03c0ac78.json`
+- Onboarding plan: `onboard-89c2e6b6bebf7243d6d24b66427705f9`
+- Working copy: `local-projects/aiedu-demo/worktree-dogfood-clean`
+- Goal run (advance dogfood): `run-7b0bd767-ae4a-4f0b-8d20-bf01365e1b96`
+- Advance baseline id: `understanding-baseline-184c07f92e7221b8dcc5a4df`
+- Checkpoint: `.../runs/run-7b0bd767-ae4a-4f0b-8d20-bf01365e1b96/checkpoints/00000007`
 
-- The repository is a Git project with a clean committed baseline in the analysis copy.
-- The project has the expected web + API surface.
-- The project already exposes build, test, launch, and browser-verification commands.
-- A project declaration exists and is valid.
-- Local environment examples exist, so required keys are discoverable without leaking secret values.
-- The database submodule is expected and part of the project shape.
+---
 
-## What the current run has already proved
+# Repository Understanding Brief (Phase 1)
 
-- The goal has been accepted and tracked as a durable run.
-- A Supervisor approval path works for:
-  - agent runtime
-  - browser runtime
-  - database runtime
-  - service runtime
-  - dependency install
-  - container runtime
-  - credential references
-  - five research tasks
-- The runtime can produce a concise Alignment Brief instead of dumping every file.
-- The runtime can surface a staged preflight sequence:
-  - clarify
-  - research
-  - split into crews
-  - verify
-  - review
-  - deliver
+- Baseline id: `understanding-baseline-52e375ff2ab315cb03c0ac78`
+- Repository: `github.com/Maple-Spark-Ai/AI-education-demo`
+- Revision: `7f32844e6d4e3bb721191f41479f01c57dbc51ac`
+- Captured: 2026-09-17T03:48:36.630Z
+- Verdict: **needs-evidence** (static Phase 1 never claims ready without runtime/test proof)
 
-## What the system still thinks is missing
+## Required domains
 
-- Falsifiable acceptance criteria and non-goals still need to be tightened.
-- The initial understanding is still incomplete for:
-  - database
-  - security
-  - strategy
-  - runtime
-- Test and verification evidence still needs to move from “detected” to “proven”.
-- Delivery traceability and independent review are still not closed.
+- automation
+- backend
+- database
+- deployment
+- frontend
+- repository
+- runtime
+- security
+- strategy
+- testing
 
-## Current blockers
+## Claims by domain
 
-1. Current review missing.
-2. Scope not approved *(historical for `run-7b3fd1fe…`; dogfood `run-a4118507…` now has `gates.scope.status=approved` after the DevHarness approve→gate fix / status reconcile)*.
-3. Trusted delivery context missing.
-4. Trusted review evidence missing.
-5. Acceptance criteria not defined.
-6. Database understanding not yet proved.
-7. Runtime understanding not yet proved.
-8. Security understanding not yet proved.
-9. Strategy understanding not yet proved.
-10. Testing understanding is only detected, not yet proven.
+### automation
 
-## What we learned about the target project
+- `automation-surface` · **not-covered** · warning: Bootstrap, migration, rollback and deployment automation have not been exercised in a disposable environment.
 
-The project is already close to being a good DevHarness candidate because it has:
+### backend
 
-- real backend and frontend surfaces,
-- database work,
-- long-running service startup,
-- browser-visible behavior,
-- and enough test/deploy structure to support a full autonomous-development loop.
+- `backend-surface` · **detected** · warning: An API/backend surface was detected; request and failure flows are not yet traced.
+- `backend-api_contracts` · **detected** · warning: Backend API contracts are discoverable, but not yet verified against behavior.
+- `backend-orchestration` · **unverified** · warning: Backend orchestration and service coordination are not yet traced end-to-end.
+- `backend-failure_paths` · **not-covered** · warning: Failure and retry paths have not been exercised.
 
-But it is not yet a fully trusted autonomous target because the system has not yet:
+### database
 
-- proved the project’s understanding chain end to end,
-- bound a reviewable acceptance contract,
-- and collected real-surface evidence for the most important flows.
+- `database-surface` · **detected** · warning: Database signals were found; schema, migrations, constraints, transactions and live behavior are unverified.
+- `database-schema` · **detected** · warning: A database schema is implied by the current signals, but its shape is not yet validated.
+- `database-migrations` · **detected** · warning: Migration history is present or implied, but it has not been exercised.
+- `database-constraints` · **unverified** · blocking: Constraints and transactional guarantees are not yet traced from source to store.
+- `database-queries` · **unverified** · blocking: Query behavior and access patterns are not yet verified against a live database.
+- `database-ownership` · **not-covered** · blocking: Data ownership and lifecycle responsibilities are not yet modeled.
 
-## Next step
+### deployment
 
-Continue the clarifying run until the remaining understanding gaps are resolved, then move into executable understanding and behavior proof.
+- `deployment-surface` · **detected** · warning: Deployment or delivery automation files exist but were not executed. · paths: backend/src/services/homework_assignment/release.py, deployments/.env.production.example, deployments/EC2_DEPLOYMENT.md, deployments/OPERATIONS_GUIDE.md
+
+### frontend
+
+- `frontend-surface` · **detected** · warning: A web frontend was detected; it has not been opened or exercised.
+- `frontend-routes` · **detected** · warning: Frontend route structure is present, but real navigation has not been exercised.
+- `frontend-state` · **unverified** · warning: Client state, hydration and mutation flows are not yet traced.
+- `frontend-user_flows` · **not-covered** · warning: Real user flows have not been proven in a browser.
+
+### repository
+
+- `repository-inventory` · **code-confirmed** · info: Repository identity, revision and committed inventory were inspected read-only. · paths: agents/requirements.txt, backend/pyproject.toml, frontend/package.json, loadtest/requirements.txt
+- `project-declaration` · **code-confirmed** · info: A valid explicit external project declaration was parsed.
+
+### runtime
+
+- `runtime-surface` · **unverified** · blocking: The application, browser/simulator and user-visible behavior were not executed by onboarding.
+
+### security
+
+- `security-model` · **not-covered** · blocking: Roles, permissions, trust boundaries, state transitions, abuse cases and data lifecycle are not yet modeled.
+
+### strategy
+
+- `design-strategy` · **not-covered** · blocking: No developer-approved design and architecture strategy baseline has been established.
+
+### testing
+
+- `test-surface` · **detected** · warning: Test tooling may exist but has not produced current proof.
+
+## Model / strategy coverage (honest gaps)
+
+- System model: `system-model-pending` · database=false · security=false · feature_flows=false
+- Strategy: `strategy-pending` v1 · proposed
+
+## Onboarding rollup
+
+- Proved 2/22 · unresolved 11 · conflicts 0
+- Priority domains: database=not-covered, security=not-covered, strategy=not-covered, testing=detected, runtime=unverified, frontend=not-covered, backend=not-covered, deployment=detected
+
+## Highest-priority blockers
+
+- database understanding is not-covered.
+- security understanding is not-covered.
+- strategy understanding is not-covered.
+- testing understanding is detected.
+- runtime understanding is unverified.
+- frontend understanding is not-covered.
+- backend understanding is not-covered.
+- deployment understanding is detected.
+
+## Audit notes
+
+- This brief is derived from the revision-bound onboarding plan + repository snapshot.
+- Detection and documentation are not promoted to runtime proof.
+- `system-model-pending` / `strategy-pending` mark missing Phase 1 products that still need evidence-backed modeling and human approval.
+
