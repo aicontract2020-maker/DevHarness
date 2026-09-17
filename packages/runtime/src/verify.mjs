@@ -173,6 +173,8 @@ async function subjectFileArtifact(file, type, subjectId) {
   return { ...(await fileArtifact(file, type)), subject_id: subjectId };
 }
 
+const HOST_DB_ENV = /^(DATABASE|DB|POSTGRES|MYSQL|MONGO|REDIS|KB_DATABASE|USER_DATABASE|KB_DB)(_|$)/i;
+
 function allowedProcessEnvironment(plan, hostEnvironment) {
   const safeKeys = new Set([
     "PATH",
@@ -191,9 +193,17 @@ function allowedProcessEnvironment(plan, hostEnvironment) {
     "PATHEXT"
   ]);
   plan.environment.declared_keys.forEach((key) => safeKeys.add(key));
+  const explicitCommandKeys = new Set(Array.isArray(plan.command?.env_keys) ? plan.command.env_keys : []);
+  const scrubHostDbForUnitTests = plan.command?.kind === "test";
   const allowed = Object.fromEntries(
     [...safeKeys]
       .filter((key) => typeof hostEnvironment[key] === "string")
+      .filter((key) => {
+        if (!scrubHostDbForUnitTests) return true;
+        if (!HOST_DB_ENV.test(key)) return true;
+        // Unit tests use disposable fixtures; host DB URLs only pass when the command opts in.
+        return explicitCommandKeys.has(key);
+      })
       .map((key) => [key, hostEnvironment[key]])
   );
   allowed.DEVHARNESS_RUN_ID = plan.id;
