@@ -1,0 +1,8 @@
+# aiedu Phase 2 baseline dogfood
+
+- Goal Run: `run-07377e5c-8aaf-4ae9-99bc-debe3782d1e3`
+- Attested: `pytest-health-readiness` on HEAD `7f32844e6d4e3bb721191f41479f01c57dbc51ac`
+- Evidence: `manifest-76e6bccde98dcc2eadd3e3c45841fe26`
+- Caps: `dependency-install` + `service-runtime` (TTY approved)
+
+Next on the doctor Phase 2 ladder: continue remaining unproved quality commands (python-tests, frontend-test, builds, launch, playwright) toward autonomy level 2+.
