@@ -153,7 +153,8 @@ export function buildRepositoryUnderstandingBaselineFromOnboardingPlan(plan, {
 export function formatAuditableUnderstandingBrief(baseline, {
   onboardingPlan = null,
   runId = null,
-  generatedNote = null
+  generatedNote = null,
+  readyGapsMarkdown = null
 } = {}) {
   const summary = onboardingPlan?.summary;
   const lines = [
@@ -222,6 +223,10 @@ export function formatAuditableUnderstandingBrief(baseline, {
       lines.push(`- ${blocker.summary}`);
     }
     lines.push("");
+  }
+
+  if (readyGapsMarkdown) {
+    lines.push(readyGapsMarkdown.trimEnd(), "");
   }
 
   lines.push(

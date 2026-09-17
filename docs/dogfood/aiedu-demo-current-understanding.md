@@ -1,26 +1,40 @@
 # AIedu demo · auditable understanding baseline
 
-Generated from DevHarness Phase 1 bundle with entities, critical readiness flow, and code-derived roles/permissions.
+Phase 1 now reports an explicit path-to-ready gap list, and strategy can be bound via `request-approval --for-strategy`.
 
 - Date: 2026-09-17 (America/Toronto)
-- Repo under study: `aiedu-demo` / AI-education-demo
-- Baseline id: `understanding-baseline-405742be58d85f6e4cebba9b` · verdict `needs-evidence`
-- System model draft: `system-model-draft-9b2f632e9820458a8b868fc2` · entities **14** · roles **6** · flow `flow-health-ready`
-- Design strategy draft: `design-strategy-draft-52f80b3989f08e1a05d7cd5b` · status `proposed`
-- Coverage flags: database=True · security=True · flows=True
-- Auth boundary: bearer-jwt / role-gated
-- Roles: role-student, role-parent, role-teacher, role-overseer, role-schooladmin, role-admin
-- Commit: `7f32844e6d4e3bb721191f41479f01c57dbc51ac`
-- Working copy: `local-projects/aiedu-demo/worktree-dogfood-clean`
+- Baseline: `understanding-baseline-25a5a84f8bc8917f4f8ae688` · `needs-evidence`
+- System model: `system-model-draft-9b2f632e9820458a8b868fc2` · entities 14 · roles 6
+- Design strategy: `design-strategy-draft-52f80b3989f08e1a05d7cd5b` · `proposed`
+- Coverage: database=True · security=True · flows=True
+- Understanding ready: **False** (32 blockers)
+- Strategy gate dogfood request: `approval-request-ce3963a48ac209b4261c2deac0e53ef1` on `run-94d04491-f45b-41b4-b3bc-7ab73a0221b1`
+
+### Top ready blockers
+- `required_domains_mismatch`: Required domains must be derived from the current repository and goal impact.
+- `baseline_verdict_not_ready`: Baseline artifact verdict is needs-evidence.
+- `domain_unproved`: Required domain automation has no evidence-backed claim.
+- `live_domain_unproved`: Live domain automation has not been test-confirmed or runtime-observed.
+- `domain_unproved`: Required domain backend has no evidence-backed claim.
+- `live_domain_unproved`: Live domain backend has not been test-confirmed or runtime-observed.
+- `domain_unproved`: Required domain database has no evidence-backed claim.
+- `live_domain_unproved`: Live domain database has not been test-confirmed or runtime-observed.
+- `blocking_claim`: Required domain database retains blocking claim database-constraints.
+- `blocking_claim`: Required domain database retains blocking claim database-queries.
+- `blocking_claim`: Required domain database retains blocking claim database-ownership.
+- `domain_unproved`: Required domain deployment has no evidence-backed claim.
+- `live_domain_unproved`: Live domain deployment has not been test-confirmed or runtime-observed.
+- `domain_unproved`: Required domain frontend has no evidence-backed claim.
+- `live_domain_unproved`: Live domain frontend has not been test-confirmed or runtime-observed.
 
 ---
 
 # Repository Understanding Brief (Phase 1)
 
-- Baseline id: `understanding-baseline-405742be58d85f6e4cebba9b`
+- Baseline id: `understanding-baseline-25a5a84f8bc8917f4f8ae688`
 - Repository: `github.com/Maple-Spark-Ai/AI-education-demo`
 - Revision: `7f32844e6d4e3bb721191f41479f01c57dbc51ac`
-- Captured: 2026-09-17T04:04:57.353Z
+- Captured: 2026-09-17T04:09:58.485Z
 - Verdict: **needs-evidence** (static Phase 1 never claims ready without runtime/test proof)
 
 ## Required domains
@@ -110,6 +124,44 @@ Generated from DevHarness Phase 1 bundle with entities, critical readiness flow,
 - frontend understanding is not-covered.
 - backend understanding is not-covered.
 - deployment understanding is detected.
+
+## Path to understanding-ready
+
+- Verdict: **not ready** (32 blockers)
+
+- `required_domains_mismatch`: Required domains must be derived from the current repository and goal impact.
+- `baseline_verdict_not_ready`: Baseline artifact verdict is needs-evidence.
+- `domain_unproved`: Required domain automation has no evidence-backed claim. · subject `automation`
+- `live_domain_unproved`: Live domain automation has not been test-confirmed or runtime-observed. · subject `automation`
+- `domain_unproved`: Required domain backend has no evidence-backed claim. · subject `backend`
+- `live_domain_unproved`: Live domain backend has not been test-confirmed or runtime-observed. · subject `backend`
+- `domain_unproved`: Required domain database has no evidence-backed claim. · subject `database`
+- `live_domain_unproved`: Live domain database has not been test-confirmed or runtime-observed. · subject `database`
+- `blocking_claim`: Required domain database retains blocking claim database-constraints. · subject `database-constraints`
+- `blocking_claim`: Required domain database retains blocking claim database-queries. · subject `database-queries`
+- `blocking_claim`: Required domain database retains blocking claim database-ownership. · subject `database-ownership`
+- `domain_unproved`: Required domain deployment has no evidence-backed claim. · subject `deployment`
+- `live_domain_unproved`: Live domain deployment has not been test-confirmed or runtime-observed. · subject `deployment`
+- `domain_unproved`: Required domain frontend has no evidence-backed claim. · subject `frontend`
+- `live_domain_unproved`: Live domain frontend has not been test-confirmed or runtime-observed. · subject `frontend`
+- `domain_unproved`: Required domain runtime has no evidence-backed claim. · subject `runtime`
+- `live_domain_unproved`: Live domain runtime has not been test-confirmed or runtime-observed. · subject `runtime`
+- `blocking_claim`: Required domain runtime retains blocking claim runtime-surface. · subject `runtime-surface`
+- `domain_unproved`: Required domain security has no evidence-backed claim. · subject `security`
+- `live_domain_unproved`: Live domain security has not been test-confirmed or runtime-observed. · subject `security`
+- `blocking_claim`: Required domain security retains blocking claim security-model. · subject `security-model`
+- `domain_unproved`: Required domain strategy has no evidence-backed claim. · subject `strategy`
+- `blocking_claim`: Required domain strategy retains blocking claim design-strategy. · subject `design-strategy`
+- `domain_unproved`: Required domain testing has no evidence-backed claim. · subject `testing`
+
+### Strategy gate
+
+- Current strategy: `design-strategy-draft-52f80b3989f08e1a05d7cd5b` · status **proposed**
+- Next: `devharness request-approval --run <ID> --for-strategy` then foreground `approve`
+
+### Baseline verdict field
+
+- Stored baseline verdict remains `needs-evidence` until live proof promotes it (static onboard never writes `ready`).
 
 ## Audit notes
 

@@ -6,6 +6,15 @@ import { fileURLToPath } from "node:url";
 
 import { assertContract } from "../../project/src/contracts.mjs";
 
+export async function readJsonIfExists(targetPath) {
+  try {
+    return JSON.parse(await readFile(targetPath, "utf8"));
+  } catch (error) {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  }
+}
+
 export function defaultDataRoot(environment = process.env) {
   if (environment.DEVHARNESS_DATA_DIR) return path.resolve(environment.DEVHARNESS_DATA_DIR);
   if (environment.XDG_STATE_HOME) return path.join(path.resolve(environment.XDG_STATE_HOME), "devharness");
@@ -116,6 +125,25 @@ export async function writeDesignStrategy(strategyPath, strategy) {
   await writeFile(temporary, `${JSON.stringify(strategy, null, 2)}\n`, { encoding: "utf8", mode: 0o600, flag: "wx" });
   await rename(temporary, strategyPath);
   return { path: strategyPath, written: true };
+}
+
+
+export async function overwriteDesignStrategy(strategyPath, strategy) {
+  await assertContract("design-strategy", strategy);
+  await mkdir(path.dirname(strategyPath), { recursive: true, mode: 0o700 });
+  const temporary = `${strategyPath}.${process.pid}.tmp`;
+  await writeFile(temporary, `${JSON.stringify(strategy, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+  await rename(temporary, strategyPath);
+  return { path: strategyPath, written: true };
+}
+
+export async function overwriteUnderstandingBaseline(baselinePath, baseline) {
+  await assertContract("repository-understanding-baseline", baseline);
+  await mkdir(path.dirname(baselinePath), { recursive: true, mode: 0o700 });
+  const temporary = `${baselinePath}.${process.pid}.tmp`;
+  await writeFile(temporary, `${JSON.stringify(baseline, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+  await rename(temporary, baselinePath);
+  return { path: baselinePath, written: true };
 }
 
 export async function writeOnboardingPlan(planPath, plan) {

@@ -20,6 +20,7 @@ import { compileProjectHarness, formatProjectHarness } from "../../project/src/h
 import { hashContract } from "../../project/src/harness.mjs";
 import { createOnboardingPlan, formatRepositoryUnderstandingBrief } from "../../project/src/onboard.mjs";
 import { createValidatedPhase1UnderstandingBundleFromOnboardingPlan, formatAuditableUnderstandingBrief } from "../../project/src/understanding-baseline.mjs";
+import { evaluatePhase1ReadyGaps } from "../../project/src/understanding-ready-gaps.mjs";
 import { createGoalUnderstandingCheckpoint } from "../../project/src/alignment.mjs";
 import { resolveExternalDataRoot } from "../../project/src/path-policy.mjs";
 import { defaultDataRoot, defaultSupervisorRoot, onboardingPlanPath, understandingBaselinePath, systemModelPath, designStrategyPath, projectHarnessPath, writeOnboardingPlan, writeUnderstandingBaseline, writeSystemModel, writeDesignStrategy, writeProjectHarness } from "../../runtime/src/data-store.mjs";
@@ -54,6 +55,7 @@ import { recordAlignmentAnswer } from "../../runtime/src/alignment-answer.mjs";
 import { issueCommandSystemEvidence, issueCommandTestEvidence } from "../../runtime/src/supervisor-evidence.mjs";
 import { createSupervisorApprovalRequest, listPendingApprovalRequestsForRun, recordInteractiveApprovalDecisions } from "../../runtime/src/supervisor-approval.mjs";
 import { applyRunGateFromApprovalReceipt, reconcileRunGatesFromApprovals } from "../../runtime/src/run-gate-approval.mjs";
+import { applyStrategyApprovalReceipt, requestStrategyApprovalForRun } from "../../runtime/src/strategy-approval.mjs";
 import { initializeSupervisorIdentity } from "../../runtime/src/supervisor-store.mjs";
 import { findApprovedVcsWrite, loadCapabilityAuthorizationView, requestCapabilityAuthorization, resolveCapabilityApprovalContext } from "../../runtime/src/capability-authorization.mjs";
 import { requestMissingVerifyCapabilities, resolveVerifyDefaultsFromReadiness, summarizeVerifyCapabilityGap } from "../../runtime/src/verify-capabilities.mjs";
@@ -86,7 +88,7 @@ Usage:
   devharness doctor [--repo PATH] [--config PATH] [--format text|json]
   devharness build [--repo PATH] [--config PATH] [--write] [--format text|json]
   devharness supervisor-init [--format text|json]
-  devharness request-approval --run ID --gate GATE --subject ID --subject-sha SHA [--repo PATH]
+  devharness request-approval (--for-strategy --run ID | --run ID --gate GATE --subject ID --subject-sha SHA) [--repo PATH]
   devharness request-capability --run ID (--capability ID | --for-verify [--command ID] [--commit SHA] [--approve] | --for-align [--approve]) [--expires-minutes N] [--repo PATH] [--data-dir PATH]
   devharness approve (--request ID [--request ID ...] | --run ID --pending) [--repo PATH] [--data-dir PATH]
   devharness verify --command ID [--repo PATH] [--config PATH] [--data-dir PATH] [--run ID --execute] [--commit SHA] [--attest] [--timeout-seconds N] [--format text|json]
@@ -109,6 +111,7 @@ Commands:
   build     Compile the accepted project declaration. Does not write unless --write is present.
   supervisor-init  Create or load the fixed external signing identity. Never exposes its private key.
   request-approval Create a signed, revision-bound pending request; this does not approve it.
+             --for-strategy derives the current Goal Run design-strategy subject automatically.
   request-capability Request bounded capability approval from the current Goal Run plan.
              --capability ID requests one. --for-verify requests every capability still blocking the current verify plan (from readiness/--command/--commit), optionally --approve in one TTY batch.
              --for-align requests research/network capabilities still blocking live Alignment, optionally --approve in one TTY batch.
@@ -158,6 +161,7 @@ function parseArguments(argv) {
     gate: null,
     subjectId: null,
     subjectSha256: null,
+    forStrategy: false,
     operationId: null,
     requestId: null,
     requestIds: [],
@@ -264,6 +268,8 @@ function parseArguments(argv) {
       options.forVerify = true;
     } else if (argument === "--for-align") {
       options.forAlign = true;
+    } else if (argument === "--for-strategy") {
+      options.forStrategy = true;
     } else if (argument === "--infer-conservative") {
       options.inferConservative = true;
     } else if (argument === "--approve") {
@@ -1682,8 +1688,37 @@ export async function runCli(argv, io = console, services = {}) {
   }
 
   if (options.command === "request-approval") {
-    if (!options.runId || !options.gate || !options.subjectId || !options.subjectSha256) {
-      throw new Error("request-approval requires --run, --gate, --subject and --subject-sha");
+    if (!options.runId) throw new Error("request-approval requires --run");
+    if (options.forStrategy) {
+      if (options.gate || options.subjectId || options.subjectSha256) {
+        throw new Error("--for-strategy cannot be combined with --gate/--subject/--subject-sha");
+      }
+      if (!snapshot.repository.git.head_sha || snapshot.repository.git.dirty) {
+        throw new Error("Approval requests require a clean committed repository revision.");
+      }
+      const { dataRoot } = resolveExternalDataRoot(snapshot.repository.root_uri, options.dataRoot);
+      const supervisorRoot = services.supervisorRoot ?? defaultSupervisorRoot();
+      await initializeSupervisorIdentity(supervisorRoot);
+      const result = await requestStrategyApprovalForRun({
+        dataRoot,
+        supervisorRoot,
+        repositoryIdentity: snapshot.repository.identity,
+        runId: options.runId,
+        expiresInMinutes: options.expiresInMinutes ?? 60
+      });
+      if (result.already_approved) {
+        io.log(options.format === "json"
+          ? JSON.stringify({ strategy: result.strategy, already_approved: true }, null, 2)
+          : `Design strategy already approved: ${result.strategy.id}`);
+        return 0;
+      }
+      io.log(options.format === "json"
+        ? JSON.stringify({ request: result.request, strategy: result.strategy }, null, 2)
+        : `Approval requested: ${result.request.id}\nGate: strategy\nSubject: ${result.strategy.id}\nRevision: ${result.request.relevant_head_sha}\nIssuer: ${result.request.attestation.issuer_fingerprint}\nExpires: ${result.request.expires_at}\nNext: devharness approve --request ${result.request.id}`);
+      return 0;
+    }
+    if (!options.gate || !options.subjectId || !options.subjectSha256) {
+      throw new Error("request-approval requires --for-strategy, or --run with --gate, --subject and --subject-sha");
     }
     if (!snapshot.repository.git.head_sha || snapshot.repository.git.dirty) {
       throw new Error("Approval requests require a clean committed repository revision.");
@@ -1954,6 +1989,20 @@ export async function runCli(argv, io = console, services = {}) {
     });
     const gateLines = [];
     for (const receipt of batch.receipts) {
+      if (receipt.gate === "strategy" && receipt.decision === "approved") {
+        const strategyApplication = await applyStrategyApprovalReceipt({
+          dataRoot,
+          repositoryIdentity: snapshot.repository.identity,
+          receipt,
+          runId: receipt.run_id
+        });
+        if (strategyApplication?.applied) {
+          gateLines.push(`Design strategy approved: ${strategyApplication.strategy.id}`);
+        } else if (strategyApplication?.reason) {
+          gateLines.push(`Design strategy apply skipped: ${strategyApplication.reason}`);
+        }
+        continue;
+      }
       if (!["scope", "delivery"].includes(receipt.gate)) continue;
       const gateApplication = await applyRunGateFromApprovalReceipt({
         dataRoot,
@@ -2010,8 +2059,20 @@ export async function runCli(argv, io = console, services = {}) {
       const strategyPath = designStrategyPath(dataRoot, snapshot.repository.identity, designStrategy.id);
       strategyStored = await writeDesignStrategy(strategyPath, designStrategy);
     }
+    let readyGaps = null;
+    if (understandingBaseline && systemModel && designStrategy) {
+      const repoPath = fileURLToPath(snapshot.repository.root_uri);
+      readyGaps = await evaluatePhase1ReadyGaps(repoPath, {
+        baseline: understandingBaseline,
+        systemModel,
+        strategy: designStrategy
+      });
+    }
     const brief = understandingBaseline
-      ? formatAuditableUnderstandingBrief(understandingBaseline, { onboardingPlan: plan })
+      ? formatAuditableUnderstandingBrief(understandingBaseline, {
+          onboardingPlan: plan,
+          readyGapsMarkdown: readyGaps?.markdown ?? null
+        })
       : formatRepositoryUnderstandingBrief(plan);
     if (options.format === "json") {
       io.log(JSON.stringify({
@@ -2021,6 +2082,7 @@ export async function runCli(argv, io = console, services = {}) {
         understanding_baseline: understandingBaseline,
         system_model: systemModel,
         design_strategy: designStrategy,
+        understanding_ready: readyGaps?.evaluation?.verdict ?? null,
         path: stored.path,
         written: stored.written,
         baseline_path: baselineStored.path,
