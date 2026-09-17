@@ -3,7 +3,7 @@
  * commands with current-revision Supervisor evidence.
  */
 
-import { currentSupervisorManifest } from "./doctor.mjs";
+import { commandHasCurrentSupervisorEvidence } from "./doctor.mjs";
 
 const LADDER_KINDS = ["test", "build", "lint", "verify", "launch"];
 
@@ -19,14 +19,6 @@ function priorityFor(command) {
   return 100;
 }
 
-function commandHasCurrentEvidence(snapshot, config, trustContext, command) {
-  if (!command?.id || !command?.kind) return false;
-  const filtered = {
-    ...trustContext,
-    manifests: (trustContext?.manifests ?? []).filter((manifest) => manifest.command?.id === command.id)
-  };
-  return Boolean(currentSupervisorManifest(snapshot, config, filtered, command.kind));
-}
 
 /**
  * Rank configured quality commands and mark which already have matching
@@ -56,7 +48,7 @@ export function evaluatePhase2BaselineLadder({
     .map((command) => ({
       id: command.id,
       kind: command.kind,
-      proved: commandHasCurrentEvidence(snapshot, config, trustContext, command),
+      proved: commandHasCurrentSupervisorEvidence(snapshot, config, trustContext, command),
       priority: priorityFor(command),
       source: command.source
     }));

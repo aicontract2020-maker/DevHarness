@@ -106,6 +106,19 @@ export function currentSupervisorManifest(snapshot, config, trustContext, kind) 
   }) ?? null;
 }
 
+export function commandHasCurrentSupervisorEvidence(snapshot, config, trustContext, command) {
+  if (!config || !command?.id || !command?.kind || !isTrustedEvaluationContext(trustContext)) return false;
+  return (trustContext.manifests ?? []).some((manifest) =>
+    manifest.command?.id === command.id &&
+    manifest.repository_identity === snapshot.repository.identity &&
+    manifest.commit_sha === snapshot.repository.git.head_sha &&
+    manifest.command.kind === command.kind &&
+    manifest.command.sha256 === commandHash(command) &&
+    manifest.harness.config_sha256 === hashContract(config) &&
+    manifest.outcome?.status === "pass"
+  );
+}
+
 function evaluateEnvironment(snapshot) {
   const environment = snapshot.environment;
   const undocumentedKeys = environment.locally_set_keys.filter((key) => !environment.declared_keys.includes(key));
