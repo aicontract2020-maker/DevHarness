@@ -192,6 +192,24 @@ its recorded adapter on `--continue` unless you pass `--agent`. Do not expect
 `--agent codex` to rewrite a previously approved local-readonly descriptor;
 it only selects the worker backend for the next tick.
 
+#### Alignment compression (conservative defaults)
+
+When live Alignment is `question-blocked` with standard Clarify/Infer options:
+
+```bash
+$DH answer --repo "$REPO" --config "$CONFIG" --run "$RUN_ID" --infer-conservative
+# one TTY APPROVE for the whole answer batch
+```
+
+When research tasks are waiting on capability approvals:
+
+```bash
+$DH request-capability --repo "$REPO" --config "$CONFIG" --run "$RUN_ID" --for-align --approve
+# one TTY APPROVE for every missing research/network grant
+$DH align --continue --repo "$REPO" --config "$CONFIG" --run "$RUN_ID"
+```
+
+
 #### Codex auth (required for a live provider call)
 
 DevHarness does **not** mount login/session files into the Agent

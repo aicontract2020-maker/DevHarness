@@ -55,7 +55,13 @@ import { createSupervisorApprovalRequest, listPendingApprovalRequestsForRun, rec
 import { applyRunGateFromApprovalReceipt, reconcileRunGatesFromApprovals } from "../../runtime/src/run-gate-approval.mjs";
 import { initializeSupervisorIdentity } from "../../runtime/src/supervisor-store.mjs";
 import { findApprovedVcsWrite, loadCapabilityAuthorizationView, requestCapabilityAuthorization, resolveCapabilityApprovalContext } from "../../runtime/src/capability-authorization.mjs";
-import { requestMissingVerifyCapabilities, resolveVerifyDefaultsFromReadiness } from "../../runtime/src/verify-capabilities.mjs";
+import { requestMissingVerifyCapabilities, resolveVerifyDefaultsFromReadiness, summarizeVerifyCapabilityGap } from "../../runtime/src/verify-capabilities.mjs";
+import {
+  pickConservativeInferAnswers,
+  requestMissingAlignCapabilities,
+  summarizeAlignCapabilityGap,
+  alignCompressionHints
+} from "../../runtime/src/align-capabilities.mjs";
 import { createVerificationPlan, executeVerificationPlan, formatVerificationPlan } from "../../runtime/src/verify.mjs";
 import { createPostScopeAdvanceCheckpoint, postScopeAdvanceSupported } from "../../runtime/src/post-scope-advance.mjs";
 import { proposeControlledChangeWithAgent } from "../../runtime/src/change-proposal.mjs";
@@ -80,13 +86,13 @@ Usage:
   devharness build [--repo PATH] [--config PATH] [--write] [--format text|json]
   devharness supervisor-init [--format text|json]
   devharness request-approval --run ID --gate GATE --subject ID --subject-sha SHA [--repo PATH]
-  devharness request-capability --run ID (--capability ID | --for-verify [--command ID] [--commit SHA] [--approve]) [--expires-minutes N] [--repo PATH] [--data-dir PATH]
+  devharness request-capability --run ID (--capability ID | --for-verify [--command ID] [--commit SHA] [--approve] | --for-align [--approve]) [--expires-minutes N] [--repo PATH] [--data-dir PATH]
   devharness approve (--request ID [--request ID ...] | --run ID --pending) [--repo PATH] [--data-dir PATH]
   devharness verify --command ID [--repo PATH] [--config PATH] [--data-dir PATH] [--run ID --execute] [--commit SHA] [--attest] [--timeout-seconds N] [--format text|json]
   devharness goal --goal TEXT [--repo PATH] [--data-dir PATH] [--format text|json]
   devharness advance --run ID [--mode docs-only|controlled-change] [--change-json PATH | --agent-propose [--agent ID]] [--repo PATH] [--data-dir PATH] [--artifact-dir PATH] [--command ID] [--format text|json]
   devharness align --run ID [--continue|--tick] [--agent ID] [--agent-profile ID] [--research-recipes PATH] [--repo PATH] [--data-dir PATH] [--format text|json]
-  devharness answer --run ID --decision ID --option ID [--decision ID --option ID ...] [--packet SHA] [--repo PATH] [--data-dir PATH] [--format text|json]
+  devharness answer --run ID (--infer-conservative | --decision ID --option ID [...]) [--packet SHA] [--repo PATH] [--data-dir PATH] [--format text|json]
   devharness request-scope --run ID [--repo PATH] [--data-dir PATH] [--format text|json]
   devharness request-delivery --run ID [--repo PATH] [--data-dir PATH] [--format text|json]
   devharness promote --run ID [--branch NAME] [--base BRANCH] [--push] [--pr] [--repo PATH] [--data-dir PATH] [--format text|json]
@@ -104,6 +110,7 @@ Commands:
   request-approval Create a signed, revision-bound pending request; this does not approve it.
   request-capability Request bounded capability approval from the current Goal Run plan.
              --capability ID requests one. --for-verify requests every capability still blocking the current verify plan (from readiness/--command/--commit), optionally --approve in one TTY batch.
+             --for-align requests research/network capabilities still blocking live Alignment, optionally --approve in one TTY batch.
              Defaults: agent-runtime/vcs-write 720m, network-research 480m, others 60m (max 1440). Re-request expired/stale without losing the Goal Run.
              After Gate 1, request vcs-write then TTY-approve before advance --mode controlled-change.
   approve    Record one or more decisions in a single foreground TTY confirmation (--request repeated, or --run + --pending). JSON and pipes are refused; never silently auto-approves.
@@ -254,6 +261,10 @@ function parseArguments(argv) {
       if (!options.capabilityId) throw new Error("--capability requires a capability id");
     } else if (argument === "--for-verify") {
       options.forVerify = true;
+    } else if (argument === "--for-align") {
+      options.forAlign = true;
+    } else if (argument === "--infer-conservative") {
+      options.inferConservative = true;
     } else if (argument === "--approve") {
       options.approveAfterRequest = true;
     } else if (argument === "--expires-minutes") {
@@ -353,9 +364,9 @@ function nextRunAction(run) {
 function nextLiveAction(status, { scopeApproved = false } = {}) {
   if (!status) return "Inspect the live Alignment bundle.";
   if (status.status === "waiting-agent-authority") return "Approve the exact agent authority, then continue the live operation.";
-  if (status.status === "waiting-research-authority") return "Approve the research authority, then continue the live operation.";
+  if (status.status === "waiting-research-authority") return "Approve research authority (`devharness request-capability --run ID --for-align --approve`), then continue.";
   if (status.status === "running") return "Let the live operation continue. Run `devharness align --continue --run ID` to tick it.";
-  if (status.status === "question-blocked") return "Answer the blocked question before resuming the live operation.";
+  if (status.status === "question-blocked") return "Answer blocked questions (`devharness answer --run ID --infer-conservative`), then continue.";
   if (status.status === "ready") {
     return scopeApproved
       ? "Scope is approved. Run `devharness advance --run ID` for post-scope plan→change→verify prep, or inspect the Alignment Brief."
@@ -978,17 +989,37 @@ export async function runCli(argv, io = console, services = {}) {
 
   if (options.command === "answer") {
     if (!options.runId) throw new Error("answer requires --run ID");
-    const answerPairs = options.answerPairs.length > 0
-      ? options.answerPairs
-      : (options.decisionId && options.optionId ? [{ decisionId: options.decisionId, optionId: options.optionId }] : []);
-    if (answerPairs.length === 0) throw new Error("answer requires --decision ID --option ID (repeatable as pairs)");
-    if (answerPairs.some((pair) => !pair.optionId)) throw new Error("each --decision requires a matching --option");
     const { dataRoot } = resolveExternalDataRoot(snapshot.repository.root_uri, options.dataRoot);
     const bundleInput = await loadCurrentLiveAlignmentBundle(dataRoot, snapshot.repository.identity, options.runId, {
       agentId: options.agentId ?? "devharness-cli-local-agent",
       agentProfileId: options.agentProfileId ?? "codex-readonly-analysis-v1"
     });
     if (!bundleInput) throw new Error("Live alignment requires a current Alignment Brief before answering a question.");
+    let answerPairs = options.answerPairs.length > 0
+      ? options.answerPairs
+      : (options.decisionId && options.optionId ? [{ decisionId: options.decisionId, optionId: options.optionId }] : []);
+    if (options.inferConservative) {
+      if (answerPairs.length > 0) throw new Error("Pass only one of --infer-conservative or explicit --decision/--option pairs.");
+      let live = bundleInput;
+      if (!live?.interactionPacket && bundleInput.operation?.id) {
+        live = await loadLiveAlignmentOperationBundle(dataRoot, snapshot.repository.identity, bundleInput.operation.id);
+      }
+      if (!live?.interactionPacket) {
+        throw new Error("--infer-conservative needs a current interaction packet on the live Alignment operation.");
+      }
+      const picked = pickConservativeInferAnswers(live.interactionPacket, live.developerAnswers ?? []);
+      if (picked.pairs.length === 0) {
+        throw new Error(picked.skipped.length
+          ? `No Infer conservatively options available (${picked.skipped.map((item) => item.decisionId).join(", ")}).`
+          : "No unresolved Alignment decisions to infer.");
+      }
+      if (picked.skipped.length) {
+        io.log(`Skipping decisions without infer options: ${picked.skipped.map((item) => item.decisionId).join(", ")}`);
+      }
+      answerPairs = picked.pairs;
+    }
+    if (answerPairs.length === 0) throw new Error("answer requires --infer-conservative or --decision ID --option ID (repeatable as pairs)");
+    if (answerPairs.some((pair) => !pair.optionId)) throw new Error("each --decision requires a matching --option");
     const supervisorRoot = services.supervisorRoot ?? defaultSupervisorRoot();
     const answerResult = await recordAlignmentAnswer({
       dataRoot,
@@ -1658,14 +1689,15 @@ export async function runCli(argv, io = console, services = {}) {
 
   if (options.command === "request-capability") {
     if (!options.runId) throw new Error("request-capability requires --run");
-    if (options.forVerify && options.capabilityId) {
-      throw new Error("Pass only one of --capability or --for-verify.");
+    const modeCount = [options.forVerify, options.forAlign, Boolean(options.capabilityId)].filter(Boolean).length;
+    if (modeCount > 1) {
+      throw new Error("Pass only one of --capability, --for-verify, or --for-align.");
     }
-    if (!options.forVerify && !options.capabilityId) {
-      throw new Error("request-capability requires --capability ID or --for-verify");
+    if (modeCount === 0) {
+      throw new Error("request-capability requires --capability ID, --for-verify, or --for-align");
     }
-    if (options.approveAfterRequest && !options.forVerify) {
-      throw new Error("--approve is only valid with --for-verify");
+    if (options.approveAfterRequest && !options.forVerify && !options.forAlign) {
+      throw new Error("--approve is only valid with --for-verify or --for-align");
     }
     if (!snapshot.repository.git.head_sha || snapshot.repository.git.dirty) throw new Error("Capability requests require a clean committed repository revision.");
     const { dataRoot } = resolveExternalDataRoot(snapshot.repository.root_uri, options.dataRoot);
@@ -1763,6 +1795,78 @@ export async function runCli(argv, io = console, services = {}) {
           ? `devharness approve --repo ${fileURLToPath(snapshot.repository.root_uri)} --data-dir ${dataRoot} --run ${options.runId} --pending`
           : `devharness verify --run ${options.runId} --command ${defaults.command_id}${defaults.commit_sha ? ` --commit ${defaults.commit_sha}` : ""} --execute --attest`;
         io.log(`Verify capabilities requested for ${defaults.command_id}\nRequired: ${batch.gap.required_capability_ids.join(", ")}\n${reqList}\nNext: ${approveHint}`);
+      }
+      return (approval?.decision === "rejected") ? 2 : 0;
+    }
+
+    if (options.forAlign) {
+      const authorizationView = await loadCapabilityAuthorizationView({
+        dataRoot,
+        supervisorRoot,
+        repositoryIdentity: snapshot.repository.identity,
+        runId: options.runId,
+        now: now()
+      });
+      const batch = await requestMissingAlignCapabilities({
+        dataRoot,
+        supervisorRoot,
+        repositoryIdentity: snapshot.repository.identity,
+        runId: options.runId,
+        authorizationView,
+        expiresInMinutes: options.expiresInMinutes,
+        now
+      });
+
+      let approval = null;
+      if (options.approveAfterRequest) {
+        if (options.format === "json") {
+          throw new Error("Approval is unavailable in JSON mode; omit --approve or use the foreground TTY without --format json.");
+        }
+        if (batch.approve_request_ids.length === 0) {
+          approval = { decision: "not-needed", request_ids: [], receipts: [] };
+        } else {
+          const capabilitiesByRequestId = {};
+          for (const requestId of batch.approve_request_ids) {
+            const capability = await resolveCapabilityApprovalContext({
+              dataRoot,
+              supervisorRoot,
+              repositoryIdentity: snapshot.repository.identity,
+              requestId,
+              now: now()
+            });
+            if (capability) capabilitiesByRequestId[requestId] = capability;
+          }
+          const recorded = await recordInteractiveApprovalDecisions({
+            supervisorRoot,
+            repositoryIdentity: snapshot.repository.identity,
+            requestIds: batch.approve_request_ids,
+            capabilitiesByRequestId,
+            responseProvider: services.approveResponse ?? null,
+            now
+          });
+          approval = {
+            decision: recorded.decision,
+            request_ids: recorded.request_ids,
+            receipts: recorded.receipts.map((receipt) => ({ id: receipt.id, request_id: receipt.request_id }))
+          };
+        }
+      }
+
+      const payload = { ...batch, approval };
+      if (options.format === "json") {
+        io.log(JSON.stringify(payload, null, 2));
+      } else if (batch.already_satisfied || (batch.gap.allowed && batch.approve_request_ids.length === 0)) {
+        io.log(`Align capabilities already approved.\nRequired: ${batch.gap.required_capability_ids.join(", ") || "none"}\nNext: devharness align --continue --run ${options.runId}`);
+      } else if (approval?.decision === "approved") {
+        io.log(`Align capabilities approved (${approval.request_ids.length}).\nRequired: ${batch.gap.required_capability_ids.join(", ")}\nRequests: ${approval.request_ids.join(" ")}\nNext: devharness align --continue --run ${options.runId}`);
+      } else if (approval && approval.decision !== "not-needed") {
+        io.log(`Align capability batch decision: ${approval.decision}\nRequests: ${(approval.request_ids ?? []).join(" ") || "none"}`);
+      } else {
+        const reqList = batch.results.map((item) => `${item.capability_id}=${item.request_id}${item.reused ? ` (${item.reuse_kind})` : ""}`).join("\n");
+        const approveHint = batch.approve_request_ids.length
+          ? `devharness approve --repo ${fileURLToPath(snapshot.repository.root_uri)} --data-dir ${dataRoot} --run ${options.runId} --pending`
+          : `devharness align --continue --run ${options.runId}`;
+        io.log(`Align capabilities requested\nRequired: ${batch.gap.required_capability_ids.join(", ")}\n${reqList}\nNext: ${approveHint}`);
       }
       return (approval?.decision === "rejected") ? 2 : 0;
     }

@@ -625,9 +625,9 @@ async function tickAgentPhase({
 function nextActionFor(status, blockers = [], { scopeApproved = false } = {}) {
   if (blockers.length > 0) return blockers[0];
   if (status.status === "waiting-agent-authority") return "Approve the exact agent authority, then continue the live operation.";
-  if (status.status === "waiting-research-authority") return "Approve the research authority, then continue the live operation.";
+  if (status.status === "waiting-research-authority") return "Approve research authority (`devharness request-capability --run ID --for-align --approve`), then continue.";
   if (status.status === "running") return "Let the live operation continue. Run `devharness align --continue --run ID` to tick it.";
-  if (status.status === "question-blocked") return "Answer the blocked question before resuming the live operation.";
+  if (status.status === "question-blocked") return "Answer blocked questions (`devharness answer --run ID --infer-conservative`), then continue.";
   if (status.status === "ready") {
     return scopeApproved
       ? "Scope is approved. Continue with the next governed planning step or inspect the Alignment Brief."

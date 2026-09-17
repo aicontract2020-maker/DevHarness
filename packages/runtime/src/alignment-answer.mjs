@@ -48,9 +48,9 @@ function alignmentAnswerSubject({ operation, packetSha256, decisionId, optionId 
 function nextLiveAction(status) {
   if (!status) return "Inspect the live Alignment bundle.";
   if (status.status === "waiting-agent-authority") return "Approve the exact agent authority, then continue the live operation.";
-  if (status.status === "waiting-research-authority") return "Approve the research authority, then continue the live operation.";
+  if (status.status === "waiting-research-authority") return "Approve research authority (`devharness request-capability --run ID --for-align --approve`), then continue.";
   if (status.status === "running") return "Let the live operation continue and inspect progress when needed.";
-  if (status.status === "question-blocked") return "Answer the blocked question before resuming the live operation.";
+  if (status.status === "question-blocked") return "Answer blocked questions (`devharness answer --run ID --infer-conservative`), then continue.";
   if (status.status === "ready") return "Review the ready Alignment Brief and decide whether to approve scope.";
   if (status.status === "failed") return "Retry the failed phase or cancel the operation if the goal changed.";
   if (status.status === "timed-out") return "Retry or cancel the timed-out operation.";
