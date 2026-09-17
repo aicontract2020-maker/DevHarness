@@ -1009,9 +1009,13 @@ export async function runCli(argv, io = console, services = {}) {
       }
       const picked = pickConservativeInferAnswers(live.interactionPacket, live.developerAnswers ?? []);
       if (picked.pairs.length === 0) {
-        throw new Error(picked.skipped.length
-          ? `No Infer conservatively options available (${picked.skipped.map((item) => item.decisionId).join(", ")}).`
-          : "No unresolved Alignment decisions to infer.");
+        if (picked.skipped.length) {
+          throw new Error(`No Infer conservatively options available (${picked.skipped.map((item) => item.decisionId).join(", ")}).`);
+        }
+        io.log(options.format === "json"
+          ? JSON.stringify({ mode: "live-alignment", run: bundleInput.run, inferred: [], next_action: "devharness align --continue --run " + options.runId }, null, 2)
+          : `No unresolved Alignment decisions to infer.\nNext: devharness align --continue --run ${options.runId}`);
+        return 0;
       }
       if (picked.skipped.length) {
         io.log(`Skipping decisions without infer options: ${picked.skipped.map((item) => item.decisionId).join(", ")}`);
