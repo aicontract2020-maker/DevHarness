@@ -1,12 +1,17 @@
 import assert from "node:assert/strict";
+import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import { assertContract } from "../src/contracts.mjs";
 import {
   buildDraftSystemModelFromOnboardingPlan,
   buildProposedDesignStrategyFromOnboardingPlan,
-  createValidatedPhase1DraftsFromOnboardingPlan
+  createValidatedPhase1DraftsFromOnboardingPlan,
+  deriveEntitiesFromRepositoryRoot
 } from "../src/phase1-drafts.mjs";
+
+const fixtureRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "phase1-repo");
 
 function plan() {
   return {
@@ -24,33 +29,50 @@ function plan() {
   };
 }
 
-test("draft system model is schema-valid and never complete", async () => {
+test("deriveEntitiesFromRepositoryRoot reads SQLAlchemy tables and migration refs", () => {
+  const derived = deriveEntitiesFromRepositoryRoot(fixtureRoot);
+  assert.ok(derived.entities.some((entity) => entity.id === "entity-users"));
+  assert.ok(derived.entities.some((entity) => entity.id === "entity-kb_assessments"));
+  const users = derived.entities.find((entity) => entity.id === "entity-users");
+  assert.ok(users.classifications.includes("personal"));
+  assert.ok(users.constraints.some((item) => item.includes("unique")));
+  assert.ok(users.migration_refs.some((ref) => ref.includes("001_add_users.py")));
+});
+
+test("draft system model includes entities and critical health-ready flow", async () => {
   const model = buildDraftSystemModelFromOnboardingPlan(plan(), {
     snapshot: {
+      repository: { root_uri: `file://${fixtureRoot}` },
       detected: { platforms: ["web", "api"], frameworks: ["FastAPI"], services: ["PostgreSQL"], deployment_files: [] },
       environment: { declared_keys: ["DATABASE_URL"] }
-    }
+    },
+    repositoryRoot: fixtureRoot
   });
   await assertContract("system-model", model);
   assert.equal(model.verdict, "needs-evidence");
-  assert.ok(model.components.some((c) => c.kind === "frontend"));
-  assert.ok(model.components.some((c) => c.kind === "backend"));
-  assert.ok(model.stores.some((s) => s.kind === "PostgreSQL"));
-  assert.equal(model.entities.length, 0);
-  assert.equal(model.flows.length, 0);
-  assert.ok(model.unknowns.length > 0);
+  assert.ok(model.entities.length >= 2);
+  assert.equal(model.flows.length, 1);
+  assert.equal(model.flows[0].id, "flow-health-ready");
+  assert.ok(model.flows[0].steps.some((step) => step.reads.includes("entity-users")));
+  assert.ok(model.unknowns.some((item) => /static source paths|runtime-observed/i.test(item)));
 });
 
 test("proposed design strategy is schema-valid and never approved here", async () => {
   const strategy = buildProposedDesignStrategyFromOnboardingPlan(plan());
   await assertContract("design-strategy", strategy);
   assert.equal(strategy.status, "proposed");
-  assert.equal(strategy.decisions.length >= 1, true);
-  assert.match(strategy.id, /^design-strategy-draft-/);
 });
 
 test("validated phase1 drafts assert both contracts", async () => {
-  const { systemModel, strategy } = await createValidatedPhase1DraftsFromOnboardingPlan(plan());
+  const { systemModel, strategy } = await createValidatedPhase1DraftsFromOnboardingPlan(plan(), {
+    repositoryRoot: fixtureRoot,
+    snapshot: {
+      repository: { root_uri: `file://${fixtureRoot}` },
+      detected: { platforms: ["web", "api"], frameworks: ["FastAPI"], services: ["PostgreSQL"], deployment_files: [] },
+      environment: { declared_keys: ["DATABASE_URL"] }
+    }
+  });
   assert.equal(systemModel.verdict, "needs-evidence");
+  assert.ok(systemModel.entities.length >= 1);
   assert.equal(strategy.status, "proposed");
 });

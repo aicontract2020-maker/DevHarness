@@ -1,25 +1,32 @@
 # AIedu demo · auditable understanding baseline
 
-Generated from DevHarness Phase 1 bundle (baseline + draft system-model + proposed design-strategy).
+Generated from DevHarness Phase 1 bundle with code/migration-derived entities and a critical readiness flow.
 
-- Date: 2026-09-16 (America/Toronto)
+- Date: 2026-09-17 (America/Toronto)
 - Repo under study: `aiedu-demo` / AI-education-demo
-- Baseline id: `understanding-baseline-0bd395993f0c6888652ae35f` · verdict `needs-evidence`
-- System model draft: `system-model-draft-0347787060f8d93400cd59d7` · verdict `needs-evidence`
+- Baseline id: `understanding-baseline-f420b0a74d728d9e8d3c4d7f` · verdict `needs-evidence`
+- System model draft: `system-model-draft-40c60fefa6087924b2a7f156` · entities **14** · flow `flow-health-ready`
 - Design strategy draft: `design-strategy-draft-52f80b3989f08e1a05d7cd5b` · status `proposed`
+- Coverage flags: database=true · security=false · flows=true
 - Commit: `7f32844e6d4e3bb721191f41479f01c57dbc51ac`
-- Paths: baseline / system-models / strategies under DevHarness project state
-- Onboarding plan: `onboard-89c2e6b6bebf7243d6d24b66427705f9`
 - Working copy: `local-projects/aiedu-demo/worktree-dogfood-clean`
+
+### Critical flow sketch
+```text
+Operator or orchestrator probes GET /health/ready
+  -> Probe GET /health/ready (or rely on platform checks)
+  -> Run database_readiness and return ready/503
+  => API reports ready only when configured databases respond; otherwise 503 with readiness detail
+```
 
 ---
 
 # Repository Understanding Brief (Phase 1)
 
-- Baseline id: `understanding-baseline-0bd395993f0c6888652ae35f`
+- Baseline id: `understanding-baseline-f420b0a74d728d9e8d3c4d7f`
 - Repository: `github.com/Maple-Spark-Ai/AI-education-demo`
 - Revision: `7f32844e6d4e3bb721191f41479f01c57dbc51ac`
-- Captured: 2026-09-17T03:59:18.820Z
+- Captured: 2026-09-17T04:02:49.153Z
 - Verdict: **needs-evidence** (static Phase 1 never claims ready without runtime/test proof)
 
 ## Required domains
@@ -91,7 +98,7 @@ Generated from DevHarness Phase 1 bundle (baseline + draft system-model + propos
 
 ## Model / strategy coverage (honest gaps)
 
-- System model: `system-model-draft-0347787060f8d93400cd59d7` · database=false · security=false · feature_flows=false
+- System model: `system-model-draft-40c60fefa6087924b2a7f156` · database=true · security=false · feature_flows=true
 - Strategy: `design-strategy-draft-52f80b3989f08e1a05d7cd5b` v1 · proposed
 
 ## Onboarding rollup
