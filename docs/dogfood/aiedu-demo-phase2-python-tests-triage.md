@@ -68,3 +68,13 @@ Receipt `verify-1789657568042-dc37cf7d`:
 
 Host wiring works. Remaining failures are no longer “no DB”; next slice is **schema/migrate/seed** (and fixture expectations) against empty compose DBs — not more harness plumbing.
 
+## 2026-09-17 migrate/seed on owned Postgres
+
+`local-projects/aiedu-demo/scripts/migrate-seed-for-tests.sh` (called from postgres-redis launch):
+1. Ephemeral patch of aiedu user migrations 030/035 UNION casts (TEXT vs INTEGER) in the verify worktree
+2. KB + user `alembic upgrade head`
+3. `dashboard_copy` + `seed_default_users` (dogfood passwords from `.env.example` defaults)
+4. Best-effort `scripts/kb_reconcile.py`
+
+Smoke: 82 user tables, 6 seeded users, KB schema present.
+

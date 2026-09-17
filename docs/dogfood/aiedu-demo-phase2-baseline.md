@@ -16,3 +16,8 @@ Next on the doctor Phase 2 ladder: continue remaining unproved quality commands 
 ## 2026-09-17 postgres+redis for python-tests
 
 Wired disposable `aiedu-postgres-redis` service onto `python-tests` (TCP readiness). Local-only under `local-projects/aiedu-demo/` (gitignored). DevHarness core: test+TCP verification support.
+
+## 2026-09-17 migrate/seed wired into aiedu-postgres-redis
+
+Launch path now migrates KB+user schemas and light-seeds users before TCP readiness completes for dependents. See triage note.
+
