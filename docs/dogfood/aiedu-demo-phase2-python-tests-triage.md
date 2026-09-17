@@ -1,29 +1,37 @@
 # aiedu Phase 2: `python-tests` triage
 
-Receipt: `verify-1789620832823-47561c3e` (FAIL, exit 1, ~62s)  
-Command: `uv --directory backend run --extra dev pytest -q`  
-Totals: **3446 passed**, **121 failed**, **47 errors**, 240 skipped.
+Receipts:
+- First fail: `verify-1789620832823-47561c3e` (FAIL, ~48s)
+- Re-attest after DB scrub: `verify-1789653847210-6e27af06` (FAIL, ~53s)
 
-## Classification (Kai preference: fixture/env vs product)
+Both: **121 failed / 3446 passed / 240 skipped / 47 errors** — identical shape.
 
-| Bucket | Approx size | What the user/agent sees | Likely cause |
-|---|---:|---|---|
-| Host Postgres leak | majority of FAIL+ERROR (~66+ blocks hit `:5432`) | Tests crash with `psycopg2.OperationalError: Connection refused` to `localhost:5432` | Isolated verify still forwarded host `DATABASE_URL` / related declared keys into the unit-test process; SQLite fixtures never get a chance |
-| Client fixture timeout | ~18 ERROR setups | `TimeoutError` while building `client` fixture | Cascade from DB connect hang / refused |
-| SQLite type adapter | few | `Error binding parameter … type 'Query' is not supported` | Fixture/SQLAlchemy SQLite adapter gap |
-| Assertion / contract | ~10 FAILURE blocks | Ordinary `AssertionError` | Possible real product or test-contract bugs — triage only after env is clean |
+## Corrected root cause (2026-09-17 re-attest)
 
-Asyncio shutdown noise (`unhandled exception during asyncio.run() shutdown`) is secondary cleanup fallout, not a separate product list.
+| Bucket | Count (approx) | Nature | Notes |
+|--------|----------------|--------|-------|
+| Default Postgres to `:5432` | majority of FAIL+ERROR (~90 OperationalError blocks) | `psycopg2.OperationalError: Connection refused` to `localhost:5432` | **Not** a host-env leak. Host shell has no `DATABASE_*`. Product `backend/src/config/settings.py` defaults `KB_DATABASE_URL` / `USER_DATABASE_URL` to `postgresql://…@localhost:5432/…`; module-level engines in `kb_session.py` / `user_session.py` connect on import. `conftest` SQLite only covers `get_db`. |
+| Client fixture timeouts | ~47 CancelledError | Cascade from DB connect failures | |
+| Assertion/contract | ~10–15 | Product or test-contract | Triage **only after** DB baseline is honest |
+| SQLite type adapter | few | Query binding | Separate small slice |
 
-## What this means for autonomy
+## What the scrub did / did not do
 
-Phase 2 is correctly blocked: the full backend suite is **not** a stable baseline under DevHarness verify until host DB env is scrubbed (or a disposable Postgres service is attached for tests that truly need it).
+DevHarness `322b994` + `cd8c633`: for `command.kind === "test"`, scrub host DB env keys unless listed in `env_keys`.
 
-## Fix order
+- Hygiene is still correct (prevents a real host `.env` from poisoning unit verify).
+- On this Mac, `set_keys` was already `[]` before and after — scrub could not change outcomes.
+- Leaving defaults unset surfaces the product’s localhost Postgres defaults.
 
-1. **DevHarness (done next):** for `command.kind === "test"`, do not forward host DB URL keys unless listed in that command’s `env_keys`.
-2. Re-run `python-tests` attest on run `run-07377e5c-…`.
-3. Only then open a product bug list from remaining AssertionErrors.
+## Phase 2 stance
+
+Full backend `pytest -q` is **not** a stable DevHarness baseline until either:
+
+1. **Disposable Postgres (preferred harness path)** — declare harness services for KB+user DB and attach them to `python-tests` (or a dedicated `python-tests-pg` command), or
+2. **Narrow attested command** — keep `pytest-health-readiness` (already PASS) and/or a SQLite-safe subset as the Phase2 automated-tests rung until product fixtures patch KB/user engines, or
+3. **Consumer conftest fix** — monkeypatch settings / delay engine creation (touches aiedu; avoid unless Kai wants product work).
+
+Do **not** treat remaining AssertionErrors as a product bug list yet.
 
 ## Repro
 
@@ -35,3 +43,5 @@ node packages/cli/src/cli.mjs verify \
   --run run-07377e5c-8aaf-4ae9-99bc-debe3782d1e3 \
   --command python-tests --execute --attest
 ```
+
+Caps: `dependency-install` + `service-runtime` (TTY APPROVE phrase).

@@ -6,3 +6,9 @@
 - Caps: `dependency-install` + `service-runtime` (TTY approved)
 
 Next on the doctor Phase 2 ladder: continue remaining unproved quality commands (python-tests, frontend-test, builds, launch, playwright) toward autonomy level 2+.
+
+## 2026-09-17 python-tests re-attest
+
+- Caps re-approved; scrub commits `322b994` / `cd8c633` in effect.
+- Receipt `verify-1789653847210-6e27af06`: still **121 failed / 47 errors / 3446 passed** (same as pre-scrub).
+- Root cause corrected: product settings defaults → localhost:5432, not host env leak. See `aiedu-demo-phase2-python-tests-triage.md`.
