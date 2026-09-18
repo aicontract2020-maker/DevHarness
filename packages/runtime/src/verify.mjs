@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { execFileSync, spawn } from "node:child_process";
-import { copyFileSync, createWriteStream, existsSync, mkdirSync } from "node:fs";
+import { copyFileSync, createWriteStream, existsSync, mkdirSync, readdirSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
@@ -426,23 +426,55 @@ async function waitForReadiness(handle, readinessProbe) {
 }
 
 
+function listNpmPackageRoots(workspace) {
+  const roots = [];
+  const seen = new Set();
+  const consider = (dir) => {
+    const resolved = path.resolve(dir);
+    if (seen.has(resolved)) return;
+    if (!existsSync(path.join(resolved, "package.json"))) return;
+    if (!existsSync(path.join(resolved, "package-lock.json"))) return;
+    seen.add(resolved);
+    roots.push(resolved);
+  };
+  consider(workspace);
+  // One-level nested package roots (e.g. frontend/) — root lockfile alone is not enough.
+  try {
+    for (const entry of readdirSync(workspace, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      if (entry.name === "node_modules" || entry.name.startsWith(".")) continue;
+      consider(path.join(workspace, entry.name));
+    }
+  } catch {
+    // Ignore unreadable workspaces; caller treats empty roots as not_required.
+  }
+  return roots;
+}
+
 function prepareDependencies(plan, hostEnvironment) {
   const workspace = plan.paths.workspace;
-  const lockfile = path.join(workspace, "package-lock.json");
-  const manifest = path.join(workspace, "package.json");
-  if (!existsSync(lockfile) || !existsSync(manifest)) {
-    return { status: "not_required", summary: "No npm lockfile is present in the verification worktree." };
+  const packageRoots = listNpmPackageRoots(workspace);
+  if (packageRoots.length === 0) {
+    return { status: "not_required", summary: "No npm package root with package.json + package-lock.json is present in the verification worktree." };
   }
+  const env = allowedProcessEnvironment(plan, hostEnvironment);
+  const installed = [];
   try {
-    execFileSync("npm", ["ci", "--no-fund", "--no-audit"], {
-      cwd: workspace,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-      env: allowedProcessEnvironment(plan, hostEnvironment),
-      maxBuffer: 32 * 1024 * 1024
-    });
+    for (const root of packageRoots) {
+      execFileSync("npm", ["ci", "--no-fund", "--no-audit"], {
+        cwd: root,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+        env,
+        maxBuffer: 32 * 1024 * 1024
+      });
+      installed.push(path.relative(workspace, root) || ".");
+    }
     materializeLocalConfigFiles(plan);
-    return { status: "pass", summary: "Installed npm dependencies from the committed lockfile." };
+    return {
+      status: "pass",
+      summary: `Installed npm dependencies from the committed lockfile (${installed.join(", ")}).`
+    };
   } catch (error) {
     const detail = (error.stderr?.toString?.() || error.stdout?.toString?.() || error.message || "").trim();
     const tail = detail.split("\n").slice(-8).join(" ").trim();
