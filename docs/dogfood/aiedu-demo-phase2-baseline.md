@@ -77,3 +77,10 @@ Ladder: **6/14** proved. Next listed: `controlled-change-marker` (DevHarness dog
 - Manual prove: `/health` healthy + frontend HTTP 200; migration 030→035 clean.
 - Sealed `aiedu-full-stack-launch` on Goal Run `run-95bc169b…` @ `96055667` → receipt `verify-1789753876936-ee206033`, attestation issued (backend `:18000/health/ready` + frontend `:13000/` both pass).
 - Remaining ladder gaps unchanged in kind: ○ `controlled-change-marker` (clean HEAD), ○ `web-playwright` (behavior), supervisor-isolation / behavior-verification still blocked until playwright seals.
+
+## 2026-09-18 re-attest at 96055667
+
+Re-sealed on Goal Run `run-95bc169b…` after HEAD moved for full-stack fixes:
+- PASS: health-service-field, health-live-and-legacy-service, pytest-health-readiness, frontend-lint, frontend-build, docker-compose-build, aiedu-postgres-redis-launch, aiedu-full-stack-launch, frontend-test, frontend-test-failover
+- FAIL (not sealed): python-tests — 1 failed / 3851 passed (`test_non_adaptive_report_keeps_order_index_when_timestamps_tie`); unrelated to full-stack fixes
+- Still open: controlled-change-marker (clean HEAD), docs-readiness-summary, web-playwright / behavior-verification, supervisor-isolation
