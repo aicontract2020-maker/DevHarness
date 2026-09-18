@@ -25,3 +25,28 @@ Launch path now migrates KB+user schemas and light-seeds users before TCP readin
 
 `python-tests` with owned Postgres+Redis + migrate/seed: **48 failed / 3757 passed / 47 errors** (`verify-1789659292950-f92d362a`). Harness path is honest; remaining fails are product/test-contract.
 
+## 2026-09-18 Phase 2 doctor ladder climb (HEAD `7b01a854`)
+
+Goal Run: `run-817968d0-f7c7-43a6-95e7-a34195293813`
+
+### Proved (Supervisor evidence @ current revision)
+
+| Command | Receipt / note |
+|---|---|
+| `pytest-health-readiness` | already proved |
+| `python-tests` | `verify-1789738819730-1bad19e7` — 3852 passed / 2 skipped |
+| `frontend-test` | `verify-1789739045801-6beead85` (after nested `npm ci` fix) |
+| `frontend-test-failover` | proved |
+| `health-live-and-legacy-service` | proved |
+| `health-service-field` | proved |
+
+Ladder: **6/14** proved. Next listed: `controlled-change-marker` (DevHarness dogfood probe, not product suite).
+
+### Honest gaps
+
+- **`frontend-lint`**: runs (eslint present after nested install) but **fails** — 2 errors + 30 warnings in consumer frontend (product debt).
+- **`frontend-build` / builds**: command can PASS, but doctor stays ○ because **no sealed evidence driver is registered for build receipts** yet.
+- **Launch commands**: blocked — “Launch commands require a lifecycle driver with readiness and teardown proof”.
+- **`controlled-change-marker` / `docs-readiness-summary`**: external dogfood probes (marker file / env path), not Maple Spark product tests.
+- **DevHarness fix:** `prepareDependencies` runs `npm ci` in one-level nested package roots (`frontend/`) — committed as `bda90e5`.
+
