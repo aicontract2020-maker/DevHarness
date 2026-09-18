@@ -50,3 +50,8 @@ Ladder: **6/14** proved. Next listed: `controlled-change-marker` (DevHarness dog
 - **`controlled-change-marker` / `docs-readiness-summary`**: external dogfood probes (marker file / env path), not Maple Spark product tests.
 - **DevHarness fix:** `prepareDependencies` runs `npm ci` in one-level nested package roots (`frontend/`) — committed as `bda90e5`.
 
+## 2026-09-18 ladder re-attest + Gate1
+
+- Dogfood HEAD: `a2e7334b` (post lint-escape merge).
+- Goal Run `run-f09020ac-83b1-4ce3-ac06-4eb31d4ec616`: **scope=approved**; ladder **7/14** sealed-proved.
+- Lint/build execute green but not sealed; marker probe N/A on clean HEAD; delivery skipped (no change).

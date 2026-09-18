@@ -179,3 +179,27 @@ Baseline test fixes are **in-tree** on dogfood branch `dogfood/agent-runtime-202
 | Overlay | `run-python-tests-with-baseline-fixes.sh` skips patch apply when HEAD already contains the fixes; patch file kept as safety for older checkouts |
 | Prior run (pre-pin) | `run-07377e5c-…` @ `7f32844` — superseded for baseline attest |
 
+## 2026-09-18 Phase 2 ladder + Gate1 (HEAD `a2e7334b`)
+
+Goal Run: `run-f09020ac-83b1-4ce3-ac06-4eb31d4ec616`
+
+### Proof (sealed attest at current revision)
+Proved **7/14**:
+- ✓ pytest-health-readiness, python-tests, frontend-test, frontend-test-failover
+- ✓ docs-readiness-summary, health-live-and-legacy-service, health-service-field
+
+Honest gaps:
+- ○ `controlled-change-marker` — fails on clean HEAD (marker file only exists inside a controlled-change worktree; not a product baseline).
+- ○ `frontend-lint` / `frontend-build` — **execute PASS** but `Passing evidence: not issued (no sealed evidence driver is registered for lint|build receipts)`. CLI only seals `test`/`verify` kinds (`packages/cli/src/cli.mjs` + `supervisor-evidence.mjs`).
+- ○ `docker-compose-build`, launches, `web-playwright` — same sealed/lifecycle/behavior gaps as before.
+
+### Scope / delivery
+- **Scope gate: approved** (live Alignment via `devharness-cli-local-agent` + expect-driven `answer --infer-conservative`).
+- **Delivery: not pushed** — this run is ladder re-attest, not a product change; no Delivery Brief without `advance` change.
+
+### Doctor blockers (unchanged class)
+- fail: supervisor-isolation
+- warn: build-command (needs sealed build driver), behavior-verification, service-launch, ci-feedback
+
+### Next harness lever
+Extend sealed evidence to `lint`/`build` (and later `launch`) so ladder rungs and doctor `build-command` can prove after a green execute.
