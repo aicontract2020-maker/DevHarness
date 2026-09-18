@@ -68,5 +68,12 @@ Ladder: **6/14** proved. Next listed: `controlled-change-marker` (DevHarness dog
 - Doctor `service-launch` now reads current launch manifests (`launchReceipt` no longer hard-null).
 - Dogfood @ `a2e7334b`:
   - ✓ `aiedu-postgres-redis-launch` sealed (TCP readiness + teardown).
-  - ○ `aiedu-full-stack-launch` — lifecycle driver runs, but product containers exit: backend `class_member` view UNION text/int mismatch; frontend `NODE_OPTIONS=--no-experimental-webstorage` rejected → no `.next/standalone`.
+  - ● `aiedu-full-stack-launch` — sealed PASS @ `96055667` (`verify-1789753876936-ee206033`); product UNION + Node 22 fixes landed.
 - Ladder **11/14**; doctor score **88**; `service-launch` **pass**.
+
+## 2026-09-18 full-stack product fix + sealed launch
+
+- aiedu dogfood HEAD `96055667`: cast `class_student.student_id` to integer in `class_member` / `class_group_member` views (030/035); TYPE_OVERRIDES for `class_student.student_id`; pilot frontend Dockerfile → Node 22.
+- Manual prove: `/health` healthy + frontend HTTP 200; migration 030→035 clean.
+- Sealed `aiedu-full-stack-launch` on Goal Run `run-95bc169b…` @ `96055667` → receipt `verify-1789753876936-ee206033`, attestation issued (backend `:18000/health/ready` + frontend `:13000/` both pass).
+- Remaining ladder gaps unchanged in kind: ○ `controlled-change-marker` (clean HEAD), ○ `web-playwright` (behavior), supervisor-isolation / behavior-verification still blocked until playwright seals.
