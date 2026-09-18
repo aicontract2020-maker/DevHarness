@@ -84,4 +84,4 @@ npm run devharness -- build --repo ../some-project --config ./local-projects/exa
 
 Preview is pure and deterministic. Explicit write stores the manifest under the external DevHarness data root. The compiler resolves exact command references and reports launch commands without an explicit readiness declaration as blockers; it never invents a port or health endpoint.
 
-For v0, a verification job may require at most one service. Readiness supports credential-free loopback HTTP only. Lifecycle receipts remain useful diagnostics, but doctor does not upgrade `service-launch` until a sealed lifecycle driver is implemented.
+For v0, a verification job may require at most one service. Readiness supports credential-free loopback HTTP only. Launch commands are proved by the sealed `command-lifecycle` driver: start the owned service, pass readiness, run a lifecycle probe (without re-spawning the launch command), then teardown. Doctor upgrades `service-launch` when a current-revision launch manifest exists.

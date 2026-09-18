@@ -12,7 +12,7 @@ import { evaluateReadiness } from "../../project/src/doctor.mjs";
 import { compileProjectHarness } from "../../project/src/harness.mjs";
 import { initializeProject } from "../../project/src/init.mjs";
 import { listValidReceipts, projectHarnessPath, writeProjectHarness } from "../src/data-store.mjs";
-import { issueCommandQualityEvidence, issueCommandSystemEvidence, issueCommandTestEvidence, registeredEvidenceDrivers } from "../src/supervisor-evidence.mjs";
+import { issueCommandLifecycleEvidence, issueCommandQualityEvidence, issueCommandSystemEvidence, issueCommandTestEvidence, registeredEvidenceDrivers } from "../src/supervisor-evidence.mjs";
 import { evidenceBlobPath, initializeSupervisorIdentity, listVerifiedEvidenceManifests } from "../src/supervisor-store.mjs";
 import { createVerificationPlan, executeVerificationPlan, probeHttpReadiness } from "../src/verify.mjs";
 
@@ -640,6 +640,7 @@ test("receipt trust is lost after artifact tampering or a new commit", async (t)
 
 test("launch commands and dirty source baselines are blocked before execution", async (t) => {
   const fixture = await createRepository(t);
+  // Unbound launch still blocked until a harness service owns it.
   await assert.rejects(
     createVerificationPlan({
       snapshot: fixture.snapshot,
@@ -647,8 +648,19 @@ test("launch commands and dirty source baselines are blocked before execution", 
       commandId: "root-start",
       dataRoot: fixture.dataRoot
     }),
-    /lifecycle driver/
+    /lifecycle driver|bind exactly one harness service|no explicit service readiness/
   );
+  // Bound launch becomes a lifecycle-only plan (start → readiness → probe → teardown).
+  const bound = await configureLifecycle(fixture);
+  const lifecyclePlan = await createVerificationPlan({
+    snapshot: bound.snapshot,
+    config: bound.config,
+    commandId: "root-start-service",
+    dataRoot: bound.dataRoot
+  });
+  assert.equal(lifecyclePlan.lifecycle_only, true);
+  assert.equal(lifecyclePlan.services.length, 1);
+  assert.equal(lifecyclePlan.command.kind, "launch");
 
   await writeFile(path.join(fixture.root, "uncommitted.txt"), "local\n");
   const dirtySnapshot = await discoverRepository(fixture.root);

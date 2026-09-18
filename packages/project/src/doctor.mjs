@@ -23,12 +23,26 @@ export function receiptMatchesCurrentConfig(snapshot, config, receipt, options =
   const resolvedCommand = { ...configured, sha256: commandHash(configured) };
   const harnessConfig = config.harness ?? { services: [], verifications: [] };
   const verificationDeclaration = harnessConfig.verifications.find((item) => item.command_id === configured.id);
-  const serviceIds = verificationDeclaration?.service_ids ?? [];
-  const expectedVerificationHash = hashContract({
+  let serviceIds = verificationDeclaration?.service_ids ?? [];
+  let expectedWarmup = verificationDeclaration?.warmup ?? [];
+  let expectedVerificationHash = hashContract({
     command: resolvedCommand,
     service_ids: serviceIds,
-    warmup: verificationDeclaration?.warmup ?? []
+    warmup: expectedWarmup
   });
+  // Launch lifecycle plans bind the owned service even when no interactive verification lists it.
+  if (configured.kind === "launch") {
+    const owned = harnessConfig.services.filter((service) => service.command_id === configured.id);
+    if (owned.length !== 1) return false;
+    serviceIds = [owned[0].id];
+    expectedWarmup = [];
+    expectedVerificationHash = hashContract({
+      command: resolvedCommand,
+      service_ids: serviceIds,
+      warmup: expectedWarmup,
+      mode: "lifecycle"
+    });
+  }
   const servicesById = new Map(harnessConfig.services.map((service) => [service.id, service]));
   const expectedServices = serviceIds.map((serviceId) => {
     const service = servicesById.get(serviceId);
@@ -252,7 +266,7 @@ export function evaluateReadiness(snapshot, { receipts = [], trustContext, confi
   const behaviorReceipt = currentSupervisorManifest(snapshot, config, trustContext, "verify");
   const behaviorEvidence = currentBehaviorEvidence(snapshot, isTrustedEvaluationContext(trustContext) ? trustContext.evidence : [], behaviorReceipt);
   const behaviorProved = Boolean(behaviorReceipt && behaviorEvidence.length > 0);
-  const launchReceipt = null;
+  const launchReceipt = currentSupervisorManifest(snapshot, config, trustContext, "launch");
 
   const capabilities = [
     capability({

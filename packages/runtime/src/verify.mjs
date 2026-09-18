@@ -94,8 +94,8 @@ export async function createVerificationPlan({
 
   const command = config.quality.commands.find((candidate) => candidate.id === commandId);
   if (!command) throw new Error(`Unknown configured command: ${commandId}`);
-  if (!EXECUTABLE_KINDS.has(command.kind)) {
-    throw new Error("Launch commands require a lifecycle driver with readiness and teardown proof; direct execution is blocked.");
+  if (command.kind !== "launch" && !EXECUTABLE_KINDS.has(command.kind)) {
+    throw new Error(`Unsupported verification command kind: ${command.kind}`);
   }
 
   const { repositoryRoot, dataRoot: resolvedDataRoot } = resolveExternalDataRoot(snapshot.repository.root_uri, dataRoot);
@@ -105,18 +105,40 @@ export async function createVerificationPlan({
     throw new Error(`Verification is blocked by the project declaration: ${commandBlockers.map((blocker) => blocker.summary).join(" ")}`);
   }
   const resolvedCommand = harness.commands.find((candidate) => candidate.id === commandId);
-  const verification = harness.verifications.find((candidate) => candidate.command.id === commandId) ?? {
+  let verification = harness.verifications.find((candidate) => candidate.command.id === commandId) ?? {
     command: resolvedCommand,
     service_ids: [],
     warmup: [],
     sha256: hashContract({ command: resolvedCommand, service_ids: [], warmup: [] })
   };
+  let lifecycleOnly = false;
+  if (command.kind === "launch") {
+    const owned = harness.services.filter((service) => service.command?.id === commandId);
+    if (owned.length !== 1) {
+      throw new Error(
+        owned.length === 0
+          ? "Launch commands require a lifecycle driver with readiness and teardown proof; bind exactly one harness service to this launch command."
+          : `Launch lifecycle requires exactly one harness service for ${commandId}; found ${owned.length}.`
+      );
+    }
+    if (!owned[0].readiness || !owned[0].shutdown) {
+      throw new Error(`Launch lifecycle for ${commandId} requires readiness and shutdown declarations on service ${owned[0].id}.`);
+    }
+    lifecycleOnly = true;
+    verification = {
+      command: resolvedCommand,
+      service_ids: [owned[0].id],
+      warmup: [],
+      sha256: hashContract({ command: resolvedCommand, service_ids: [owned[0].id], warmup: [], mode: "lifecycle" })
+    };
+  }
   const services = verification.service_ids.map((serviceId) => harness.services.find((service) => service.id === serviceId));
   const id = `verify-${Date.now()}-${randomUUID().slice(0, 8)}`;
   const paths = verificationPaths(resolvedDataRoot, snapshot.repository.identity, id);
   return {
     id,
     ...(goalRunId ? { goal_run_id: goalRunId } : {}),
+    lifecycle_only: lifecycleOnly,
     repository_root: repositoryRoot,
     repository_identity: snapshot.repository.identity,
     commit_sha: resolvedCommitSha,
@@ -692,7 +714,14 @@ export async function executeVerificationPlan(plan, {
     }
     warmup = await runWarmup(plan, serviceHandles, readinessProbe);
     if (warmup.status === "fail") throw new Error(warmup.summary);
-    commandResult = await runConfiguredCommand(plan, environment);
+    if (plan.lifecycle_only) {
+      // Launch already ran as the owned service; prove readiness held, then exit 0 without re-spawning it.
+      await writeFile(plan.paths.stdout, "lifecycle-ok\n", { mode: 0o600 });
+      await writeFile(plan.paths.stderr, "", { mode: 0o600 });
+      commandResult = { exitCode: 0, signal: null, error: null, timedOut: false };
+    } else {
+      commandResult = await runConfiguredCommand(plan, environment);
+    }
   } catch (error) {
     setupError = error;
     await Promise.all([
@@ -767,7 +796,9 @@ export async function executeVerificationPlan(plan, {
           ? `The command exited with code ${commandResult.exitCode}.`
           : teardownStatus !== "pass"
             ? "The command passed but isolated teardown failed."
-            : "The command completed successfully in a clean isolated worktree.";
+            : plan.lifecycle_only
+              ? "Owned service launched, passed readiness, and tore down cleanly in an isolated worktree."
+              : "The command completed successfully in a clean isolated worktree.";
 
   const artifacts = await Promise.all([
     fileArtifact(plan.paths.stdout, "stdout"),

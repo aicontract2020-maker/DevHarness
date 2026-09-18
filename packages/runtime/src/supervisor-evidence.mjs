@@ -29,6 +29,14 @@ const COMMAND_QUALITY_SEMANTICS = Object.freeze({
   forbids: ["browser-snapshot", "network", "database-state", "api-response", "filesystem-state"]
 });
 
+const COMMAND_LIFECYCLE_SEMANTICS = Object.freeze({
+  id: "command-lifecycle",
+  version: 1,
+  accepts: "current passing verification-receipt with command.kind=launch and owned service readiness+teardown",
+  emits: ["test-result"],
+  forbids: ["browser-snapshot", "network", "database-state", "api-response", "filesystem-state"]
+});
+
 const COMMAND_SYSTEM_SEMANTICS = Object.freeze({
   id: "command-system",
   version: 1,
@@ -47,7 +55,7 @@ async function commandDriver(semantics) {
 }
 
 export async function registeredEvidenceDrivers() {
-  return Promise.all([COMMAND_SYSTEM_SEMANTICS, COMMAND_TEST_SEMANTICS, COMMAND_QUALITY_SEMANTICS].map(async (semantics) => ({ ...(await commandDriver(semantics)) })));
+  return Promise.all([COMMAND_SYSTEM_SEMANTICS, COMMAND_TEST_SEMANTICS, COMMAND_QUALITY_SEMANTICS, COMMAND_LIFECYCLE_SEMANTICS].map(async (semantics) => ({ ...(await commandDriver(semantics)) })));
 }
 
 async function issueCommandEvidence({
@@ -161,6 +169,32 @@ export async function issueCommandQualityEvidence(options) {
     ["lint", "build"],
     "The sealed command-quality driver verified an intact current-revision lint or build receipt.",
     "Current lint/build quality command passed under the sealed command-quality driver."
+  );
+}
+
+
+export async function issueCommandLifecycleEvidence(options) {
+  if (!options?.snapshot?.repository?.identity) {
+    throw new Error("A live repository snapshot is required for evidence issuance.");
+  }
+  const receipts = await listValidReceipts(options.receiptRoot, options.snapshot.repository.identity);
+  const receipt = receipts.find((candidate) => candidate.id === options.receiptId);
+  if (!receipt) throw new Error(`No intact verification receipt exists for ${options.receiptId}.`);
+  if (!receipt.services?.length) {
+    throw new Error("The command-lifecycle driver requires at least one owned service record on the receipt.");
+  }
+  const bad = receipt.services.filter((service) =>
+    service.readiness?.status !== "pass" || service.teardown?.status !== "pass" || service.status !== "ready"
+  );
+  if (bad.length) {
+    throw new Error(`The command-lifecycle driver requires every owned service to be ready with passing teardown (failed: ${bad.map((s) => s.id).join(", ")}).`);
+  }
+  return issueCommandEvidence(
+    options,
+    COMMAND_LIFECYCLE_SEMANTICS,
+    "launch",
+    "The sealed command-lifecycle driver verified an intact current-revision launch receipt with owned-service readiness and teardown.",
+    "Current service launch passed readiness and teardown under the sealed command-lifecycle driver."
   );
 }
 
