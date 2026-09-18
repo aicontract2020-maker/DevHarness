@@ -84,3 +84,8 @@ Re-sealed on Goal Run `run-95bc169b…` after HEAD moved for full-stack fixes:
 - PASS: health-service-field, health-live-and-legacy-service, pytest-health-readiness, frontend-lint, frontend-build, docker-compose-build, aiedu-postgres-redis-launch, aiedu-full-stack-launch, frontend-test, frontend-test-failover
 - FAIL (not sealed): python-tests — 1 failed / 3851 passed (`test_non_adaptive_report_keeps_order_index_when_timestamps_tie`); unrelated to full-stack fixes
 - Still open: controlled-change-marker (clean HEAD), docs-readiness-summary, web-playwright / behavior-verification, supervisor-isolation
+
+## 2026-09-18 python-tests flake fix
+
+- Fixed `test_non_adaptive_report_keeps_order_index_when_timestamps_tie`: pin item ids (`item-zzz-c` / `item-mmm-b` / `item-aaa-a`) so `!= sorted(...)` is deterministic.
+- Dogfood HEAD `05e4b104`; Goal Run `run-62514227…`; `python-tests` sealed PASS; suite re-sealed at new SHA → phase2 **11/14**.
