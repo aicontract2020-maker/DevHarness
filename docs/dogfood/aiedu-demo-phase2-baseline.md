@@ -55,3 +55,9 @@ Ladder: **6/14** proved. Next listed: `controlled-change-marker` (DevHarness dog
 - Dogfood HEAD: `a2e7334b` (post lint-escape merge).
 - Goal Run `run-f09020ac-83b1-4ce3-ac06-4eb31d4ec616`: **scope=approved**; ladder **7/14** sealed-proved.
 - Lint/build execute green but not sealed; marker probe N/A on clean HEAD; delivery skipped (no change).
+
+## 2026-09-18 sealed lint/build (`dc9d130`)
+
+- Added `command-quality` Supervisor driver for `lint`|`build` receipts (`supervisor-evidence.mjs` + `verify --attest` routing).
+- Re-attested `frontend-lint` + `frontend-build` on Goal Run `run-f09020ac…` @ `a2e7334b` → ladder **9/14**.
+- Doctor: `build-command` **pass**; readiness **85/100**, autonomy **level 2**.
