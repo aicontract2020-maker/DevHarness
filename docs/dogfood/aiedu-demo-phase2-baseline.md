@@ -61,3 +61,12 @@ Ladder: **6/14** proved. Next listed: `controlled-change-marker` (DevHarness dog
 - Added `command-quality` Supervisor driver for `lint`|`build` receipts (`supervisor-evidence.mjs` + `verify --attest` routing).
 - Re-attested `frontend-lint` + `frontend-build` on Goal Run `run-f09020ac…` @ `a2e7334b` → ladder **9/14**.
 - Doctor: `build-command` **pass**; readiness **85/100**, autonomy **level 2**.
+
+## 2026-09-18 launch lifecycle (`e54565d`)
+
+- Added sealed `command-lifecycle` driver: launch verify = start owned service → readiness → probe → teardown (no re-spawn of launch).
+- Doctor `service-launch` now reads current launch manifests (`launchReceipt` no longer hard-null).
+- Dogfood @ `a2e7334b`:
+  - ✓ `aiedu-postgres-redis-launch` sealed (TCP readiness + teardown).
+  - ○ `aiedu-full-stack-launch` — lifecycle driver runs, but product containers exit: backend `class_member` view UNION text/int mismatch; frontend `NODE_OPTIONS=--no-experimental-webstorage` rejected → no `.next/standalone`.
+- Ladder **11/14**; doctor score **88**; `service-launch` **pass**.
