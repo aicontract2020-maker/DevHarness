@@ -56,7 +56,7 @@ import {
   resolveProviderCredential
 } from "../../runtime/src/codex-runtime.mjs";
 import { recordAlignmentAnswer } from "../../runtime/src/alignment-answer.mjs";
-import { issueCommandSystemEvidence, issueCommandTestEvidence } from "../../runtime/src/supervisor-evidence.mjs";
+import { issueCommandQualityEvidence, issueCommandSystemEvidence, issueCommandTestEvidence } from "../../runtime/src/supervisor-evidence.mjs";
 import { createSupervisorApprovalRequest, listPendingApprovalRequestsForRun, recordInteractiveApprovalDecisions } from "../../runtime/src/supervisor-approval.mjs";
 import { applyRunGateFromApprovalReceipt, reconcileRunGatesFromApprovals } from "../../runtime/src/run-gate-approval.mjs";
 import { applyStrategyApprovalReceipt, requestStrategyApprovalForRun } from "../../runtime/src/strategy-approval.mjs";
@@ -2225,7 +2225,7 @@ ${formatPhase2BaselineLadder(phase2)}` : "";
           reason: "execution-failed",
           summary: "the execution failed; failure receipts remain reviewable but cannot become passing evidence"
         };
-      } else if (!["test", "verify"].includes(receipt.command.kind)) {
+      } else if (!["test", "verify", "lint", "build"].includes(receipt.command.kind)) {
         attestation = {
           status: "not-issued",
           reason: "sealed-driver-unavailable",
@@ -2234,7 +2234,18 @@ ${formatPhase2BaselineLadder(phase2)}` : "";
       } else {
         const supervisorRoot = defaultSupervisorRoot();
         await initializeSupervisorIdentity(supervisorRoot);
-        const issueEvidence = receipt.command.kind === "verify" ? issueCommandSystemEvidence : issueCommandTestEvidence;
+        const issueEvidence = receipt.command.kind === "verify"
+          ? issueCommandSystemEvidence
+          : ["lint", "build"].includes(receipt.command.kind)
+            ? issueCommandQualityEvidence
+            : issueCommandTestEvidence;
+        const kindLabel = receipt.command.kind === "verify"
+          ? "system verification"
+          : receipt.command.kind === "lint"
+            ? "lint checks"
+            : receipt.command.kind === "build"
+              ? "build"
+              : "automated tests";
         evidence = await issueEvidence({
           supervisorRoot,
           receiptRoot: options.dataRoot,
@@ -2245,7 +2256,7 @@ ${formatPhase2BaselineLadder(phase2)}` : "";
           commitSha: receipt.commit_sha,
           criterion: {
             id: `configured-tests-${receipt.command.id}`,
-            claim: `The configured ${receipt.command.id} ${receipt.command.kind === "verify" ? "system verification" : "automated tests"} pass at the attested revision.`
+            claim: `The configured ${receipt.command.id} ${kindLabel} pass at the attested revision.`
           }
         });
         attestation = { status: "issued", reason: null, summary: "Supervisor passing evidence was issued." };

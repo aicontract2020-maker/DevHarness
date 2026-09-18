@@ -21,6 +21,14 @@ const COMMAND_TEST_SEMANTICS = Object.freeze({
   forbids: ["browser-snapshot", "network", "database-state", "api-response", "filesystem-state"]
 });
 
+const COMMAND_QUALITY_SEMANTICS = Object.freeze({
+  id: "command-quality",
+  version: 1,
+  accepts: "current passing verification-receipt with command.kind in {lint,build}",
+  emits: ["test-result"],
+  forbids: ["browser-snapshot", "network", "database-state", "api-response", "filesystem-state"]
+});
+
 const COMMAND_SYSTEM_SEMANTICS = Object.freeze({
   id: "command-system",
   version: 1,
@@ -39,7 +47,7 @@ async function commandDriver(semantics) {
 }
 
 export async function registeredEvidenceDrivers() {
-  return Promise.all([COMMAND_SYSTEM_SEMANTICS, COMMAND_TEST_SEMANTICS].map(async (semantics) => ({ ...(await commandDriver(semantics)) })));
+  return Promise.all([COMMAND_SYSTEM_SEMANTICS, COMMAND_TEST_SEMANTICS, COMMAND_QUALITY_SEMANTICS].map(async (semantics) => ({ ...(await commandDriver(semantics)) })));
 }
 
 async function issueCommandEvidence({
@@ -63,7 +71,10 @@ async function issueCommandEvidence({
   const receipts = await listValidReceipts(receiptRoot, snapshot.repository.identity);
   const receipt = receipts.find((candidate) => candidate.id === receiptId);
   if (!receipt) throw new Error(`No intact verification receipt exists for ${receiptId}.`);
-  if (receipt.command.kind !== expectedKind) throw new Error(`The ${semantics.id} driver accepts only ${expectedKind} receipts.`);
+  const acceptedKinds = Array.isArray(expectedKind) ? expectedKind : [expectedKind];
+  if (!acceptedKinds.includes(receipt.command.kind)) {
+    throw new Error(`The ${semantics.id} driver accepts only ${acceptedKinds.join("|")} receipts.`);
+  }
   const evidenceCommitSha = commitSha ?? receipt.commit_sha ?? snapshot.repository.git.head_sha;
   if (!receiptMatchesCurrentConfig(snapshot, config, receipt, { commitSha: evidenceCommitSha })) {
     throw new Error("The verification receipt is not a passing proof for the current revision and configuration.");
@@ -139,6 +150,17 @@ export async function issueCommandTestEvidence(options) {
     "test",
     "The sealed command-test driver verified an intact current-revision test receipt.",
     "Current automated tests passed under the sealed command-test driver."
+  );
+}
+
+
+export async function issueCommandQualityEvidence(options) {
+  return issueCommandEvidence(
+    options,
+    COMMAND_QUALITY_SEMANTICS,
+    ["lint", "build"],
+    "The sealed command-quality driver verified an intact current-revision lint or build receipt.",
+    "Current lint/build quality command passed under the sealed command-quality driver."
   );
 }
 

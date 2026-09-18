@@ -12,7 +12,7 @@ import { evaluateReadiness } from "../../project/src/doctor.mjs";
 import { compileProjectHarness } from "../../project/src/harness.mjs";
 import { initializeProject } from "../../project/src/init.mjs";
 import { listValidReceipts, projectHarnessPath, writeProjectHarness } from "../src/data-store.mjs";
-import { issueCommandSystemEvidence, issueCommandTestEvidence, registeredEvidenceDrivers } from "../src/supervisor-evidence.mjs";
+import { issueCommandQualityEvidence, issueCommandSystemEvidence, issueCommandTestEvidence, registeredEvidenceDrivers } from "../src/supervisor-evidence.mjs";
 import { evidenceBlobPath, initializeSupervisorIdentity, listVerifiedEvidenceManifests } from "../src/supervisor-store.mjs";
 import { createVerificationPlan, executeVerificationPlan, probeHttpReadiness } from "../src/verify.mjs";
 
@@ -708,7 +708,7 @@ test("sealed command-test driver issues only signed current test-result evidence
   assert.equal(receipt.outcome.status, "pass");
 
   await initializeSupervisorIdentity(fixture.dataRoot);
-  assert.deepEqual((await registeredEvidenceDrivers()).map((driver) => driver.id), ["command-system", "command-test"]);
+  assert.deepEqual((await registeredEvidenceDrivers()).map((driver) => driver.id), ["command-system", "command-test", "command-quality"]);
   const issued = await issueCommandTestEvidence({
     supervisorRoot: fixture.dataRoot,
     receiptRoot: fixture.dataRoot,
@@ -762,6 +762,19 @@ test("sealed command-test driver issues only signed current test-result evidence
     runId: "run-build-forgery",
     criterion: { id: "AC-browser", claim: "The browser works." }
   }), /only test receipts/);
+
+  const buildIssued = await issueCommandQualityEvidence({
+    supervisorRoot: fixture.dataRoot,
+    receiptRoot: fixture.dataRoot,
+    snapshot,
+    config,
+    receiptId: buildReceipt.id,
+    runId: "run-build-proof",
+    criterion: { id: "AC-build-pass", claim: "The configured build passes." }
+  });
+  assert.equal(buildIssued.manifest.driver.id, "command-quality");
+  assert.equal(buildIssued.manifest.command.kind, "build");
+  assert.equal(buildIssued.written, true);
 
   const captured = issued.manifest.evidence_records[0].artifacts[0];
   await writeFile(evidenceBlobPath(fixture.dataRoot, captured.sha256), "tampered\n");
