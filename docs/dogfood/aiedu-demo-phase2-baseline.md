@@ -89,3 +89,28 @@ Re-sealed on Goal Run `run-95bc169b…` after HEAD moved for full-stack fixes:
 
 - Fixed `test_non_adaptive_report_keeps_order_index_when_timestamps_tie`: pin item ids (`item-zzz-c` / `item-mmm-b` / `item-aaa-a`) so `!= sorted(...)` is deterministic.
 - Dogfood HEAD `05e4b104`; Goal Run `run-62514227…`; `python-tests` sealed PASS; suite re-sealed at new SHA → phase2 **11/14**.
+
+## 2026-09-19 web-playwright sealed (HEAD `964d02a53`)
+
+Goal Run: `run-97ac5f85-f084-4f0d-b202-4818f7da44ca`  
+Receipt: `verify-1789856335089-05fbd932` — **98 passed / 17 skipped**, attestation issued.
+
+### Harness / local-projects (gitignored yaml)
+
+- Warmup: `/signup` accepts `[200, 307]` (overlay disables signup).
+- Run command uses workspace `./frontend/node_modules/.bin/playwright` (not `frontend-runtime`) so verify `npm ci` and the CLI share one `@playwright/test` copy.
+
+### Product e2e contract fixes on dogfood
+
+| Commit | Change |
+|---|---|
+| `a09181849` | Home exact link (vs Homework); parent empty-state widgets |
+| `b085a6ee8` | Guest empty-home CTA vs active learning |
+| `ebc8fa999` | Learning Buddy skip; KR quick-check soften; parent-advanced empty; Start class session rename; UPrep Start learning `.first()` |
+| `964d02a53` | UPrep Practice skill-select accepted as quick-check entry |
+
+### Doctor after tip move
+
+Tip is now `964d02a53`, so prior revision-bound seals (lint/build/launch/python-tests/…) show unproved on tip (**1/14** ladder, score ~77, autonomy 1). `behavior-verification` remains **warn** (pass alone ≠ real-surface proof). `supervisor-isolation` still **fail**.
+
+Next: re-attest sealed suite at tip, or continue supervisor-isolation / richer behavior evidence.
