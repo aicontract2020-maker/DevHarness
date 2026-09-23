@@ -25,7 +25,11 @@ configured test
 
 The signed manifest binds repository identity, current HEAD, clean workspace expectation, exact command and declaration hashes, criterion hash, driver/version/implementation hash, recipe hash, receipt hash, artifact hashes, result, time and issuer. Changing any field invalidates the signature.
 
-`command-test@1` emits only `test-result`. A successful Playwright command is still not browser proof unless a future browser driver captures and signs the real surface, network and required downstream effects.
+`command-test@1` emits only `test-result`. A successful Playwright command is still not browser proof by itself.
+
+`command-system@1` also emits only `test-result` (E2) for `verify` receipts and forbids inventing browser/network observations from stdout.
+
+`command-browser@1` accepts only `verify` receipts that already carry real-surface `screenshot` or `browser-snapshot` plus `network` artifacts captured while owned services were up. It emits those E3 evidence types from the receipt artifacts and fails closed if they are missing — it never invents browser proof from command stdout alone.
 
 ## Human approval flow
 
@@ -72,7 +76,7 @@ Cryptography does not solve same-user process isolation. If a worker can read th
 
 ## Deliberate limitations
 
-- No sealed browser, API, database, review, deployment, load or canary driver yet.
+- Sealed `command-browser@1` covers revision-bound real-surface screenshot/browser-snapshot + network for verify receipts that captured those artifacts; no sealed API, database, review, deployment, load or canary driver yet.
 - No remote Supervisor, hardware-backed key, key rotation or multi-host trust.
 - No full goal daemon or automatic merge.
 - Delivery remains fail closed until signed real-surface evidence and a signed review report exist.

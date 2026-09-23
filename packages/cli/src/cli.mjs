@@ -56,7 +56,7 @@ import {
   resolveProviderCredential
 } from "../../runtime/src/codex-runtime.mjs";
 import { recordAlignmentAnswer } from "../../runtime/src/alignment-answer.mjs";
-import { issueCommandLifecycleEvidence, issueCommandQualityEvidence, issueCommandSystemEvidence, issueCommandTestEvidence } from "../../runtime/src/supervisor-evidence.mjs";
+import { issueCommandBrowserEvidence, issueCommandLifecycleEvidence, issueCommandQualityEvidence, issueCommandSystemEvidence, issueCommandTestEvidence, receiptHasRealSurfaceArtifacts } from "../../runtime/src/supervisor-evidence.mjs";
 import { createSupervisorApprovalRequest, listPendingApprovalRequestsForRun, recordInteractiveApprovalDecisions } from "../../runtime/src/supervisor-approval.mjs";
 import { applyRunGateFromApprovalReceipt, reconcileRunGatesFromApprovals } from "../../runtime/src/run-gate-approval.mjs";
 import { applyStrategyApprovalReceipt, requestStrategyApprovalForRun } from "../../runtime/src/strategy-approval.mjs";
@@ -2263,22 +2263,27 @@ ${formatPhase2BaselineLadder(phase2)}` : "";
       } else {
         const supervisorRoot = defaultSupervisorRoot();
         await initializeSupervisorIdentity(supervisorRoot);
-        const issueEvidence = receipt.command.kind === "verify"
-          ? issueCommandSystemEvidence
-          : receipt.command.kind === "launch"
-            ? issueCommandLifecycleEvidence
-            : ["lint", "build"].includes(receipt.command.kind)
-              ? issueCommandQualityEvidence
-              : issueCommandTestEvidence;
-        const kindLabel = receipt.command.kind === "verify"
-          ? "system verification"
-          : receipt.command.kind === "launch"
-            ? "service lifecycle"
-            : receipt.command.kind === "lint"
-              ? "lint checks"
-              : receipt.command.kind === "build"
-                ? "build"
-                : "automated tests";
+        const useBrowserDriver = receipt.command.kind === "verify" && receiptHasRealSurfaceArtifacts(receipt);
+        const issueEvidence = useBrowserDriver
+          ? issueCommandBrowserEvidence
+          : receipt.command.kind === "verify"
+            ? issueCommandSystemEvidence
+            : receipt.command.kind === "launch"
+              ? issueCommandLifecycleEvidence
+              : ["lint", "build"].includes(receipt.command.kind)
+                ? issueCommandQualityEvidence
+                : issueCommandTestEvidence;
+        const kindLabel = useBrowserDriver
+          ? "real-surface browser verification"
+          : receipt.command.kind === "verify"
+            ? "system verification"
+            : receipt.command.kind === "launch"
+              ? "service lifecycle"
+              : receipt.command.kind === "lint"
+                ? "lint checks"
+                : receipt.command.kind === "build"
+                  ? "build"
+                  : "automated tests";
         evidence = await issueEvidence({
           supervisorRoot,
           receiptRoot: options.dataRoot,

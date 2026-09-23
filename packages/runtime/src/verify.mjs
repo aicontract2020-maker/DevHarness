@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { createRequire } from "node:module";
 import { execFileSync, spawn } from "node:child_process";
 import { copyFileSync, createWriteStream, existsSync, mkdirSync, readdirSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
@@ -181,15 +182,98 @@ export function formatVerificationPlan(plan) {
   ].join("\n");
 }
 
-async function fileArtifact(file, type) {
+function mediaTypeForArtifact(type, explicit = null) {
+  if (explicit) return explicit;
+  if (type === "screenshot") return "image/png";
+  if (type === "browser-snapshot") return "text/html";
+  if (type === "network") return "application/json";
+  return "text/plain";
+}
+
+async function fileArtifact(file, type, mediaType = null) {
   const content = await readFile(file);
   return {
     type,
     uri: pathToFileURL(file).href,
-    media_type: "text/plain",
+    media_type: mediaTypeForArtifact(type, mediaType),
     sha256: sha256(content),
     size_bytes: content.length
   };
+}
+
+function httpWarmupUrls(plan) {
+  return (plan.warmup ?? [])
+    .filter((check) => check?.kind === "http" && typeof check.url === "string" && check.url.length > 0)
+    .map((check) => check.url);
+}
+
+function playwrightModuleCandidates(workspace) {
+  return [
+    path.join(workspace, "frontend", "node_modules", "playwright"),
+    path.join(workspace, "node_modules", "playwright")
+  ];
+}
+
+function playwrightAvailableInWorkspace(workspace) {
+  return playwrightModuleCandidates(workspace).some((dir) => existsSync(path.join(dir, "package.json")));
+}
+
+function loadPlaywrightFromWorkspace(workspace) {
+  for (const dir of playwrightModuleCandidates(workspace)) {
+    const manifest = path.join(dir, "package.json");
+    if (!existsSync(manifest)) continue;
+    const require = createRequire(manifest);
+    return require(dir);
+  }
+  throw new Error(
+    "Real-surface capture requires playwright in the verification worktree (frontend/node_modules/playwright or node_modules/playwright)."
+  );
+}
+
+async function captureRealSurfaceArtifacts(plan) {
+  const urls = httpWarmupUrls(plan);
+  if (plan.command.kind !== "verify" || urls.length === 0) return [];
+  const targetUrl = urls[0];
+  const screenshotPath = path.join(plan.paths.artifacts, "surface-screenshot.png");
+  const harPath = path.join(plan.paths.artifacts, "surface-network.har");
+  const snapshotPath = path.join(plan.paths.artifacts, "surface-browser-snapshot.html");
+  const playwright = loadPlaywrightFromWorkspace(plan.paths.workspace);
+  const browser = await playwright.chromium.launch({ headless: true });
+  try {
+    const context = await browser.newContext({
+      recordHar: { path: harPath, mode: "full", content: "embed" }
+    });
+    try {
+      const page = await context.newPage();
+      const response = await page.goto(targetUrl, { waitUntil: "networkidle", timeout: 120_000 });
+      if (!response) {
+        throw new Error(`Surface capture navigation to ${targetUrl} produced no response.`);
+      }
+      if (!response.ok()) {
+        throw new Error(`Surface capture navigation to ${targetUrl} failed with HTTP ${response.status()}.`);
+      }
+      await page.screenshot({ path: screenshotPath, fullPage: true });
+      const html = await page.content();
+      if (!html || html.trim().length === 0) {
+        throw new Error(`Surface capture at ${targetUrl} produced an empty browser snapshot.`);
+      }
+      await writeFile(snapshotPath, html, { mode: 0o600 });
+    } finally {
+      await context.close();
+    }
+  } finally {
+    await browser.close();
+  }
+  for (const file of [screenshotPath, harPath, snapshotPath]) {
+    if (!existsSync(file)) {
+      throw new Error(`Surface capture did not write required artifact: ${file}`);
+    }
+  }
+  return Promise.all([
+    fileArtifact(screenshotPath, "screenshot"),
+    fileArtifact(snapshotPath, "browser-snapshot"),
+    fileArtifact(harPath, "network")
+  ]);
 }
 
 async function subjectFileArtifact(file, type, subjectId) {
@@ -680,6 +764,7 @@ export async function executeVerificationPlan(plan, {
   let preparation = { status: "not_required", summary: "Preparation did not begin.", submodules: [] };
   let warmup = { status: "not_required", summary: "Warmup did not begin.", checks: [] };
   let unexpectedServiceExits = [];
+  let surfaceArtifacts = [];
   const serviceHandles = [];
   const serviceRecords = [];
   let teardownStatus = "not_required";
@@ -722,6 +807,19 @@ export async function executeVerificationPlan(plan, {
     } else {
       commandResult = await runConfiguredCommand(plan, environment);
     }
+    // Capture real browser/network surface while owned services are still up.
+    // Playwright command success alone is not E3 proof; artifacts must be observed before teardown.
+    // If the worktree has no playwright package, skip capture and remain E2-only (command-system).
+    if (
+      !plan.lifecycle_only &&
+      plan.command.kind === "verify" &&
+      httpWarmupUrls(plan).length > 0 &&
+      commandResult.exitCode === 0 &&
+      !commandResult.timedOut &&
+      playwrightAvailableInWorkspace(plan.paths.workspace)
+    ) {
+      surfaceArtifacts = await captureRealSurfaceArtifacts(plan);
+    }
   } catch (error) {
     setupError = error;
     await Promise.all([
@@ -753,6 +851,10 @@ export async function executeVerificationPlan(plan, {
   }
 
   const completed = Date.now();
+  // Missing playwright stays E2-only. Partial surface sets fail closed.
+  const surfaceCaptured = surfaceArtifacts.some((artifact) => artifact.type === "screenshot" || artifact.type === "browser-snapshot") &&
+    surfaceArtifacts.some((artifact) => artifact.type === "network");
+  const surfacePartial = surfaceArtifacts.length > 0 && !surfaceCaptured;
   const commandPassed =
     !setupError &&
     commandResult.exitCode === 0 &&
@@ -763,7 +865,8 @@ export async function executeVerificationPlan(plan, {
     preparation.status !== "fail" &&
     warmup.status !== "fail" &&
     unexpectedServiceExits.length === 0 &&
-    teardownStatus === "pass";
+    teardownStatus === "pass" &&
+    (!surfacePartial);
   const status = setupError && !worktreeCreated ? "blocked" : commandPassed ? "pass" : "fail";
   const reason = status === "blocked"
     ? "blocked"
@@ -783,7 +886,9 @@ export async function executeVerificationPlan(plan, {
                   ? "command-failed"
                   : teardownStatus !== "pass"
                     ? "teardown-failed"
-                    : "passed";
+                    : surfacePartial
+                      ? "surface-capture-failed"
+                      : "passed";
   const summary = unexpectedServiceExits.length > 0
     ? `Owned service exited unexpectedly: ${unexpectedServiceExits.join(", ")}.`
     : setupError
@@ -796,9 +901,11 @@ export async function executeVerificationPlan(plan, {
           ? `The command exited with code ${commandResult.exitCode}.`
           : teardownStatus !== "pass"
             ? "The command passed but isolated teardown failed."
-            : plan.lifecycle_only
-              ? "Owned service launched, passed readiness, and tore down cleanly in an isolated worktree."
-              : "The command completed successfully in a clean isolated worktree.";
+            : surfacePartial
+              ? "The command passed but real-surface browser/network capture did not produce required artifacts while services were up."
+              : plan.lifecycle_only
+                ? "Owned service launched, passed readiness, and tore down cleanly in an isolated worktree."
+                : "The command completed successfully in a clean isolated worktree.";
 
   const artifacts = await Promise.all([
     fileArtifact(plan.paths.stdout, "stdout"),
@@ -806,7 +913,8 @@ export async function executeVerificationPlan(plan, {
     ...serviceHandles.flatMap((handle) => [
       subjectFileArtifact(handle.stdoutPath, "service-stdout", handle.service.id),
       subjectFileArtifact(handle.stderrPath, "service-stderr", handle.service.id)
-    ])
+    ]),
+    ...surfaceArtifacts
   ]);
   const receipt = {
     schema_version: 1,

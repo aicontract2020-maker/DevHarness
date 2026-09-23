@@ -12,7 +12,7 @@ import { evaluateReadiness } from "../../project/src/doctor.mjs";
 import { compileProjectHarness } from "../../project/src/harness.mjs";
 import { initializeProject } from "../../project/src/init.mjs";
 import { listValidReceipts, projectHarnessPath, writeProjectHarness } from "../src/data-store.mjs";
-import { issueCommandLifecycleEvidence, issueCommandQualityEvidence, issueCommandSystemEvidence, issueCommandTestEvidence, registeredEvidenceDrivers } from "../src/supervisor-evidence.mjs";
+import { issueCommandBrowserEvidence, issueCommandLifecycleEvidence, issueCommandQualityEvidence, issueCommandSystemEvidence, issueCommandTestEvidence, receiptHasRealSurfaceArtifacts, registeredEvidenceDrivers } from "../src/supervisor-evidence.mjs";
 import { evidenceBlobPath, initializeSupervisorIdentity, listVerifiedEvidenceManifests } from "../src/supervisor-store.mjs";
 import { createVerificationPlan, executeVerificationPlan, probeHttpReadiness } from "../src/verify.mjs";
 
@@ -55,7 +55,7 @@ async function createRepository(t) {
       dependencies: { react: "19.0.0" }
     }, null, 2)
   );
-  await writeFile(path.join(root, "package-lock.json"), "{}\n");
+  // Intentionally omit package-lock.json so isolated verify does not attempt npm ci for fixture deps.
   await writeFile(path.join(root, ".env.example"), "ALLOWED_SECRET=\nSERVICE_PORT=\n");
   git(root, ["init", "-b", "main"]);
   git(root, ["config", "user.email", "devharness@example.invalid"]);
@@ -720,7 +720,7 @@ test("sealed command-test driver issues only signed current test-result evidence
   assert.equal(receipt.outcome.status, "pass");
 
   await initializeSupervisorIdentity(fixture.dataRoot);
-  assert.deepEqual((await registeredEvidenceDrivers()).map((driver) => driver.id), ["command-system", "command-test", "command-quality"]);
+  assert.deepEqual((await registeredEvidenceDrivers()).map((driver) => driver.id), ["command-system", "command-test", "command-quality", "command-lifecycle", "command-browser"]);
   const issued = await issueCommandTestEvidence({
     supervisorRoot: fixture.dataRoot,
     receiptRoot: fixture.dataRoot,
@@ -790,7 +790,9 @@ test("sealed command-test driver issues only signed current test-result evidence
 
   const captured = issued.manifest.evidence_records[0].artifacts[0];
   await writeFile(evidenceBlobPath(fixture.dataRoot, captured.sha256), "tampered\n");
-  assert.deepEqual(await listVerifiedEvidenceManifests(fixture.dataRoot, snapshot.repository.identity), []);
+  const remaining = await listVerifiedEvidenceManifests(fixture.dataRoot, snapshot.repository.identity);
+  assert.equal(remaining.some((manifest) => manifest.id === issued.manifest.id), false);
+  assert.equal(remaining.some((manifest) => manifest.id === buildIssued.manifest.id), true);
 });
 
 test("sealed command-system driver issues E2 test-result evidence without inventing E3 observations", async (t) => {
@@ -835,4 +837,85 @@ test("sealed command-system driver issues E2 test-result evidence without invent
     runId: "run-system-proof",
     criterion: { id: "AC-no-driver-confusion", claim: "System verification passed." }
   }), /only test receipts/);
+});
+
+test("sealed command-browser driver fails closed without surface artifacts and emits E3 types when present", async (t) => {
+  const fixture = await configureLifecycle(await createRepository(t));
+  const environment = { ...process.env, SERVICE_PORT: "54322" };
+  const plan = await createVerificationPlan({
+    snapshot: fixture.snapshot,
+    config: fixture.config,
+    commandId: "root-verify-service",
+    goalRunId: "run-browser-proof",
+    dataRoot: fixture.dataRoot,
+    environment
+  });
+  const receipt = await executeVerificationPlan(plan, {
+    environment,
+    readinessProbe: async () => ({ status: 204, summary: "ready" })
+  });
+  assert.equal(receipt.outcome.status, "pass");
+  assert.equal(receiptHasRealSurfaceArtifacts(receipt), false);
+
+  await initializeSupervisorIdentity(fixture.dataRoot);
+  await assert.rejects(issueCommandBrowserEvidence({
+    supervisorRoot: fixture.dataRoot,
+    receiptRoot: fixture.dataRoot,
+    snapshot: fixture.snapshot,
+    config: fixture.config,
+    receiptId: receipt.id,
+    runId: "run-browser-proof",
+    criterion: { id: "AC-browser-surface", claim: "Real browser surface was observed." }
+  }), /real-surface screenshot\|browser-snapshot and network artifacts/);
+
+  // Attach synthetic surface artifacts to a copy on disk is not allowed through the issuer;
+  // instead mutate the stored receipt file used by listValidReceipts by rewriting with valid surface files.
+  const { writeFile, mkdir } = await import("node:fs/promises");
+  const { verificationPaths, writeReceipt } = await import("../src/data-store.mjs");
+  const paths = verificationPaths(fixture.dataRoot, fixture.snapshot.repository.identity, receipt.id);
+  await mkdir(paths.artifacts, { recursive: true });
+  const screenshotPath = path.join(paths.artifacts, "surface-screenshot.png");
+  const harPath = path.join(paths.artifacts, "surface-network.har");
+  const snapshotPath = path.join(paths.artifacts, "surface-browser-snapshot.html");
+  await writeFile(screenshotPath, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+  await writeFile(harPath, `${JSON.stringify({ log: { version: "1.2", entries: [{ request: { url: "http://127.0.0.1/" }, response: { status: 200 } }] } }, null, 2)}\n`);
+  await writeFile(snapshotPath, "<html><body>surface</body></html>\n");
+  const { pathToFileURL } = await import("node:url");
+  const { createHash } = await import("node:crypto");
+  const { readFile } = await import("node:fs/promises");
+  async function art(file, type, media) {
+    const content = await readFile(file);
+    return {
+      type,
+      uri: pathToFileURL(file).href,
+      media_type: media,
+      sha256: createHash("sha256").update(content).digest("hex"),
+      size_bytes: content.length
+    };
+  }
+  const surfaceReceipt = {
+    ...receipt,
+    artifacts: [
+      ...receipt.artifacts,
+      await art(screenshotPath, "screenshot", "image/png"),
+      await art(snapshotPath, "browser-snapshot", "text/html"),
+      await art(harPath, "network", "application/json")
+    ]
+  };
+  await writeReceipt(paths.receipt, surfaceReceipt);
+  assert.equal(receiptHasRealSurfaceArtifacts(surfaceReceipt), true);
+
+  const issued = await issueCommandBrowserEvidence({
+    supervisorRoot: fixture.dataRoot,
+    receiptRoot: fixture.dataRoot,
+    snapshot: fixture.snapshot,
+    config: fixture.config,
+    receiptId: receipt.id,
+    runId: "run-browser-proof",
+    criterion: { id: "AC-browser-surface", claim: "Real browser surface was observed." }
+  });
+  assert.equal(issued.written, true);
+  assert.equal(issued.manifest.driver.id, "command-browser");
+  assert.deepEqual(issued.manifest.evidence_records.map((record) => record.type).sort(), ["browser-snapshot", "network", "screenshot"]);
+  assert.match(issued.manifest.outcome.summary, /E3|real-surface|network/i);
 });
