@@ -473,13 +473,24 @@ export async function issueIndependentReviewEvidence({
     headSha: evidenceCommitSha
   });
   const prior = existingVerdicts.find((candidate) => candidate.id === verdict.id);
+  let effectiveVerdict = verdict;
   if (!prior) {
     await writeReviewVerdict(supervisorRoot, snapshot.repository.identity, verdict);
-  } else if (JSON.stringify(prior) !== JSON.stringify(verdict)) {
-    throw new Error(`Conflicting review verdict already stored for ${verdict.id}.`);
+  } else {
+    // Deterministic verdict ids may collide across retries with a new completed_at.
+    // Reuse the stored verdict when identity/status/head/run bind the same proof.
+    const sameBinding =
+      prior.run_id === verdict.run_id &&
+      prior.head_sha === verdict.head_sha &&
+      prior.status === verdict.status &&
+      prior.reviewer?.id === verdict.reviewer.id;
+    if (!sameBinding) {
+      throw new Error(`Conflicting review verdict already stored for ${verdict.id}.`);
+    }
+    effectiveVerdict = prior;
   }
 
-  const verdictArtifact = await storeJsonEvidenceBlob(supervisorRoot, verdict);
+  const verdictArtifact = await storeJsonEvidenceBlob(supervisorRoot, effectiveVerdict);
   const recipeHash = hashContract({
     driver,
     repository_identity: snapshot.repository.identity,
@@ -492,7 +503,7 @@ export async function issueIndependentReviewEvidence({
       command_id: support.command.id,
       driver_id: support.driver.id
     },
-    verdict: { id: verdict.id, sha256: hashContract(verdict) }
+    verdict: { id: effectiveVerdict.id, sha256: hashContract(effectiveVerdict) }
   });
   const evidenceRecord = {
     schema_version: 1,
@@ -509,7 +520,7 @@ export async function issueIndependentReviewEvidence({
     observation: {
       result: "pass",
       summary: "The sealed independent-review driver issued a passing independent review-report bound to a stored review verdict.",
-      data: { review_verdict_id: verdict.id }
+      data: { review_verdict_id: effectiveVerdict.id }
     },
     artifacts: [verdictArtifact]
   };
@@ -536,9 +547,9 @@ export async function issueIndependentReviewEvidence({
 
   const existing = (await listVerifiedEvidenceManifests(supervisorRoot, snapshot.repository.identity))
     .find((manifest) => manifest.id === payload.id);
-  if (existing) return { manifest: existing, verdict, written: false };
+  if (existing) return { manifest: existing, verdict: effectiveVerdict, written: false };
   const manifest = await attestEvidenceManifest(supervisorRoot, payload);
   await writeEvidenceManifest(supervisorRoot, snapshot.repository.identity, manifest);
-  return { manifest, verdict, written: true };
+  return { manifest, verdict: effectiveVerdict, written: true };
 }
 
