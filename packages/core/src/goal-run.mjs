@@ -104,6 +104,13 @@ export function replayGoalRun(events) {
       const { gate, decision } = event.data ?? {};
       if (!Object.hasOwn(run.gates, gate) || !decision) throw new Error("Gate event is incomplete.");
       run.gates[gate] = structuredClone(decision);
+    } else if (event.type === "head.advanced") {
+      const { from, to } = event.data ?? {};
+      if (from !== run.current_head_sha) {
+        throw new Error(`Head advance source ${from} does not match ${run.current_head_sha}.`);
+      }
+      if (!GIT_COMMIT.test(to ?? "")) throw new Error("Head advance requires a full Git commit SHA.");
+      run.current_head_sha = to;
     } else if (event.type === "run.blocked") {
       run.state = "blocked";
       if (event.data?.blocker) run.blocker = structuredClone(event.data.blocker);

@@ -39,6 +39,7 @@
         "task.dispatched",
         "task.finished",
         "evidence.recorded",
+        "head.advanced",
         "criterion.decided",
         "review.recorded",
         "repair.requested",

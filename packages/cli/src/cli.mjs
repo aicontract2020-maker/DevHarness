@@ -801,12 +801,23 @@ async function maybeRefreshDocsOnlyScorecardAfterVerify({
 
   const nextRun = structuredClone(run);
   nextRun.timestamps.updated_at = generatedAt;
+  const events = [];
+  let sequence = nextSequence;
   // Controlled-change delivery proof binds to the isolated change revision, not the clean baseline checkout.
   if (
     deliveryMode === "controlled-change" &&
     readiness?.change_commit_sha &&
-    receipt?.commit_sha === readiness.change_commit_sha
+    receipt?.commit_sha === readiness.change_commit_sha &&
+    run.current_head_sha !== readiness.change_commit_sha
   ) {
+    events.push(createRunEvent({
+      runId: run.id,
+      sequence,
+      at: generatedAt,
+      type: "head.advanced",
+      data: { from: run.current_head_sha, to: readiness.change_commit_sha }
+    }));
+    sequence += 1;
     nextRun.current_head_sha = readiness.change_commit_sha;
   }
   const evaluationHead = nextRun.current_head_sha;
@@ -818,9 +829,9 @@ async function maybeRefreshDocsOnlyScorecardAfterVerify({
     snapshot
   });
 
-  const event = createRunEvent({
+  events.push(createRunEvent({
     runId: run.id,
-    sequence: nextSequence,
+    sequence,
     at: generatedAt,
     type: "evidence.recorded",
     data: {
@@ -829,7 +840,7 @@ async function maybeRefreshDocsOnlyScorecardAfterVerify({
       command_id: commandId,
       outcome: receipt.outcome?.status ?? null
     }
-  });
+  }));
   const profile = deliveryMode === "controlled-change" ? "full" : "docs-only";
   const unknowns = deliveryMode === "controlled-change" && reviewVerdicts.every((verdict) => verdict.status !== "pass")
     ? [{
@@ -839,6 +850,11 @@ async function maybeRefreshDocsOnlyScorecardAfterVerify({
       source_refs: ["artifact-readiness-summary"]
     }]
     : [];
+  const nextPacketBody = structuredClone(packet);
+  delete nextPacketBody.id;
+  nextPacketBody.head_sha = evaluationHead;
+  nextPacketBody.generated_at = generatedAt;
+  const nextPacket = { ...nextPacketBody, id: `packet-${hashContract(nextPacketBody).slice(0, 32)}` };
   const scorecard = createReviewScorecard({
     run: nextRun,
     scopeHash: createHash("sha256").update(JSON.stringify({ goal: run.goal.original, scope_version: run.goal.scope_version })).digest("hex"),
@@ -859,10 +875,10 @@ async function maybeRefreshDocsOnlyScorecardAfterVerify({
     dataRoot,
     repositoryIdentity: snapshot.repository.identity,
     runId: run.id,
-    events: [event],
+    events,
     nextRun,
     scorecard,
-    packet,
+    packet: nextPacket,
     artifacts
   });
   return { scorecard, path: stored.paths.checkpoint, run: nextRun };
@@ -901,7 +917,19 @@ async function refreshTipScorecardAfterReviewAttest({
   const nextSequence = (Number.isInteger(pointer?.sequence) ? pointer.sequence : 1) + 1;
   const nextRun = structuredClone(run);
   nextRun.timestamps.updated_at = generatedAt;
-  if (verdict?.head_sha) nextRun.current_head_sha = verdict.head_sha;
+  const events = [];
+  let sequence = nextSequence;
+  if (verdict?.head_sha && run.current_head_sha !== verdict.head_sha) {
+    events.push(createRunEvent({
+      runId: run.id,
+      sequence,
+      at: generatedAt,
+      type: "head.advanced",
+      data: { from: run.current_head_sha, to: verdict.head_sha }
+    }));
+    sequence += 1;
+    nextRun.current_head_sha = verdict.head_sha;
+  }
   const { reviewVerdicts, findings, trustContext } = await loadScorecardReviewInputs({
     supervisorRoot,
     repositoryIdentity: snapshot.repository.identity,
@@ -909,9 +937,9 @@ async function refreshTipScorecardAfterReviewAttest({
     headSha: nextRun.current_head_sha,
     snapshot
   });
-  const event = createRunEvent({
+  events.push(createRunEvent({
     runId: run.id,
-    sequence: nextSequence,
+    sequence,
     at: generatedAt,
     type: "evidence.recorded",
     data: {
@@ -920,7 +948,12 @@ async function refreshTipScorecardAfterReviewAttest({
       command_id: "independent-review",
       outcome: "pass"
     }
-  });
+  }));
+  const nextPacketBody = structuredClone(packet);
+  delete nextPacketBody.id;
+  nextPacketBody.head_sha = nextRun.current_head_sha;
+  nextPacketBody.generated_at = generatedAt;
+  const nextPacket = { ...nextPacketBody, id: `packet-${hashContract(nextPacketBody).slice(0, 32)}` };
   const scorecard = createReviewScorecard({
     run: nextRun,
     scopeHash: createHash("sha256").update(JSON.stringify({ goal: run.goal.original, scope_version: run.goal.scope_version })).digest("hex"),
@@ -941,10 +974,10 @@ async function refreshTipScorecardAfterReviewAttest({
     dataRoot,
     repositoryIdentity: snapshot.repository.identity,
     runId: run.id,
-    events: [event],
+    events,
     nextRun,
     scorecard,
-    packet,
+    packet: nextPacket,
     artifacts
   });
   return { scorecard, path: stored.paths.checkpoint, run: nextRun };
