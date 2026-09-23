@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 
 import { defaultSupervisorRoot } from "../../runtime/src/data-store.mjs";
-import { listVerifiedApprovalReceipts, listVerifiedEvidenceManifests } from "../../runtime/src/supervisor-store.mjs";
+import { listVerifiedApprovalReceipts, listVerifiedEvidenceManifests, listVerifiedIsolationProofs, loadSupervisorIdentity } from "../../runtime/src/supervisor-store.mjs";
 
 const trustedContexts = new WeakSet();
 
@@ -73,19 +73,30 @@ export function inventoryFromSnapshot(snapshot, goalImpact = {}) {
 
 export async function loadTrustedEvaluationContext({ snapshot, goalImpact = {} }) {
   if (!snapshot?.repository?.identity || !snapshot?.repository?.git?.head_sha) throw new Error("A live repository snapshot with identity and head is required.");
-  const manifests = (await listVerifiedEvidenceManifests(defaultSupervisorRoot(), snapshot.repository.identity))
+  const supervisorRoot = defaultSupervisorRoot();
+  const manifests = (await listVerifiedEvidenceManifests(supervisorRoot, snapshot.repository.identity))
     .filter((manifest) => manifest.commit_sha === snapshot.repository.git.head_sha);
-  const approvals = (await listVerifiedApprovalReceipts(defaultSupervisorRoot(), snapshot.repository.identity))
+  const approvals = (await listVerifiedApprovalReceipts(supervisorRoot, snapshot.repository.identity))
     .filter((receipt) => receipt.relevant_head_sha === snapshot.repository.git.head_sha);
+  // Isolation proofs are host-scoped (Supervisor boundary), not revision-bound to the consumer tip.
+  const isolationProofs = await listVerifiedIsolationProofs(supervisorRoot);
+  let supervisorIdentity = null;
+  try {
+    supervisorIdentity = await loadSupervisorIdentity(supervisorRoot);
+  } catch {
+    supervisorIdentity = null;
+  }
   const context = deepFreeze({
     inventory: derivedInventory(snapshot, goalImpact),
     manifests,
     evidence: manifests.flatMap((manifest) => manifest.evidence_records),
     approvals,
-    supervisor: manifests.length > 0 || approvals.length > 0
+    isolationProofs,
+    supervisorIdentity,
+    supervisor: manifests.length > 0 || approvals.length > 0 || isolationProofs.length > 0
       ? {
-          issuer_id: manifests[0]?.issuer.id ?? approvals[0].attestation.issuer_id,
-          issuer_fingerprint: manifests[0]?.issuer.fingerprint ?? approvals[0].attestation.issuer_fingerprint
+          issuer_id: manifests[0]?.issuer.id ?? approvals[0]?.attestation.issuer_id ?? isolationProofs[0]?.issuer.id,
+          issuer_fingerprint: manifests[0]?.issuer.fingerprint ?? approvals[0]?.attestation.issuer_fingerprint ?? isolationProofs[0]?.issuer.fingerprint
         }
       : null
   });

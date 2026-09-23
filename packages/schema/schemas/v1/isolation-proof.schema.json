@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://devharness.dev/schemas/v1/isolation-proof.schema.json",
+  "title": "Supervisor-issued host isolation proof",
+  "description": "Host-scoped proof that workers under the Supervisor boundary cannot read Supervisor key, state, environment, or control channel. Not revision-bound to a consumer commit.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "id",
+    "scope",
+    "host",
+    "supervisor",
+    "backend",
+    "profile_template_sha256",
+    "profile_instance_sha256",
+    "required_denials",
+    "probes",
+    "boundary",
+    "proved_at",
+    "expires_at",
+    "outcome",
+    "issuer",
+    "attestation"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+    "scope": { "const": "host" },
+    "host": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["platform", "arch"],
+      "properties": {
+        "platform": { "type": "string", "minLength": 1 },
+        "arch": { "type": "string", "minLength": 1 },
+        "hostname_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "supervisor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "fingerprint"],
+      "properties": {
+        "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+        "fingerprint": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "backend": { "const": "macos-seatbelt-v1" },
+    "profile_template_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "profile_instance_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "required_denials": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["private_key", "state", "environment", "control_channel"],
+      "properties": {
+        "private_key": { "const": "deny" },
+        "state": { "const": "deny" },
+        "environment": { "const": "deny" },
+        "control_channel": { "const": "deny" }
+      }
+    },
+    "probes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["code", "status", "summary"],
+        "properties": {
+          "code": { "type": "string", "minLength": 1 },
+          "status": { "enum": ["pass", "deny", "fail", "unavailable"] },
+          "summary": { "type": "string", "minLength": 1 },
+          "details": {}
+        }
+      }
+    },
+    "boundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["supervisor_root_sha256", "consumer_root_sha256", "attempt_root_sha256"],
+      "properties": {
+        "supervisor_root_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "consumer_root_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "attempt_root_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "proof_id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+        "proof_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "proved_at": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/timestamp" },
+    "expires_at": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/timestamp" },
+    "outcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "summary"],
+      "properties": {
+        "status": { "enum": ["pass", "fail"] },
+        "summary": { "type": "string", "minLength": 1 }
+      }
+    },
+    "issuer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "fingerprint"],
+      "properties": {
+        "id": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier" },
+        "fingerprint": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "attestation": { "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/attestation" }
+  }
+}

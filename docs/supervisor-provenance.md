@@ -68,7 +68,7 @@ Supervisor files are outside the consumer repository, namespaced by repository i
 
 For local development and test sandboxes, the Supervisor root can be redirected with `DEVHARNESS_SUPERVISOR_DIR` to a writable path. The default remains the fixed user-level anchor so the production-local contract stays unchanged unless a developer explicitly overrides it.
 
-Cryptography does not solve same-user process isolation. If a worker can read the Supervisor key or control its process/environment, it can impersonate the Supervisor. The current prototype exposes that honestly as the blocking `supervisor-isolation` doctor capability. A production goal runtime must launch workers under a separate OS identity or equivalent capability sandbox and prove that boundary before autonomous delivery.
+Cryptography does not solve same-user process isolation. If a worker can read the Supervisor key or control its process/environment, it can impersonate the Supervisor. On macOS, `devharness prove-isolation` runs Supervisor-owned Seatbelt probes via `sandbox-exec`, attests a host-scoped isolation proof under the Supervisor root, and lets doctor promote `supervisor-isolation` only when key/state/environment/control denials are verified. Proofs expire and fail closed when missing, stale, or tampered. They are intentionally not revision-bound to a consumer tip: isolation is a runtime Supervisor boundary property.
 
 ## Deliberate limitations
 

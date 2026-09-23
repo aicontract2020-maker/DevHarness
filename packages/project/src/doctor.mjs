@@ -1,5 +1,6 @@
 import { hashContract } from "./harness.mjs";
 import { isTrustedEvaluationContext } from "../../core/src/trusted-context.mjs";
+import { isolationProofSatisfiesDoctor } from "../../runtime/src/supervisor-isolation.mjs";
 
 const SUPPORTED_V0_PLATFORMS = new Set(["web", "api", "cli", "library"]);
 
@@ -131,6 +132,40 @@ export function commandHasCurrentSupervisorEvidence(snapshot, config, trustConte
     manifest.harness.config_sha256 === hashContract(config) &&
     manifest.outcome?.status === "pass"
   );
+}
+
+export function currentSupervisorIsolationProof(trustContext, { now = new Date() } = {}) {
+  if (!isTrustedEvaluationContext(trustContext)) return null;
+  const identity = trustContext.supervisorIdentity;
+  if (!identity) return null;
+  return (trustContext.isolationProofs ?? []).find((proof) =>
+    isolationProofSatisfiesDoctor(proof, { identity, now })
+  ) ?? null;
+}
+
+function evaluateSupervisorIsolation(trustContext) {
+  const proof = currentSupervisorIsolationProof(trustContext);
+  if (proof) {
+    return capability({
+      id: "supervisor-isolation",
+      category: "isolation",
+      weight: 5,
+      status: "pass",
+      blocking: true,
+      summary: "A Supervisor-attested macOS Seatbelt proof shows workers cannot read Supervisor key, state, environment or control channel.",
+      evidence: [proof.id],
+      remediation: []
+    });
+  }
+  return capability({
+    id: "supervisor-isolation",
+    category: "isolation",
+    weight: 5,
+    status: "fail",
+    blocking: true,
+    summary: "Supervisor signatures exist, but worker processes are not yet proven unable to read its key, state, environment or control channel.",
+    remediation: ["Run `devharness prove-isolation` on macOS so the Supervisor can issue a host-scoped Seatbelt isolation proof."]
+  });
 }
 
 function evaluateEnvironment(snapshot) {
@@ -382,15 +417,7 @@ export function evaluateReadiness(snapshot, { receipts = [], trustContext, confi
       summary: snapshot.repository.git.is_repository && snapshot.repository.git.head_sha ? "Git worktree isolation is available to the runtime." : "Worktree isolation requires a committed Git baseline.",
       remediation: snapshot.repository.git.is_repository && snapshot.repository.git.head_sha ? [] : ["Create a baseline commit before dispatching writing agents."]
     }),
-    capability({
-      id: "supervisor-isolation",
-      category: "isolation",
-      weight: 5,
-      status: "fail",
-      blocking: true,
-      summary: "Supervisor signatures exist, but worker processes are not yet proven unable to read its key, state, environment or control channel.",
-      remediation: ["Run workers under a separate OS identity or capability sandbox, then add a Supervisor-owned isolation probe."]
-    }),
+    evaluateSupervisorIsolation(trustContext),
     capability({
       id: "pull-request-delivery",
       category: "delivery",

@@ -114,3 +114,84 @@ Receipt: `verify-1789856335089-05fbd932` — **98 passed / 17 skipped**, attesta
 Tip is now `964d02a53`, so prior revision-bound seals (lint/build/launch/python-tests/…) show unproved on tip (**1/14** ladder, score ~77, autonomy 1). `behavior-verification` remains **warn** (pass alone ≠ real-surface proof). `supervisor-isolation` still **fail**.
 
 Next: re-attest sealed suite at tip, or continue supervisor-isolation / richer behavior evidence.
+
+## Tip re-attest @ 964d02a53 (2026-09-20)
+
+Goal Run `run-97ac5f85-f084-4f0d-b202-4818f7da44ca` at SHA `964d02a53`.
+
+Sealed at tip (Supervisor evidence issued):
+- pytest-health-readiness, health-live-and-legacy-service, health-service-field
+- frontend-lint, frontend-build, docker-compose-build
+- frontend-test, frontend-test-failover
+- aiedu-postgres-redis-launch, aiedu-full-stack-launch
+- web-playwright (already sealed; 98 passed / 17 skipped)
+- python-tests (`verify-1789959347205-04fe0deb`) after local-projects tip patch:
+  - `scripts/python-tests-tip-calendar-readiness.patch` (as_of for 2026-W31; readiness `source_learning_node_count in (6, 8)`)
+  - applied via `scripts/run-python-tests-with-baseline-fixes.sh`
+
+Still open (expected):
+- controlled-change-marker (clean HEAD — intentional fail)
+- docs-readiness-summary
+
+Doctor: score **88**, Phase2 ladder **12/14**, `ready=false`. Biggest blockers still `supervisor-isolation` and `behavior-verification` (pass ≠ real-surface proof warning).
+
+
+## Tip re-attest @ 964d02a53 — docs-readiness-summary (2026-09-23 ET)
+
+Goal Run `run-97ac5f85-f084-4f0d-b202-4818f7da44ca` at tip SHA `964d02a53b4802b6c6e608d820e9c9342a8d7031`.
+
+- Refreshed external artifact (outside consumer worktree): `local-projects/aiedu-demo/artifacts/readiness-summary.md` (marker `# Readiness summary`; Goal Run + tip SHA updated).
+- Caps: `dependency-install` + `service-runtime` via `request-capability --for-verify --command docs-readiness-summary --approve` (PTY helper `/tmp/dh-pty-approve.py`, expires ~720m).
+- Env: `DEVHARNESS_READINESS_SUMMARY` set in verify shell (`set_keys`).
+- Receipt: `verify-1790190206128-9840ff29` — outcome **pass**, attestation **issued**.
+- Consumer AI-education-demo: **not** modified/committed for this probe.
+
+Doctor after seal: score **88**, Phase2 ladder **13/14**, `ready=false`.
+Still open: `controlled-change-marker` (clean HEAD intentional).
+Capability status unchanged in kind: `behavior-verification` **warn**, `supervisor-isolation` **fail**.
+
+## Controlled-change-marker land + tip re-attest @ 3086d687 (2026-09-23 ET)
+
+Goal Run `run-70b8a2d0-d88d-4a7e-9e70-437c8df59ef7` (new; not reusing run-97ac5f85).
+
+### Controlled-change path
+- Gate 1 scope approved via Alignment Brief (local-agent) + PTY approve.
+- `vcs-write` approved; `advance --mode controlled-change --change-json local-projects/aiedu-demo/changes/controlled-change-marker.json --command controlled-change-marker`.
+- Isolated change commit `3086d687d051311b498641053b3767d3d71be211` (ensure-file `DEVHARNESS_CONTROLLED_CHANGE.md`).
+- Marker attested at change SHA: receipt `verify-1790191063346-f5972026` (issued).
+- `promote` refused (Gate 2 not approved) — FF-merged change onto dogfood tip (`git merge --ff-only`); tip now `3086d687d…` with marker containing `controlled`.
+
+### Tip re-attest @ 3086d687 (14/14 issued)
+Same Goal Run. Caps via `request-capability --for-verify --config … --approve` (PTY). Colima was down for first docker/postgres attempts; restarted then retried.
+
+| command | receipt |
+|---|---|
+| pytest-health-readiness | verify-1790191129904-29d8240b |
+| health-live-and-legacy-service | verify-1790191152406-5124b5f8 |
+| health-service-field | verify-1790191163858-efa0eec2 |
+| frontend-lint | verify-1790191176349-51352ab5 |
+| frontend-build | verify-1790191192403-ef422cc1 |
+| docker-compose-build | verify-1790191344300-201eb022 |
+| frontend-test | verify-1790191250732-96ab99f3 |
+| frontend-test-failover | verify-1790191264247-416da55f |
+| aiedu-postgres-redis-launch | verify-1790191360721-3b99e2e0 |
+| python-tests | verify-1790191434841-00e06e1f |
+| aiedu-full-stack-launch | verify-1790191595511-67cada99 |
+| web-playwright | verify-1790191832653-213138a9 |
+| docs-readiness-summary | verify-1790191289562-02c1d449 |
+| controlled-change-marker | verify-1790191063346-f5972026 |
+
+### Doctor after tip seal
+- Phase2 ladder **14/14**, `ready=true`, score **88**, overall verdict `needs_work`.
+- Remaining capability posture unchanged in kind: `behavior-verification` **warn**, `supervisor-isolation` **fail**, `ci-feedback` **warn**.
+- No Phase2 ladder commands open.
+
+
+
+## 2026-09-23 supervisor-isolation Seatbelt proof
+
+- Implemented Supervisor-owned macOS Seatbelt isolation proof (`prove-isolation`), host-scoped and identity-bound (not consumer-revision-bound).
+- Fixed seatbelt profile to **deny** `supervisor_root` reads/writes (previously incorrectly allowed).
+- Dogfood tip `3086d687d051311b498641053b3767d3d71be211` + `local-projects/aiedu-demo/devharness.yaml`.
+- Live `prove-isolation` → `isolation-proof-1dc653bccbe7e58d10740879` (key/state/env/control deny).
+- Doctor: **88→92**, `supervisor-isolation` **fail→pass**, verdict still `needs_work` (level 2). Remaining blocker: `behavior-verification` (warn). Non-blocking: `ci-feedback` (warn).

@@ -95,8 +95,11 @@ test("analysis view builds a closed access policy and stable seatbelt profile", 
   assert.equal(view.policy.provider_transport.proxy_policy_sha256, "c".repeat(64));
   assert.equal(view.policy.profile_template_sha256.length, 64);
   assert.equal(view.policy.profile_instance_sha256.length, 64);
-  assert.equal(renderMacosSeatbeltProfile(view).includes(JSON.stringify(path.resolve(attemptRoot))), true);
-  assert.equal(renderMacosSeatbeltProfile(view).includes(JSON.stringify(path.resolve(root))), true);
+  const profile = renderMacosSeatbeltProfile(view);
+  assert.match(profile, /allow default/);
+  assert.equal(profile.includes(`(deny file-read* (subpath ${JSON.stringify(view.supervisor_root)}))`), true);
+  assert.equal(profile.includes(`(deny file-write* (subpath ${JSON.stringify(view.consumer_root)}))`), true);
+  assert.equal(profile.includes(`(allow file-read* (subpath ${JSON.stringify(view.supervisor_root)}))`), false);
 });
 
 test("probe plan runs the exact Seatbelt codes in order and returns an isolation proof", async (t) => {
@@ -140,4 +143,30 @@ test("probe plan runs the exact Seatbelt codes in order and returns an isolation
   assert.equal(result.proof.nested_tool_network, "denied");
   assert.equal(result.proof.proved_at, "2026-09-01T12:34:56.000Z");
   assert.equal(result.proof.consumer_before_sha256, result.proof.consumer_after_sha256);
+});
+
+test("rendered Seatbelt profile denies supervisor reads and consumer writes", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "devharness-seatbelt-deny-"));
+  const attemptRoot = await mkdtemp(path.join(os.tmpdir(), "devharness-seatbelt-deny-attempt-"));
+  const privateHome = await mkdtemp(path.join(os.tmpdir(), "devharness-seatbelt-deny-home-"));
+  const supervisorRoot = await mkdtemp(path.join(os.tmpdir(), "devharness-seatbelt-deny-supervisor-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  t.after(() => rm(attemptRoot, { recursive: true, force: true }));
+  t.after(() => rm(privateHome, { recursive: true, force: true }));
+  t.after(() => rm(supervisorRoot, { recursive: true, force: true }));
+  await writeFile(path.join(root, "tracked.txt"), "tracked\n");
+  await mkdir(path.join(supervisorRoot, "private"), { recursive: true });
+  await writeFile(path.join(supervisorRoot, "private", "supervisor-key.pk8"), "key\n");
+  await writeFile(path.join(supervisorRoot, "identity.json"), "{}\n");
+
+  const view = await createMacosSeatbeltAnalysisView({
+    snapshot: snapshot(root),
+    attemptRoot,
+    privateHome,
+    supervisorRoot
+  });
+  const profile = renderMacosSeatbeltProfile(view);
+  assert.equal(profile.includes(`(allow file-read* (subpath ${JSON.stringify(view.supervisor_root)}))`), false);
+  assert.equal(profile.includes(`(deny file-read* (subpath ${JSON.stringify(view.supervisor_root)}))`), true);
+  assert.equal(view.policy.supervisor_access, false);
 });

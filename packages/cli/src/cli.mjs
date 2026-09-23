@@ -60,6 +60,7 @@ import { issueCommandLifecycleEvidence, issueCommandQualityEvidence, issueComman
 import { createSupervisorApprovalRequest, listPendingApprovalRequestsForRun, recordInteractiveApprovalDecisions } from "../../runtime/src/supervisor-approval.mjs";
 import { applyRunGateFromApprovalReceipt, reconcileRunGatesFromApprovals } from "../../runtime/src/run-gate-approval.mjs";
 import { applyStrategyApprovalReceipt, requestStrategyApprovalForRun } from "../../runtime/src/strategy-approval.mjs";
+import { issueSupervisorIsolationProof } from "../../runtime/src/supervisor-isolation.mjs";
 import { initializeSupervisorIdentity } from "../../runtime/src/supervisor-store.mjs";
 import { findApprovedVcsWrite, loadCapabilityAuthorizationView, requestCapabilityAuthorization, resolveCapabilityApprovalContext } from "../../runtime/src/capability-authorization.mjs";
 import { requestMissingVerifyCapabilities, resolveVerifyDefaultsFromReadiness, summarizeVerifyCapabilityGap } from "../../runtime/src/verify-capabilities.mjs";
@@ -92,6 +93,7 @@ Usage:
   devharness doctor [--repo PATH] [--config PATH] [--format text|json]
   devharness build [--repo PATH] [--config PATH] [--write] [--format text|json]
   devharness supervisor-init [--format text|json]
+  devharness prove-isolation [--format text|json]
   devharness request-approval (--for-strategy --run ID | --run ID --gate GATE --subject ID --subject-sha SHA) [--repo PATH]
   devharness request-capability --run ID (--capability ID | --for-verify [--command ID] [--commit SHA] [--approve] | --for-align [--approve]) [--expires-minutes N] [--repo PATH] [--data-dir PATH]
   devharness approve (--request ID [--request ID ...] | --run ID --pending) [--repo PATH] [--data-dir PATH]
@@ -114,6 +116,7 @@ Commands:
   doctor    Produce a read-only deterministic autonomous-development readiness report.
   build     Compile the accepted project declaration. Does not write unless --write is present.
   supervisor-init  Create or load the fixed external signing identity. Never exposes its private key.
+  prove-isolation  Run Supervisor-owned macOS Seatbelt probes and store a host-scoped isolation proof.
   request-approval Create a signed, revision-bound pending request; this does not approve it.
              --for-strategy derives the current Goal Run design-strategy subject automatically.
   request-capability Request bounded capability approval from the current Goal Run plan.
@@ -818,7 +821,7 @@ export async function runCli(argv, io = console, services = {}) {
     return 0;
   }
 
-  if (!["onboard", "init", "doctor", "build", "supervisor-init", "request-approval", "request-capability", "approve", "verify", "goal", "advance", "align", "answer", "request-scope", "request-delivery", "promote", "retry", "cancel", "status", "review"].includes(options.command)) {
+  if (!["onboard", "init", "doctor", "build", "supervisor-init", "prove-isolation", "request-approval", "request-capability", "approve", "verify", "goal", "advance", "align", "answer", "request-scope", "request-delivery", "promote", "retry", "cancel", "status", "review"].includes(options.command)) {
     throw new Error(`Unknown command: ${options.command}`);
   }
 
@@ -831,6 +834,32 @@ export async function runCli(argv, io = console, services = {}) {
       algorithm: result.identity.algorithm
     };
     io.log(options.format === "json" ? JSON.stringify(summary, null, 2) : `Supervisor ${result.created ? "created" : "loaded"}: ${summary.id}\nFingerprint: ${summary.fingerprint}\nAlgorithm: ${summary.algorithm}`);
+    return 0;
+  }
+
+  if (options.command === "prove-isolation") {
+    const supervisorRoot = services.supervisorRoot ?? defaultSupervisorRoot();
+    await initializeSupervisorIdentity(supervisorRoot);
+    const issued = await issueSupervisorIsolationProof({
+      supervisorRoot,
+      probeRunner: services.probeRunner,
+      now: () => new Date(services.now?.() ?? Date.now()),
+      platform: services.platform ?? process.platform
+    });
+    const summary = {
+      id: issued.proof.id,
+      written: issued.written,
+      path: issued.path,
+      backend: issued.proof.backend,
+      scope: issued.proof.scope,
+      proved_at: issued.proof.proved_at,
+      expires_at: issued.proof.expires_at,
+      required_denials: issued.proof.required_denials,
+      outcome: issued.proof.outcome
+    };
+    io.log(options.format === "json"
+      ? JSON.stringify(summary, null, 2)
+      : `Isolation proof ${issued.written ? "issued" : "reloaded"}: ${summary.id}\nBackend: ${summary.backend} (host-scoped)\nProved: ${summary.proved_at}\nExpires: ${summary.expires_at}\nDenials: key/state/env/control\nStored: ${summary.path}`);
     return 0;
   }
 

@@ -8,7 +8,8 @@ import {
 const DOMAINS = Object.freeze({
   "evidence-manifest": "devharness.evidence-manifest.v1\0",
   "approval-request": "devharness.approval-request.v1\0",
-  "approval-receipt": "devharness.approval-receipt.v1\0"
+  "approval-receipt": "devharness.approval-receipt.v1\0",
+  "isolation-proof": "devharness.isolation-proof.v1\0"
 });
 
 function canonicalValue(value, ancestors = new Set()) {
@@ -55,7 +56,7 @@ export function publicKeyFingerprint(publicKey) {
 }
 
 export function signSupervisorArtifact(kind, artifact, privateKey, identity) {
-  if (kind === "evidence-manifest" && (artifact?.issuer?.id !== identity.id || artifact?.issuer?.fingerprint !== identity.fingerprint)) {
+  if ((kind === "evidence-manifest" || kind === "isolation-proof") && (artifact?.issuer?.id !== identity.id || artifact?.issuer?.fingerprint !== identity.fingerprint)) {
     throw new Error("Artifact issuer does not match the pinned Supervisor identity.");
   }
   const payload = canonicalArtifactBytes(kind, artifact);
@@ -76,7 +77,7 @@ export function verifySupervisorArtifact(kind, artifact, identity) {
     const attestation = artifact?.attestation;
     if (!attestation || identity?.algorithm !== "Ed25519") return false;
     if (attestation.algorithm !== "Ed25519") return false;
-    if (kind === "evidence-manifest" && (artifact?.issuer?.id !== identity.id || artifact?.issuer?.fingerprint !== identity.fingerprint)) return false;
+    if ((kind === "evidence-manifest" || kind === "isolation-proof") && (artifact?.issuer?.id !== identity.id || artifact?.issuer?.fingerprint !== identity.fingerprint)) return false;
     if (attestation.issuer_id !== identity.id || attestation.issuer_fingerprint !== identity.fingerprint) return false;
     if (publicKeyFingerprint(identity.public_key.value) !== identity.fingerprint) return false;
     const payload = canonicalArtifactBytes(kind, artifact);

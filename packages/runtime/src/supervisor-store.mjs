@@ -95,6 +95,11 @@ export function evidenceBlobPath(root, sha256) {
   return path.join(path.resolve(root), "blobs", "sha256", sha256.slice(0, 2), sha256);
 }
 
+export function isolationProofPath(root, proofId) {
+  assertIdentifier(proofId, "Isolation proof id");
+  return path.join(path.resolve(root), "isolation-proofs", `${proofId}.json`);
+}
+
 export async function storeEvidenceBlob(root, artifact) {
   if (!artifact.uri.startsWith("file://")) throw new Error("Evidence blobs can be imported only from local execution artifacts.");
   const source = fileURLToPath(artifact.uri);
@@ -196,6 +201,14 @@ export async function attestEvidenceManifest(root, payload) {
   const privateKey = await readPrivateKey(root);
   const signed = signSupervisorArtifact("evidence-manifest", payload, privateKey, identity);
   await assertContract("evidence-manifest", signed);
+  return signed;
+}
+
+export async function attestIsolationProof(root, payload) {
+  const identity = await loadSupervisorIdentity(root);
+  const privateKey = await readPrivateKey(root);
+  const signed = signSupervisorArtifact("isolation-proof", payload, privateKey, identity);
+  await assertContract("isolation-proof", signed);
   return signed;
 }
 
@@ -348,6 +361,64 @@ export async function writeApprovalReceipt(root, repositoryIdentity, receipt) {
   await safeDirectoryTree(root, path.dirname(target), { create: true });
   await writeFile(target, `${JSON.stringify(receipt, null, 2)}\n`, { encoding: "utf8", mode: 0o600, flag: "wx" });
   return { path: target, written: true };
+}
+
+export async function writeIsolationProof(root, proof) {
+  await assertContract("isolation-proof", proof);
+  const identity = await loadSupervisorIdentity(root);
+  if (!verifySupervisorArtifact("isolation-proof", proof, identity)) {
+    throw new Error("Isolation proof signature or attestation is invalid.");
+  }
+  if (proof.supervisor.fingerprint !== identity.fingerprint || proof.supervisor.id !== identity.id) {
+    throw new Error("Isolation proof supervisor binding does not match the pinned identity.");
+  }
+  const target = isolationProofPath(root, proof.id);
+  await safeDirectoryTree(root, path.dirname(target), { create: true });
+  try {
+    await writeFile(target, `${JSON.stringify(proof, null, 2)}\n`, { encoding: "utf8", mode: 0o600, flag: "wx" });
+    return { path: target, written: true };
+  } catch (error) {
+    if (error.code !== "EEXIST") throw error;
+    const existing = JSON.parse(await readFile(target, "utf8"));
+    if (JSON.stringify(existing) === JSON.stringify(proof)) return { path: target, written: false };
+    throw new Error(`A different isolation proof already exists at ${target}`);
+  }
+}
+
+export async function listVerifiedIsolationProofs(root, { now = new Date(), includeExpired = false } = {}) {
+  let identity;
+  try {
+    identity = await loadSupervisorIdentity(root);
+  } catch {
+    return [];
+  }
+  const directory = path.dirname(isolationProofPath(root, "isolation-proof-placeholder"));
+  let names;
+  try {
+    await safeDirectoryTree(root, directory);
+    names = await readdir(directory);
+  } catch (error) {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  }
+  const proofs = [];
+  const current = now instanceof Date ? now.getTime() : Date.parse(now);
+  for (const name of names.filter((candidate) => candidate.endsWith(".json")).sort()) {
+    const target = path.join(directory, name);
+    try {
+      if (!(await regularFile(target))) continue;
+      const proof = JSON.parse(await readFile(target, "utf8"));
+      await assertContract("isolation-proof", proof);
+      if (!verifySupervisorArtifact("isolation-proof", proof, identity)) continue;
+      if (proof.supervisor.fingerprint !== identity.fingerprint || proof.supervisor.id !== identity.id) continue;
+      if (!includeExpired && Date.parse(proof.expires_at) < current) continue;
+      if (proof.outcome?.status !== "pass") continue;
+      proofs.push(proof);
+    } catch {
+      // Fail closed: malformed, forged, expired or unsafe proofs never become trusted.
+    }
+  }
+  return proofs;
 }
 
 export function randomSupervisorNonce() {

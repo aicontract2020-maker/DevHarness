@@ -43,7 +43,7 @@ Local environment files are represented only by relative path, key name, whether
 
 A blocking `warn` keeps the overall verdict at `needs_work`. Finding Playwright or a test script is not enough to declare a repository ready.
 
-Schema-valid command receipts are also insufficient. Doctor ignores caller receipt arrays and promotes executed capability only from manifests verified against the pinned external Supervisor identity. The first driver proves configured automated tests only. `supervisor-isolation` remains a blocking failure until workers cannot access Supervisor keys, state, environment or control input.
+Schema-valid command receipts are also insufficient. Doctor ignores caller receipt arrays and promotes executed capability only from manifests verified against the pinned external Supervisor identity. The first driver proves configured automated tests only. `supervisor-isolation` stays a blocking failure until a Supervisor-attested, host-scoped macOS Seatbelt proof shows workers cannot read Supervisor key, state, environment or control channel. Issue that proof with `devharness prove-isolation` (not worker self-attestation). Isolation proofs are bound to the Supervisor identity on this host, not to a consumer commit.
 
 The score is a deterministic summary of weighted capabilities. It is diagnostic, not a completion verdict. The capability list and remediations are the source of truth.
 

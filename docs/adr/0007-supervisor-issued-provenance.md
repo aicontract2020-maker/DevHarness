@@ -17,4 +17,4 @@ The first evidence driver accepts only an intact current configured `test` recei
 - Legacy receipts remain useful execution diagnostics but are not authority.
 - Agent-authored JSON, self-declared human actors, changed subjects/HEADs, expiry, duplicate decisions and signature mutation fail closed.
 - The private key and foreground control channel become high-value capabilities that workers must never receive.
-- Same-OS-user isolation is not solved by signatures; doctor blocks on `supervisor-isolation` until a sandbox proves that separation.
+- Same-OS-user isolation is not solved by signatures; doctor blocks on `supervisor-isolation` until a Supervisor-owned sandbox proof exists. On macOS, `prove-isolation` issues a host-scoped Seatbelt attestation (not consumer-revision-bound).
