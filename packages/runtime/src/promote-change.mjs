@@ -159,7 +159,7 @@ export async function promoteControlledChange({
     run_id: run.id,
     generated_at: generatedAt,
     repository_identity: repositoryIdentity ?? run.repository.identity,
-    baseline_sha: run.current_head_sha,
+    baseline_sha: readiness.head_sha ?? run.current_head_sha,
     change_commit_sha: changeSha,
     branch,
     branch_created: branchCreated,
