@@ -1596,7 +1596,21 @@ export async function runCli(argv, io = console, services = {}) {
     const { dataRoot } = resolveExternalDataRoot(snapshot.repository.root_uri, options.dataRoot);
     const currentRun = await loadGoalRun(dataRoot, snapshot.repository.identity, options.runId);
     if (currentRun.repository.identity !== snapshot.repository.identity) throw new Error("Goal Run belongs to a different repository.");
-    if (currentRun.current_head_sha !== snapshot.repository.git.head_sha) throw new Error("Repository revision changed after Goal Run intake.");
+    if (currentRun.current_head_sha !== snapshot.repository.git.head_sha) {
+      // Controlled-change may advance the Goal Run head to the isolated change revision while
+      // the consumer checkout stays on the clean baseline until an explicit promote.
+      let allowedIsolatedHead = false;
+      try {
+        const readiness = await loadRunSourceArtifact(dataRoot, snapshot.repository.identity, options.runId, "artifact-readiness-summary");
+        allowedIsolatedHead =
+          readiness.value?.delivery_mode === "controlled-change" &&
+          readiness.value?.change_commit_sha === currentRun.current_head_sha &&
+          readiness.value?.head_sha === snapshot.repository.git.head_sha;
+      } catch {
+        allowedIsolatedHead = false;
+      }
+      if (!allowedIsolatedHead) throw new Error("Repository revision changed after Goal Run intake.");
+    }
     const generatedAt = services.now?.() ?? new Date().toISOString();
 
     if (postScopeAdvanceSupported(currentRun)) {
