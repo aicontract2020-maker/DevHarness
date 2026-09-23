@@ -42,7 +42,13 @@ export function promoteSupported({ run, readiness }) {
   if (!/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(readiness?.change_commit_sha ?? "")) {
     return { ok: false, reason: "Promote requires readiness.change_commit_sha." };
   }
-  if (readiness.head_sha && readiness.head_sha !== run.current_head_sha) {
+  // After independent-review tip binding, Goal Run head may be the change SHA while
+  // readiness.head_sha remains the clean consumer baseline checkout.
+  if (
+    readiness.head_sha &&
+    readiness.head_sha !== run.current_head_sha &&
+    readiness.change_commit_sha !== run.current_head_sha
+  ) {
     return { ok: false, reason: "Promote readiness baseline does not match the Goal Run head." };
   }
   return { ok: true, reason: null };
@@ -108,9 +114,10 @@ export async function promoteControlledChange({
     throw new Error("Promote branch does not point at the controlled-change commit.");
   }
 
-  // Working tree must remain on its original HEAD.
+  // Working tree must remain on the clean baseline checkout (not the isolated change tip).
   const headAfter = gitExec(root, ["rev-parse", "HEAD"]);
-  if (headAfter !== run.current_head_sha) {
+  const expectedCheckout = readiness.head_sha ?? run.current_head_sha;
+  if (headAfter !== expectedCheckout) {
     throw new Error("Promote unexpectedly moved the consumer HEAD; aborting.");
   }
   if (gitExec(root, ["status", "--porcelain=v1"])) {
