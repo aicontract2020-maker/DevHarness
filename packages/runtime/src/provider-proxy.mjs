@@ -220,11 +220,53 @@ function extractUsage(payload) {
   return normalizeUsage(payload?.usage);
 }
 
-function upstreamHeaders({ parentCredential, includeJsonContentType = false }) {
-  return {
+const CHATGPT_UNSUPPORTED_BODY_KEYS = Object.freeze([
+  "max_output_tokens",
+  "max_tokens",
+  "temperature"
+]);
+
+function isChatgptProxyOrigin(origin) {
+  try {
+    return new URL(String(origin ?? "")).hostname === "chatgpt.com";
+  } catch {
+    return false;
+  }
+}
+
+function upstreamHeaders({
+  parentCredential,
+  includeJsonContentType = false,
+  chatgptAccountId = null,
+  upstreamExtraHeaders = null
+}) {
+  const headers = {
     authorization: `Bearer ${parentCredential}`,
     ...(includeJsonContentType ? { "content-type": "application/json" } : {})
   };
+  if (typeof chatgptAccountId === "string" && chatgptAccountId.trim().length > 0) {
+    headers["ChatGPT-Account-Id"] = chatgptAccountId.trim();
+  }
+  if (upstreamExtraHeaders && typeof upstreamExtraHeaders === "object" && !Array.isArray(upstreamExtraHeaders)) {
+    for (const [key, value] of Object.entries(upstreamExtraHeaders)) {
+      if (typeof key !== "string" || key.trim().length < 1) continue;
+      if (typeof value !== "string" || value.length < 1) continue;
+      const lower = key.toLowerCase();
+      if (lower === "authorization" || lower === "x-devharness-proxy-token") continue;
+      headers[key] = value;
+    }
+  }
+  return headers;
+}
+
+function prepareChatgptForwardBody(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  const next = { ...payload };
+  for (const key of CHATGPT_UNSUPPORTED_BODY_KEYS) {
+    if (Object.hasOwn(next, key)) delete next[key];
+  }
+  next.stream = true;
+  return JSON.stringify(next);
 }
 
 async function parseJSONResponse(response, maxResponseBytes) {
@@ -250,6 +292,9 @@ export function createProviderProxyResponder({
   targetOrigin = null,
   childToken,
   parentCredential,
+  chatgptAccountId = null,
+  chatgptMode = null,
+  upstreamExtraHeaders = null,
   operationId,
   attemptId,
   targetDescriptorSha256 = null,
@@ -271,6 +316,12 @@ export function createProviderProxyResponder({
   if (typeof parentCredential !== "string" || parentCredential.length < 1 || parentCredential.length > 4096) throw new Error("Parent provider credential is invalid.");
   if (proxyPolicySha256 !== null && !SHA256.test(proxyPolicySha256)) throw new Error("Proxy policy digest is invalid.");
   if (targetDescriptorSha256 !== null && !SHA256.test(targetDescriptorSha256)) throw new Error("Target descriptor digest is invalid.");
+  if (chatgptAccountId !== null && chatgptAccountId !== undefined) {
+    if (typeof chatgptAccountId !== "string" || chatgptAccountId.trim().length < 1 || chatgptAccountId.length > 256) {
+      throw new Error("ChatGPT account id is invalid.");
+    }
+  }
+  const useChatgptMode = chatgptMode === true || isChatgptProxyOrigin(selectedOrigin);
 
   return async ({ method = "POST", url = "/", headers = {}, body = "" }) => {
     const requestToken = parseBearer(headerValue(headers, "authorization")) ?? headerValue(headers, "x-devharness-proxy-token");
@@ -290,9 +341,17 @@ export function createProviderProxyResponder({
     const maxOutputTokens = Number.isInteger(payload?.max_output_tokens) && payload.max_output_tokens >= 0 && payload.max_output_tokens <= 600000
       ? payload.max_output_tokens
       : 0;
-    const clientWantedStream = Boolean(payload && typeof payload === "object" && payload.stream === true);
+    let clientWantedStream = Boolean(payload && typeof payload === "object" && payload.stream === true);
     // Keep the child's stream flag so Codex receives a real Responses SSE transcript.
-    const forwardBody = requestBody;
+    // ChatGPT Codex origin rejects several Responses params and requires stream:true.
+    let forwardBody = requestBody;
+    if (useChatgptMode && payload && typeof payload === "object" && !Array.isArray(payload)) {
+      const rewritten = prepareChatgptForwardBody(payload);
+      if (rewritten !== null) {
+        forwardBody = rewritten;
+        clientWantedStream = true;
+      }
+    }
     const reservation = requestReservation({
       operationId,
       attemptId,
@@ -315,7 +374,9 @@ export function createProviderProxyResponder({
           method,
           headers: upstreamHeaders({
             parentCredential,
-            includeJsonContentType: method !== "GET" && forwardBody.length > 0
+            includeJsonContentType: method !== "GET" && forwardBody.length > 0,
+            chatgptAccountId,
+            upstreamExtraHeaders
           }),
           body: method === "GET" ? undefined : forwardBody,
           redirect: "manual"

@@ -219,12 +219,18 @@ loopback proxy**.
 Credential resolution (parent process only):
 
 1. `DEVHARNESS_PROVIDER_CREDENTIAL` or `OPENAI_API_KEY` from the environment, else
-2. `OPENAI_API_KEY` from `~/.codex/auth.json` when present and `auth_mode` is
-   `apikey` (ChatGPT.app / Codex local auth). Other `auth_mode` values are ignored.
+2. From `~/.codex/auth.json` when present:
+   - `auth_mode=apikey` → `OPENAI_API_KEY` (origin default `https://api.openai.com`,
+     child path prefix `/v1`)
+   - `auth_mode=chatgpt` → `tokens.access_token` (+ optional `tokens.account_id` as
+     `ChatGPT-Account-Id`) via the parent proxy (origin default
+     `https://chatgpt.com`, child path prefix `/backend-api/codex` so upstream is
+     `https://chatgpt.com/backend-api/codex/responses`)
 
 The auth.json value is used **only by the parent proxy** — never copied into the
-Agent sandbox, never logged, never committed. Prefer env export in CI; local
-dogfood can rely on an existing ChatGPT/Codex `auth.json`.
+Agent sandbox, never logged, never committed, never mounted as Agent auth.
+Prefer env export in CI; local dogfood can rely on an existing ChatGPT session
+`auth.json` (`auth_mode=chatgpt`) or an API key.
 
 ```bash
 # 1. Codex CLI. ChatGPT.app ships one; npm also publishes @openai/codex.
@@ -233,11 +239,14 @@ export DEVHARNESS_CODEX_PATH="/Applications/ChatGPT.app/Contents/Resources/codex
 
 # 2. Parent credential for the loopback provider proxy (never commit this).
 # export OPENAI_API_KEY          # or: export DEVHARNESS_PROVIDER_CREDENTIAL
-# If unset, parent loads OPENAI_API_KEY from ~/.codex/auth.json when auth_mode=apikey.
+# If unset, parent loads from ~/.codex/auth.json:
+#   auth_mode=apikey  → OPENAI_API_KEY
+#   auth_mode=chatgpt → tokens.access_token (+ tokens.account_id)
 
-# 3. Optional model / origin (defaults: gpt-5 / https://api.openai.com)
-# export DEVHARNESS_CODEX_MODEL="gpt-5"
-# export DEVHARNESS_CODEX_ORIGIN="https://api.openai.com"
+# 3. Optional model / origin
+# export DEVHARNESS_CODEX_MODEL="gpt-5.6-sol"
+# export DEVHARNESS_CODEX_ORIGIN="https://api.openai.com"   # apikey
+# export DEVHARNESS_CODEX_ORIGIN="https://chatgpt.com"      # chatgpt session (default when auth_mode=chatgpt)
 ```
 
 Confirm the binary:

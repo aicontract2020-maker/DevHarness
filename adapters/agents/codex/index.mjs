@@ -130,7 +130,7 @@ function argvFor(invocation, context) {
     "--output-schema", context.outputSchemaPath, "--output-last-message", context.resultPath,
     "--json", "--cd", context.analysisRoot,
     "--config", 'model_provider="devharness_proxy"',
-    "--config", `model_providers.devharness_proxy={name="DevHarness Proxy",base_url="http://127.0.0.1:${context.proxy.port}/v1",env_key="DEVHARNESS_PROXY_TOKEN",wire_api="responses"}`,
+    "--config", `model_providers.devharness_proxy={name="DevHarness Proxy",base_url="http://127.0.0.1:${context.proxy.port}${context.proxy.apiPathPrefix ?? "/v1"}",env_key="DEVHARNESS_PROXY_TOKEN",wire_api="responses"}`,
     "--config", 'shell_environment_policy.inherit="none"',
     "--config", `shell_environment_policy.set={PATH="/usr/bin:/bin",LANG="C",TMPDIR="${context.attemptTmpPath}"}`,
     "-"

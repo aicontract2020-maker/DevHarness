@@ -88,3 +88,17 @@ test("Codex cancellation is idempotent for an owned execution handle", async () 
   await adapter.cancel({ executionHandle: handle, reason: "developer-cancelled" });
   assert.equal(calls.kills, 1);
 });
+
+test("Codex argv uses context.proxy.apiPathPrefix when set", async () => {
+  const { adapter, calls } = harness();
+  const chatgptContext = {
+    ...context,
+    proxy: { ...context.proxy, apiPathPrefix: "/backend-api/codex" }
+  };
+  const result = await adapter.start({ invocation, executionContext: chatgptContext });
+  assert.equal(result.status, "succeeded");
+  assert.equal(calls.spawn.length, 1);
+  const baseUrlConfig = calls.spawn[0].argv.find((arg) => typeof arg === "string" && arg.includes("base_url="));
+  assert.match(baseUrlConfig, /base_url="http:\/\/127\.0\.0\.1:43199\/backend-api\/codex"/);
+});
+

@@ -136,3 +136,54 @@ test("provider proxy passes through Responses SSE and extracts usage", async () 
   assert.match(response.body, /event: response\.completed/);
   assert.match(response.body, /"usage"/);
 });
+
+test("provider proxy strips ChatGPT-unsupported params and adds ChatGPT-Account-Id", async () => {
+  let forwarded;
+  const sse = [
+    "event: response.completed",
+    'data: {"type":"response.completed","response":{"id":"resp-chatgpt","usage":{"input_tokens":2,"output_tokens":1,"total_tokens":3}}}',
+    "",
+    ""
+  ].join("\n");
+  const respond = createProviderProxyResponder({
+    exactOrigins: ["https://chatgpt.com"],
+    childToken,
+    parentCredential,
+    chatgptAccountId: "acct-proxy-test",
+    chatgptMode: true,
+    operationId: "operation-1",
+    attemptId: "attempt-1",
+    fetchImpl: async (url, init) => {
+      forwarded = { url, init };
+      return new Response(sse, {
+        status: 200,
+        headers: { "content-type": "text/event-stream; charset=utf-8" }
+      });
+    },
+    now: () => new Date(now)
+  });
+  const response = await respond({
+    method: "POST",
+    url: "/backend-api/codex/responses",
+    headers: { authorization: `Bearer ${childToken}`, "content-type": "application/json" },
+    body: JSON.stringify({
+      model: "gpt-5.6-sol",
+      input: "hello",
+      max_output_tokens: 64,
+      max_tokens: 64,
+      temperature: 0.2,
+      stream: false
+    })
+  });
+  assert.equal(response.status, 200);
+  assert.equal(forwarded.url, "https://chatgpt.com/backend-api/codex/responses");
+  assert.equal(forwarded.init.headers.authorization, `Bearer ${parentCredential}`);
+  assert.equal(forwarded.init.headers["ChatGPT-Account-Id"], "acct-proxy-test");
+  const body = JSON.parse(forwarded.init.body);
+  assert.equal(body.stream, true);
+  assert.equal(Object.hasOwn(body, "max_output_tokens"), false);
+  assert.equal(Object.hasOwn(body, "max_tokens"), false);
+  assert.equal(Object.hasOwn(body, "temperature"), false);
+  assert.equal(body.model, "gpt-5.6-sol");
+});
+

@@ -11,6 +11,9 @@ export const CODEX_READONLY_PROFILE_ID = "codex-readonly-analysis-v1";
 export const LOCAL_READONLY_ADAPTER_ID = "devharness-cli-local-agent";
 export const DEFAULT_CODEX_MODEL_ID = "gpt-5.6-sol";
 export const DEFAULT_CODEX_ORIGIN = "https://api.openai.com";
+export const DEFAULT_CHATGPT_CODEX_ORIGIN = "https://chatgpt.com";
+export const APIKEY_CODEX_API_PATH_PREFIX = "/v1";
+export const CHATGPT_CODEX_API_PATH_PREFIX = "/backend-api/codex";
 export const WELL_KNOWN_CODEX_PATHS = Object.freeze([
   "/Applications/ChatGPT.app/Contents/Resources/codex"
 ]);
@@ -31,15 +34,40 @@ export const CODEX_OUTPUT_SCHEMA = Object.freeze({
 });
 
 const CREDENTIAL_ENV_KEYS = Object.freeze(["DEVHARNESS_PROVIDER_CREDENTIAL", "OPENAI_API_KEY"]);
-const COMPATIBLE_CODEX_AUTH_MODES = Object.freeze(new Set(["apikey"]));
+const COMPATIBLE_CODEX_AUTH_MODES = Object.freeze(new Set(["apikey", "chatgpt"]));
 
-export function defaultCodexProfile(environment = process.env) {
-  const origin = String(environment.DEVHARNESS_CODEX_ORIGIN ?? "").trim() || DEFAULT_CODEX_ORIGIN;
+export function isChatgptCodexOrigin(origin) {
+  try {
+    return new URL(String(origin ?? "")).hostname === "chatgpt.com";
+  } catch {
+    return false;
+  }
+}
+
+export function resolveCodexApiPathPrefix({ authMode = null, origin = null } = {}) {
+  const mode = String(authMode ?? "").trim().toLowerCase();
+  if (mode === "chatgpt" || isChatgptCodexOrigin(origin)) return CHATGPT_CODEX_API_PATH_PREFIX;
+  return APIKEY_CODEX_API_PATH_PREFIX;
+}
+
+export function defaultCodexProfile(environment = process.env, { authMode = null } = {}) {
+  const explicitOrigin = String(environment.DEVHARNESS_CODEX_ORIGIN ?? "").trim();
+  const forcedMode = String(environment.DEVHARNESS_CODEX_AUTH_MODE ?? "").trim().toLowerCase();
+  const resolvedMode = String(
+    authMode
+      ?? (forcedMode || null)
+      ?? resolveProviderCredential(environment)?.authMode
+      ?? ""
+  ).trim().toLowerCase() || null;
+  const origin = explicitOrigin
+    || (resolvedMode === "chatgpt" ? DEFAULT_CHATGPT_CODEX_ORIGIN : DEFAULT_CODEX_ORIGIN);
   const modelId = String(environment.DEVHARNESS_CODEX_MODEL ?? "").trim() || DEFAULT_CODEX_MODEL_ID;
   return {
     id: CODEX_READONLY_PROFILE_ID,
     modelId,
     controlPlaneOrigins: [origin],
+    authMode: resolvedMode,
+    apiPathPrefix: resolveCodexApiPathPrefix({ authMode: resolvedMode, origin }),
     template: {
       sandbox: "read-only",
       maxActiveSeconds: 600,
@@ -72,6 +100,23 @@ export function loadProviderCredentialFromCodexAuthFile(environment = process.en
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
   const authMode = String(parsed.auth_mode ?? "").trim().toLowerCase();
   if (!COMPATIBLE_CODEX_AUTH_MODES.has(authMode)) return null;
+  if (authMode === "chatgpt") {
+    const tokens = parsed.tokens;
+    if (!tokens || typeof tokens !== "object" || Array.isArray(tokens)) return null;
+    const value = tokens.access_token;
+    if (typeof value !== "string" || value.trim().length === 0) return null;
+    const accountIdRaw = tokens.account_id;
+    const accountId = typeof accountIdRaw === "string" && accountIdRaw.trim().length > 0
+      ? accountIdRaw.trim()
+      : undefined;
+    return {
+      key: "codex-auth.json:tokens.access_token",
+      value: value.trim(),
+      source: "codex-auth.json",
+      authMode: "chatgpt",
+      ...(accountId ? { accountId } : {})
+    };
+  }
   const value = parsed.OPENAI_API_KEY;
   if (typeof value !== "string" || value.trim().length === 0) return null;
   return {
@@ -124,18 +169,18 @@ export async function isCodexConfigured(environment = process.env) {
 export function codexAuthUnavailableMessage({ executable = null, credential = null } = {}) {
   const missing = [];
   if (!executable) missing.push("Codex CLI executable (install @openai/codex, put `codex` on PATH, or export DEVHARNESS_CODEX_PATH)");
-  if (!credential) missing.push("parent provider credential (export OPENAI_API_KEY or DEVHARNESS_PROVIDER_CREDENTIAL, or use ~/.codex/auth.json with auth_mode=apikey)");
+  if (!credential) missing.push("parent provider credential (export OPENAI_API_KEY or DEVHARNESS_PROVIDER_CREDENTIAL, or use ~/.codex/auth.json with auth_mode=apikey or auth_mode=chatgpt session tokens)");
   return [
     "Codex adapter is not ready for a live provider call.",
     missing.length ? `Missing: ${missing.join("; ")}.` : "Provider proxy could not start.",
-    "Parent may load OPENAI_API_KEY from ~/.codex/auth.json when env is unset and auth_mode is apikey; that value is used only by the parent-owned loopback proxy.",
+    "Parent may load credentials from ~/.codex/auth.json when env is unset: auth_mode=apikey (OPENAI_API_KEY) or auth_mode=chatgpt (tokens.access_token + optional tokens.account_id).",
+    "ChatGPT session tokens are used only by the parent-owned loopback proxy (origin https://chatgpt.com, path prefix /backend-api/codex).",
     "DevHarness does not mount login/session files into the Agent (`--ignore-user-config`).",
-    "`codex login` alone is not enough for ChatGPT session cookies: continue still needs an API key via env or auth.json.",
     "Example:",
     "  export DEVHARNESS_CODEX_PATH=\"/Applications/ChatGPT.app/Contents/Resources/codex\"",
     "  export OPENAI_API_KEY  # or DEVHARNESS_PROVIDER_CREDENTIAL; else parent reads ~/.codex/auth.json",
-    "  # optional: export DEVHARNESS_CODEX_MODEL=\"gpt-5\"",
-    "  # optional: export DEVHARNESS_CODEX_ORIGIN=\"https://api.openai.com\"",
+    "  # optional: export DEVHARNESS_CODEX_MODEL=\"gpt-5.6-sol\"",
+    "  # optional: export DEVHARNESS_CODEX_ORIGIN=\"https://api.openai.com\"  # or https://chatgpt.com for chatgpt auth",
     "  $DH align --continue --agent codex --repo \"$REPO\" --config \"$CONFIG\" --run \"$RUN_ID\"",
     "Fallback without keys:",
     "  $DH align --continue --agent devharness-cli-local-agent --repo \"$REPO\" --config \"$CONFIG\" --run \"$RUN_ID\""
@@ -229,23 +274,52 @@ export async function prepareCodexExecutionContext({
   providerCredential = null,
   startProxy = startProviderProxyServer
 } = {}) {
-  const resolvedProfile = profile ?? defaultCodexProfile(environment);
-  const credential = providerCredential
-    ?? resolveProviderCredential(environment)?.value
-    ?? null;
+  const resolvedCredential = (() => {
+    if (providerCredential && typeof providerCredential === "object" && typeof providerCredential.value === "string") {
+      return providerCredential;
+    }
+    if (typeof providerCredential === "string" && providerCredential.trim().length > 0) {
+      const fromEnv = resolveProviderCredential(environment);
+      return {
+        value: providerCredential.trim(),
+        source: fromEnv?.source ?? "injected",
+        key: fromEnv?.key ?? "injected",
+        authMode: fromEnv?.authMode,
+        accountId: fromEnv?.accountId
+      };
+    }
+    return resolveProviderCredential(environment);
+  })();
+  const credential = resolvedCredential?.value ?? null;
+  const authMode = String(
+    resolvedCredential?.authMode
+      ?? profile?.authMode
+      ?? environment.DEVHARNESS_CODEX_AUTH_MODE
+      ?? ""
+  ).trim().toLowerCase() || null;
+  const accountId = typeof resolvedCredential?.accountId === "string" && resolvedCredential.accountId.trim().length > 0
+    ? resolvedCredential.accountId.trim()
+    : null;
+  const resolvedProfile = profile ?? defaultCodexProfile(environment, { authMode });
   const executable = await resolveCodexExecutable(environment);
   if (!credential) {
     const error = new Error(codexAuthUnavailableMessage({ executable, credential: null }));
     error.code = "AUTH_UNAVAILABLE";
     throw error;
   }
+  const targetOrigin = resolvedProfile.controlPlaneOrigins[0];
+  const apiPathPrefix = resolvedProfile.apiPathPrefix
+    ?? resolveCodexApiPathPrefix({ authMode, origin: targetOrigin });
+  const chatgptMode = authMode === "chatgpt" || isChatgptCodexOrigin(targetOrigin);
   const outputSchemaPath = await writeCodexOutputSchema(attemptRoot);
   const childToken = ephemeralProxyToken();
   const proxy = await startProxy({
     exactOrigins: resolvedProfile.controlPlaneOrigins,
-    targetOrigin: resolvedProfile.controlPlaneOrigins[0],
+    targetOrigin,
     childToken,
     parentCredential: credential,
+    chatgptAccountId: accountId,
+    chatgptMode,
     operationId,
     attemptId,
     targetDescriptorSha256: hashContract({ adapterName: CODEX_ADAPTER_ID, kind: "target-descriptor" }),
@@ -264,6 +338,7 @@ export async function prepareCodexExecutionContext({
         token: childToken,
         endpoint: proxy.origin,
         tokenId: `proxy-${proxy.port}`,
+        apiPathPrefix,
         targetDescriptorSha256: hashContract({ adapterName: CODEX_ADAPTER_ID, kind: "target-descriptor" }),
         policySha256: hashContract({ adapterName: CODEX_ADAPTER_ID, kind: "proxy-policy" })
       }

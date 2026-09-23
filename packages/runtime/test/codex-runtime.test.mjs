@@ -8,6 +8,8 @@ import { AgentAdapterRegistry } from "../src/agent-adapter.mjs";
 import {
   CODEX_ADAPTER_ID,
   CODEX_READONLY_PROFILE_ID,
+  CHATGPT_CODEX_API_PATH_PREFIX,
+  DEFAULT_CHATGPT_CODEX_ORIGIN,
   DEFAULT_CODEX_MODEL_ID,
   DEFAULT_CODEX_ORIGIN,
   LOCAL_READONLY_ADAPTER_ID,
@@ -82,9 +84,16 @@ test("parent loads OPENAI_API_KEY from ~/.codex/auth.json when env unset and aut
   assert.equal(envWins.value, "sk-env-wins");
   assert.equal(envWins.source, "env");
 
-  // Incompatible auth_mode is ignored
+  // chatgpt without session tokens is ignored (even if OPENAI_API_KEY present)
   await writeFile(authPath, `${JSON.stringify({
     auth_mode: "chatgpt",
+    OPENAI_API_KEY: "sk-should-ignore"
+  }, null, 2)}\n`, { mode: 0o600 });
+  assert.equal(loadProviderCredentialFromCodexAuthFile({ HOME: home }), null);
+
+  // Unknown auth_mode is ignored
+  await writeFile(authPath, `${JSON.stringify({
+    auth_mode: "oauth",
     OPENAI_API_KEY: "sk-should-ignore"
   }, null, 2)}\n`, { mode: 0o600 });
   assert.equal(loadProviderCredentialFromCodexAuthFile({ HOME: home }), null);
@@ -125,6 +134,74 @@ test("align agent selection prefers Codex only when executable and credential ex
   assert.equal(flagged.agentId, CODEX_ADAPTER_ID);
   assert.equal(flagged.codexReady, false);
   assert.deepEqual(flagged.missing, ["executable", "credential"]);
+});
+
+test("parent loads chatgpt session tokens from ~/.codex/auth.json", async (t) => {
+  const home = await mkdtemp(path.join(os.tmpdir(), "devharness-codex-chatgpt-auth-"));
+  t.after(() => rm(home, { recursive: true, force: true }));
+  const authDir = path.join(home, ".codex");
+  await mkdir(authDir, { recursive: true, mode: 0o700 });
+  const authPath = path.join(authDir, "auth.json");
+  await writeFile(authPath, `${JSON.stringify({
+    auth_mode: "chatgpt",
+    tokens: {
+      access_token: "fake-chatgpt-access-token-for-unit-test",
+      account_id: "acct-unit-test-1234",
+      refresh_token: "fake-refresh-ignored-by-loader"
+    }
+  }, null, 2)}\n`, { mode: 0o600 });
+
+  const fromFile = loadProviderCredentialFromCodexAuthFile({ HOME: home });
+  assert.equal(fromFile.source, "codex-auth.json");
+  assert.equal(fromFile.authMode, "chatgpt");
+  assert.equal(fromFile.key, "codex-auth.json:tokens.access_token");
+  assert.equal(fromFile.value, "fake-chatgpt-access-token-for-unit-test");
+  assert.equal(fromFile.accountId, "acct-unit-test-1234");
+
+  const resolved = resolveProviderCredential({ HOME: home, PATH: "/usr/bin" });
+  assert.equal(resolved.authMode, "chatgpt");
+  assert.equal(resolved.key, "codex-auth.json:tokens.access_token");
+
+  const profile = defaultCodexProfile({ HOME: home });
+  assert.deepEqual(profile.controlPlaneOrigins, [DEFAULT_CHATGPT_CODEX_ORIGIN]);
+  assert.equal(profile.apiPathPrefix, CHATGPT_CODEX_API_PATH_PREFIX);
+  assert.equal(profile.authMode, "chatgpt");
+
+  // Explicit origin still wins
+  const overridden = defaultCodexProfile({ HOME: home, DEVHARNESS_CODEX_ORIGIN: "https://api.openai.com" });
+  assert.deepEqual(overridden.controlPlaneOrigins, ["https://api.openai.com"]);
+
+  // chatgpt without access_token returns null
+  await writeFile(authPath, `${JSON.stringify({
+    auth_mode: "chatgpt",
+    tokens: { account_id: "acct-only" }
+  }, null, 2)}\n`, { mode: 0o600 });
+  assert.equal(loadProviderCredentialFromCodexAuthFile({ HOME: home }), null);
+});
+
+test("align agent selection picks Codex when executable and chatgpt tokens exist", async (t) => {
+  const home = await mkdtemp(path.join(os.tmpdir(), "devharness-codex-chatgpt-select-"));
+  t.after(() => rm(home, { recursive: true, force: true }));
+  const binRoot = await mkdtemp(path.join(os.tmpdir(), "devharness-codex-chatgpt-bin-"));
+  t.after(() => rm(binRoot, { recursive: true, force: true }));
+  const explicit = path.join(binRoot, "codex");
+  await writeFile(explicit, "#!/bin/sh\n", { mode: 0o755 });
+  await mkdir(path.join(home, ".codex"), { recursive: true, mode: 0o700 });
+  await writeFile(path.join(home, ".codex", "auth.json"), `${JSON.stringify({
+    auth_mode: "chatgpt",
+    tokens: {
+      access_token: "fake-chatgpt-access-token-for-selection",
+      account_id: "acct-select-1"
+    }
+  }, null, 2)}\n`, { mode: 0o600 });
+
+  const configured = await resolveAlignAgentSelection({
+    environment: { HOME: home, DEVHARNESS_CODEX_PATH: explicit, DEVHARNESS_CODEX_DISABLE_WELL_KNOWN: "1" }
+  });
+  assert.equal(configured.agentId, CODEX_ADAPTER_ID);
+  assert.equal(configured.source, "configured");
+  assert.equal(configured.codexReady, true);
+  assert.equal(configured.credentialKey, "codex-auth.json:tokens.access_token");
 });
 
 test("registerBuiltinAgentAdapters registers Codex and local-readonly", async () => {
@@ -181,6 +258,8 @@ test("prepareCodexExecutionContext starts an injected proxy and writes an output
   assert.equal(calls[0].exactOrigins[0], DEFAULT_CODEX_ORIGIN);
   assert.equal(prepared.context.proxy.port, 43199);
   assert.equal(prepared.context.proxy.token, calls[0].childToken);
+  assert.equal(prepared.context.proxy.apiPathPrefix, "/v1");
+  assert.equal(calls[0].chatgptMode, false);
   const schema = JSON.parse(await readFile(prepared.context.outputSchemaPath, "utf8"));
   assert.equal(schema.required.includes("phase"), true);
   assert.deepEqual(schema.properties.phase.enum, ["analysis-plan", "analysis-synthesis", "analysis-validation"]);
@@ -244,3 +323,38 @@ test("prepareCodexExecutionContext accepts parent credential from auth.json fall
   assert.equal(prepared.context.proxy.port, 43201);
 });
 
+test("prepareCodexExecutionContext wires chatgpt account id, origin, and apiPathPrefix", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "devharness-codex-chatgpt-ctx-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const home = path.join(root, "home");
+  await mkdir(path.join(home, ".codex"), { recursive: true, mode: 0o700 });
+  await writeFile(path.join(home, ".codex", "auth.json"), `${JSON.stringify({
+    auth_mode: "chatgpt",
+    tokens: {
+      access_token: "fake-chatgpt-access-token-for-context",
+      account_id: "acct-context-9"
+    }
+  }, null, 2)}\n`, { mode: 0o600 });
+  const calls = [];
+  const prepared = await prepareCodexExecutionContext({
+    analysisRoot: root,
+    attemptRoot: path.join(root, "attempt"),
+    privateHome: path.join(root, "private-home"),
+    supervisorRoot: path.join(root, "supervisor"),
+    resultPath: path.join(root, "attempt", "result.json"),
+    operationId: "alignment-operation-test-chatgpt",
+    attemptId: "attempt-chatgpt",
+    environment: { HOME: home, PATH: "/usr/bin:/bin", DEVHARNESS_CODEX_DISABLE_WELL_KNOWN: "1" },
+    async startProxy(options) {
+      calls.push(options);
+      return { server: { close(cb) { cb?.(); } }, port: 43211, token: options.childToken, origin: "http://127.0.0.1:43211" };
+    }
+  });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].parentCredential, "fake-chatgpt-access-token-for-context");
+  assert.equal(calls[0].chatgptAccountId, "acct-context-9");
+  assert.equal(calls[0].chatgptMode, true);
+  assert.equal(calls[0].exactOrigins[0], DEFAULT_CHATGPT_CODEX_ORIGIN);
+  assert.equal(prepared.context.proxy.apiPathPrefix, CHATGPT_CODEX_API_PATH_PREFIX);
+  assert.equal(prepared.profile.authMode, "chatgpt");
+});
