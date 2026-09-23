@@ -22,7 +22,7 @@ import { createOnboardingPlan, formatRepositoryUnderstandingBrief } from "../../
 import { createValidatedPhase1UnderstandingBundleFromOnboardingPlan, formatAuditableUnderstandingBrief, promoteBaselineVerdictIfOnlyMissingReadyFlag } from "../../project/src/understanding-baseline.mjs";
 import { reconcileBaselineClaimsWithModel } from "../../project/src/phase1-reconcile.mjs";
 import { applyEvidenceToUnderstandingBaseline } from "../../project/src/apply-evidence-to-baseline.mjs";
-import { listVerifiedEvidenceManifests } from "../../runtime/src/supervisor-store.mjs";
+import { listReviewFindings, listReviewVerdicts, listVerifiedEvidenceManifests } from "../../runtime/src/supervisor-store.mjs";
 import { evaluatePhase1ReadyGaps } from "../../project/src/understanding-ready-gaps.mjs";
 import { evaluatePhase2BaselineLadder, formatPhase2BaselineLadder } from "../../project/src/phase2-baseline.mjs";
 import { createGoalUnderstandingCheckpoint } from "../../project/src/alignment.mjs";
@@ -56,7 +56,7 @@ import {
   resolveProviderCredential
 } from "../../runtime/src/codex-runtime.mjs";
 import { recordAlignmentAnswer } from "../../runtime/src/alignment-answer.mjs";
-import { issueCommandBrowserEvidence, issueCommandLifecycleEvidence, issueCommandQualityEvidence, issueCommandSystemEvidence, issueCommandTestEvidence, receiptHasRealSurfaceArtifacts } from "../../runtime/src/supervisor-evidence.mjs";
+import { issueCommandBrowserEvidence, issueCommandLifecycleEvidence, issueCommandQualityEvidence, issueCommandSystemEvidence, issueCommandTestEvidence, issueIndependentReviewEvidence, receiptHasRealSurfaceArtifacts } from "../../runtime/src/supervisor-evidence.mjs";
 import { createSupervisorApprovalRequest, listPendingApprovalRequestsForRun, recordInteractiveApprovalDecisions } from "../../runtime/src/supervisor-approval.mjs";
 import { applyRunGateFromApprovalReceipt, reconcileRunGatesFromApprovals } from "../../runtime/src/run-gate-approval.mjs";
 import { applyStrategyApprovalReceipt, requestStrategyApprovalForRun } from "../../runtime/src/strategy-approval.mjs";
@@ -98,6 +98,7 @@ Usage:
   devharness request-capability --run ID (--capability ID | --for-verify [--command ID] [--commit SHA] [--approve] | --for-align [--approve]) [--expires-minutes N] [--repo PATH] [--data-dir PATH]
   devharness approve (--request ID [--request ID ...] | --run ID --pending) [--repo PATH] [--data-dir PATH]
   devharness verify --command ID [--repo PATH] [--config PATH] [--data-dir PATH] [--run ID --execute] [--commit SHA] [--attest] [--timeout-seconds N] [--format text|json]
+  devharness review-attest --run ID [--repo PATH] [--data-dir PATH] [--format text|json]
   devharness goal --goal TEXT [--repo PATH] [--data-dir PATH] [--format text|json]
   devharness advance --run ID [--mode docs-only|controlled-change] [--change-json PATH | --agent-propose [--agent ID]] [--repo PATH] [--data-dir PATH] [--artifact-dir PATH] [--command ID] [--format text|json]
   devharness align --run ID [--continue|--tick] [--agent ID] [--agent-profile ID] [--research-recipes PATH] [--repo PATH] [--data-dir PATH] [--format text|json]
@@ -727,6 +728,43 @@ async function loadControlledChangeAuthorityContext({ dataRoot, repositoryIdenti
   }
 }
 
+async function loadScorecardReviewInputs({
+  supervisorRoot,
+  repositoryIdentity,
+  runId,
+  headSha,
+  snapshot
+}) {
+  const reviewVerdicts = await listReviewVerdicts(supervisorRoot, repositoryIdentity, { runId, headSha });
+  const findings = await listReviewFindings(supervisorRoot, repositoryIdentity, { runId, headSha });
+  let trustContext;
+  try {
+    trustContext = await loadTrustedEvaluationContext({ snapshot, commitSha: headSha });
+  } catch {
+    trustContext = undefined;
+  }
+  return { reviewVerdicts, findings, trustContext };
+}
+
+async function resolveDeliveryModeForRun({ dataRoot, repositoryIdentity, runId, commandId = null }) {
+  if (commandId === "docs-readiness-summary") return { deliveryMode: "docs-only", readiness: null };
+  if (commandId === "controlled-change-marker") {
+    try {
+      const loaded = await loadRunSourceArtifact(dataRoot, repositoryIdentity, runId, "artifact-readiness-summary");
+      return { deliveryMode: "controlled-change", readiness: loaded.value };
+    } catch {
+      return { deliveryMode: "controlled-change", readiness: null };
+    }
+  }
+  try {
+    const loaded = await loadRunSourceArtifact(dataRoot, repositoryIdentity, runId, "artifact-readiness-summary");
+    const deliveryMode = loaded.value?.delivery_mode === "controlled-change" ? "controlled-change" : "docs-only";
+    return { deliveryMode, readiness: loaded.value };
+  } catch {
+    return { deliveryMode: null, readiness: null };
+  }
+}
+
 async function maybeRefreshDocsOnlyScorecardAfterVerify({
   snapshot,
   dataRoot,
@@ -734,27 +772,23 @@ async function maybeRefreshDocsOnlyScorecardAfterVerify({
   commandId,
   receipt,
   evidence,
+  supervisorRoot = defaultSupervisorRoot(),
   generatedAt = new Date().toISOString()
 }) {
   if (!runId || !evidence) return null;
   const run = await loadGoalRun(dataRoot, snapshot.repository.identity, runId);
   if (!["verifying", "reviewing"].includes(run.state)) return null;
 
-  let deliveryMode = commandId === "docs-readiness-summary" ? "docs-only"
-    : commandId === "controlled-change-marker" ? "controlled-change"
-    : null;
-  if (!deliveryMode) {
-    try {
-      const loaded = await loadRunSourceArtifact(dataRoot, snapshot.repository.identity, runId, "artifact-readiness-summary");
-      deliveryMode = loaded.value?.delivery_mode === "controlled-change" ? "controlled-change" : "docs-only";
-    } catch {
-      deliveryMode = null;
-    }
-  }
+  const { deliveryMode, readiness } = await resolveDeliveryModeForRun({
+    dataRoot,
+    repositoryIdentity: snapshot.repository.identity,
+    runId,
+    commandId
+  });
   if (!deliveryMode) return null;
 
   const packet = await loadRunInteraction(dataRoot, snapshot.repository.identity, runId);
-  if (!packet) throw new Error("Docs-only verify refresh requires a current interaction packet.");
+  if (!packet) throw new Error("Tip scorecard refresh requires a current interaction packet.");
   const artifacts = [];
   for (const source of packet.source_artifacts) {
     const loaded = await loadRunSourceArtifact(dataRoot, snapshot.repository.identity, runId, source.id);
@@ -764,15 +798,26 @@ async function maybeRefreshDocsOnlyScorecardAfterVerify({
   const paths = runStoragePaths(dataRoot, snapshot.repository.identity, runId);
   const pointer = JSON.parse(await readFile(paths.current, "utf8"));
   const nextSequence = (Number.isInteger(pointer?.sequence) ? pointer.sequence : 1) + 1;
-  let trustContext;
-  try {
-    trustContext = await loadTrustedEvaluationContext({ snapshot });
-  } catch {
-    trustContext = undefined;
-  }
 
   const nextRun = structuredClone(run);
   nextRun.timestamps.updated_at = generatedAt;
+  // Controlled-change delivery proof binds to the isolated change revision, not the clean baseline checkout.
+  if (
+    deliveryMode === "controlled-change" &&
+    readiness?.change_commit_sha &&
+    receipt?.commit_sha === readiness.change_commit_sha
+  ) {
+    nextRun.current_head_sha = readiness.change_commit_sha;
+  }
+  const evaluationHead = nextRun.current_head_sha;
+  const { reviewVerdicts, findings, trustContext } = await loadScorecardReviewInputs({
+    supervisorRoot,
+    repositoryIdentity: snapshot.repository.identity,
+    runId: run.id,
+    headSha: evaluationHead,
+    snapshot
+  });
+
   const event = createRunEvent({
     runId: run.id,
     sequence: nextSequence,
@@ -785,20 +830,111 @@ async function maybeRefreshDocsOnlyScorecardAfterVerify({
       outcome: receipt.outcome?.status ?? null
     }
   });
+  const profile = deliveryMode === "controlled-change" ? "full" : "docs-only";
+  const unknowns = deliveryMode === "controlled-change" && reviewVerdicts.every((verdict) => verdict.status !== "pass")
+    ? [{
+      id: "review-pending",
+      title: "Independent review pending",
+      summary: "Controlled-change tip scorecards use the full delivery profile; run review-attest after verify evidence exists.",
+      source_refs: ["artifact-readiness-summary"]
+    }]
+    : [];
   const scorecard = createReviewScorecard({
     run: nextRun,
     scopeHash: createHash("sha256").update(JSON.stringify({ goal: run.goal.original, scope_version: run.goal.scope_version })).digest("hex"),
     harnessVersion: "unbound",
     title: `${deliveryMode === "controlled-change" ? "Controlled-change verification" : "Docs-only verification"}: ${run.goal.original}`,
-    reviewVerdicts: [],
+    reviewVerdicts,
     reviewChecks: [],
-    findings: [],
+    findings,
+    unknowns,
+    sourceArtifactCount: artifacts.length,
+    omittedItemCount: packet.compression?.omitted_item_count ?? 0,
+    generatedAt,
+    dataSource: "runtime",
+    profile,
+    trustContext
+  });
+  const stored = await appendGoalRunCheckpoint({
+    dataRoot,
+    repositoryIdentity: snapshot.repository.identity,
+    runId: run.id,
+    events: [event],
+    nextRun,
+    scorecard,
+    packet,
+    artifacts
+  });
+  return { scorecard, path: stored.paths.checkpoint, run: nextRun };
+}
+
+async function refreshTipScorecardAfterReviewAttest({
+  snapshot,
+  dataRoot,
+  runId,
+  manifest,
+  verdict,
+  supervisorRoot = defaultSupervisorRoot(),
+  generatedAt = new Date().toISOString()
+}) {
+  const run = await loadGoalRun(dataRoot, snapshot.repository.identity, runId);
+  if (!["verifying", "reviewing"].includes(run.state)) {
+    throw new Error("review-attest tip refresh requires state=verifying|reviewing.");
+  }
+  const { deliveryMode } = await resolveDeliveryModeForRun({
+    dataRoot,
+    repositoryIdentity: snapshot.repository.identity,
+    runId
+  });
+  if (deliveryMode !== "controlled-change" && deliveryMode !== "docs-only") {
+    throw new Error("review-attest requires a post-scope readiness summary.");
+  }
+  const packet = await loadRunInteraction(dataRoot, snapshot.repository.identity, runId);
+  if (!packet) throw new Error("review-attest requires a current interaction packet.");
+  const artifacts = [];
+  for (const source of packet.source_artifacts) {
+    const loaded = await loadRunSourceArtifact(dataRoot, snapshot.repository.identity, runId, source.id);
+    artifacts.push({ id: loaded.source.id, kind: loaded.source.kind, value: loaded.value, sha256: loaded.source.sha256 });
+  }
+  const paths = runStoragePaths(dataRoot, snapshot.repository.identity, runId);
+  const pointer = JSON.parse(await readFile(paths.current, "utf8"));
+  const nextSequence = (Number.isInteger(pointer?.sequence) ? pointer.sequence : 1) + 1;
+  const nextRun = structuredClone(run);
+  nextRun.timestamps.updated_at = generatedAt;
+  if (verdict?.head_sha) nextRun.current_head_sha = verdict.head_sha;
+  const { reviewVerdicts, findings, trustContext } = await loadScorecardReviewInputs({
+    supervisorRoot,
+    repositoryIdentity: snapshot.repository.identity,
+    runId: run.id,
+    headSha: nextRun.current_head_sha,
+    snapshot
+  });
+  const event = createRunEvent({
+    runId: run.id,
+    sequence: nextSequence,
+    at: generatedAt,
+    type: "evidence.recorded",
+    data: {
+      evidence_manifest_id: manifest?.id ?? null,
+      review_verdict_id: verdict?.id ?? null,
+      command_id: "independent-review",
+      outcome: "pass"
+    }
+  });
+  const scorecard = createReviewScorecard({
+    run: nextRun,
+    scopeHash: createHash("sha256").update(JSON.stringify({ goal: run.goal.original, scope_version: run.goal.scope_version })).digest("hex"),
+    harnessVersion: "unbound",
+    title: `Independent review: ${run.goal.original}`,
+    reviewVerdicts,
+    reviewChecks: [],
+    findings,
     unknowns: [],
     sourceArtifactCount: artifacts.length,
     omittedItemCount: packet.compression?.omitted_item_count ?? 0,
     generatedAt,
     dataSource: "runtime",
-    profile: deliveryMode === "controlled-change" ? "controlled-change" : "docs-only",
+    profile: deliveryMode === "controlled-change" ? "full" : "docs-only",
     trustContext
   });
   const stored = await appendGoalRunCheckpoint({
@@ -821,7 +957,7 @@ export async function runCli(argv, io = console, services = {}) {
     return 0;
   }
 
-  if (!["onboard", "init", "doctor", "build", "supervisor-init", "prove-isolation", "request-approval", "request-capability", "approve", "verify", "goal", "advance", "align", "answer", "request-scope", "request-delivery", "promote", "retry", "cancel", "status", "review"].includes(options.command)) {
+  if (!["onboard", "init", "doctor", "build", "supervisor-init", "prove-isolation", "request-approval", "request-capability", "approve", "verify", "review-attest", "goal", "advance", "align", "answer", "request-scope", "request-delivery", "promote", "retry", "cancel", "status", "review"].includes(options.command)) {
     throw new Error(`Unknown command: ${options.command}`);
   }
 
@@ -1137,6 +1273,63 @@ export async function runCli(argv, io = console, services = {}) {
       ? JSON.stringify(result, null, 2)
       : `Scope approval requested: ${request.id}\nBundle: ${bundleRef.id}\nRevision: ${bundle.operation.commit_sha.slice(0, 12)}\nNext: ${result.next_action}`);
     return 0;
+  }
+
+  if (options.command === "review-attest") {
+    if (!options.runId) throw new Error("review-attest requires --run ID");
+    const { dataRoot } = resolveExternalDataRoot(snapshot.repository.root_uri, options.dataRoot);
+    const run = await loadGoalRun(dataRoot, snapshot.repository.identity, options.runId);
+    if (!["verifying", "reviewing"].includes(run.state)) {
+      throw new Error("review-attest requires state=verifying|reviewing after post-scope verify evidence exists.");
+    }
+    const { deliveryMode, readiness } = await resolveDeliveryModeForRun({
+      dataRoot,
+      repositoryIdentity: snapshot.repository.identity,
+      runId: options.runId
+    });
+    if (!deliveryMode) throw new Error("review-attest requires a post-scope readiness summary.");
+    const reviewCommitSha = readiness?.change_commit_sha && readiness?.delivery_mode === "controlled-change"
+      ? readiness.change_commit_sha
+      : run.current_head_sha;
+    const supervisorRoot = services.supervisorRoot ?? defaultSupervisorRoot();
+    await initializeSupervisorIdentity(supervisorRoot);
+    const issued = await issueIndependentReviewEvidence({
+      supervisorRoot,
+      snapshot,
+      runId: options.runId,
+      commitSha: reviewCommitSha,
+      now: () => new Date(services.now?.() ?? Date.now())
+    });
+    const generatedAt = services.now?.() ?? new Date().toISOString();
+    const refreshed = await refreshTipScorecardAfterReviewAttest({
+      snapshot,
+      dataRoot,
+      runId: options.runId,
+      manifest: issued.manifest,
+      verdict: issued.verdict,
+      supervisorRoot,
+      generatedAt
+    });
+    const result = {
+      mode: "review-attest",
+      run: refreshed.run,
+      verdict: issued.verdict,
+      evidence_manifest: issued.manifest,
+      written: issued.written,
+      scorecard: {
+        verdict: refreshed.scorecard.verdict,
+        title: refreshed.scorecard.title,
+        blocking: refreshed.scorecard.exception_counts.blocking,
+        path: refreshed.path
+      },
+      next_action: refreshed.scorecard.verdict === "ready"
+        ? `devharness advance --run ${options.runId}`
+        : "Resolve remaining tip scorecard exceptions, then re-run review-attest or verify."
+    };
+    io.log(options.format === "json"
+      ? JSON.stringify(result, null, 2)
+      : `Independent review ${issued.written ? "issued" : "reused"}: ${issued.verdict.id}\nManifest: ${issued.manifest.id}\nTip scorecard: ${refreshed.scorecard.verdict} (${refreshed.scorecard.exception_counts.blocking} blocking)\nNext: ${result.next_action}`);
+    return refreshed.scorecard.verdict === "ready" ? 0 : 2;
   }
 
   if (options.command === "request-delivery") {
@@ -1593,20 +1786,30 @@ export async function runCli(argv, io = console, services = {}) {
           nextSequence,
           generatedAt
         });
+        const supervisorRoot = services.supervisorRoot ?? defaultSupervisorRoot();
+        const deliveryHead = checkpoint.run.current_head_sha;
+        const { reviewVerdicts, findings, trustContext } = await loadScorecardReviewInputs({
+          supervisorRoot,
+          repositoryIdentity: snapshot.repository.identity,
+          runId: currentRun.id,
+          headSha: deliveryHead,
+          snapshot
+        });
         const scorecard = createReviewScorecard({
           run: checkpoint.run,
           scopeHash: createHash("sha256").update(JSON.stringify({ goal: currentRun.goal.original, scope_version: currentRun.goal.scope_version })).digest("hex"),
           harnessVersion: "unbound",
           title: `Delivery Brief: ${currentRun.goal.original}`,
-          reviewVerdicts: [],
+          reviewVerdicts,
           reviewChecks: [],
-          findings: [],
+          findings,
           unknowns: [],
           sourceArtifactCount: checkpoint.artifacts.length,
           omittedItemCount: checkpoint.packet.compression.omitted_item_count,
           generatedAt,
           dataSource: "runtime",
-          profile: checkpoint.delivery.mode === "controlled-change" ? "controlled-change" : "docs-only"
+          profile: checkpoint.delivery.mode === "controlled-change" ? "full" : "docs-only",
+          trustContext
         });
         const stored = await appendGoalRunCheckpoint({
           dataRoot,
@@ -2310,6 +2513,7 @@ ${formatPhase2BaselineLadder(phase2)}` : "";
           commandId: options.commandId,
           receipt,
           evidence,
+          supervisorRoot: services.supervisorRoot ?? defaultSupervisorRoot(),
           generatedAt: services.now?.() ?? new Date().toISOString()
         });
       } catch (error) {
@@ -2335,9 +2539,9 @@ ${formatPhase2BaselineLadder(phase2)}` : "";
     } else {
       io.log(formatVerificationExecutionResult({ receipt, receiptPath: plan.paths.receipt, evidence, attestation, format: options.format }));
       if (scorecardRefresh?.scorecard) {
-        io.log(`Docs-only scorecard: ${scorecardRefresh.scorecard.verdict} (${scorecardRefresh.scorecard.exception_counts.blocking} blocking)\nStored: ${scorecardRefresh.path}`);
+        io.log(`Tip scorecard: ${scorecardRefresh.scorecard.verdict} (${scorecardRefresh.scorecard.exception_counts.blocking} blocking)\nStored: ${scorecardRefresh.path}`);
       } else if (scorecardRefresh?.error) {
-        io.log(`Docs-only scorecard refresh failed: ${scorecardRefresh.error}`);
+        io.log(`Tip scorecard refresh failed: ${scorecardRefresh.error}`);
       }
     }
     if (receipt.outcome.status !== "pass") return 3;

@@ -100,6 +100,16 @@ export function isolationProofPath(root, proofId) {
   return path.join(path.resolve(root), "isolation-proofs", `${proofId}.json`);
 }
 
+export function reviewVerdictPath(root, repositoryIdentity, verdictId) {
+  assertIdentifier(verdictId, "Review verdict id");
+  return path.join(path.resolve(root), "projects", repositoryStorageKey(repositoryIdentity), "review-verdicts", `${verdictId}.json`);
+}
+
+export function reviewFindingPath(root, repositoryIdentity, findingId) {
+  assertIdentifier(findingId, "Review finding id");
+  return path.join(path.resolve(root), "projects", repositoryStorageKey(repositoryIdentity), "review-findings", `${findingId}.json`);
+}
+
 export async function storeEvidenceBlob(root, artifact) {
   if (!artifact.uri.startsWith("file://")) throw new Error("Evidence blobs can be imported only from local execution artifacts.");
   const source = fileURLToPath(artifact.uri);
@@ -424,3 +434,90 @@ export async function listVerifiedIsolationProofs(root, { now = new Date(), incl
 export function randomSupervisorNonce() {
   return randomBytes(24).toString("hex");
 }
+
+export async function writeReviewVerdict(root, repositoryIdentity, verdict) {
+  if (verdict.run_id == null) throw new Error("Review verdict requires a run id.");
+  await assertContract("review-verdict", verdict);
+  const target = reviewVerdictPath(root, repositoryIdentity, verdict.id);
+  await safeDirectoryTree(root, path.dirname(target), { create: true });
+  try {
+    await writeFile(target, `${JSON.stringify(verdict, null, 2)}\n`, { encoding: "utf8", mode: 0o600, flag: "wx" });
+    return { path: target, written: true };
+  } catch (error) {
+    if (error.code !== "EEXIST") throw error;
+    const existing = JSON.parse(await readFile(target, "utf8"));
+    if (JSON.stringify(existing) === JSON.stringify(verdict)) return { path: target, written: false };
+    throw new Error(`A different review verdict already exists at ${target}`);
+  }
+}
+
+export async function writeReviewFinding(root, repositoryIdentity, finding) {
+  if (finding.run_id == null) throw new Error("Review finding requires a run id.");
+  await assertContract("review-finding", finding);
+  const target = reviewFindingPath(root, repositoryIdentity, finding.id);
+  await safeDirectoryTree(root, path.dirname(target), { create: true });
+  try {
+    await writeFile(target, `${JSON.stringify(finding, null, 2)}\n`, { encoding: "utf8", mode: 0o600, flag: "wx" });
+    return { path: target, written: true };
+  } catch (error) {
+    if (error.code !== "EEXIST") throw error;
+    const existing = JSON.parse(await readFile(target, "utf8"));
+    if (JSON.stringify(existing) === JSON.stringify(finding)) return { path: target, written: false };
+    throw new Error(`A different review finding already exists at ${target}`);
+  }
+}
+
+export async function listReviewVerdicts(root, repositoryIdentity, { runId = null, headSha = null } = {}) {
+  const directory = path.dirname(reviewVerdictPath(root, repositoryIdentity, "verdict-placeholder"));
+  let names;
+  try {
+    await safeDirectoryTree(root, directory);
+    names = await readdir(directory);
+  } catch (error) {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  }
+  const verdicts = [];
+  for (const name of names.filter((candidate) => candidate.endsWith(".json")).sort()) {
+    const target = path.join(directory, name);
+    try {
+      if (!(await regularFile(target))) continue;
+      const verdict = JSON.parse(await readFile(target, "utf8"));
+      await assertContract("review-verdict", verdict);
+      if (runId && verdict.run_id !== runId) continue;
+      if (headSha && verdict.head_sha !== headSha) continue;
+      verdicts.push(verdict);
+    } catch {
+      // Fail closed: malformed or schema-invalid verdict files are ignored.
+    }
+  }
+  return verdicts;
+}
+
+export async function listReviewFindings(root, repositoryIdentity, { runId = null, headSha = null } = {}) {
+  const directory = path.dirname(reviewFindingPath(root, repositoryIdentity, "finding-placeholder"));
+  let names;
+  try {
+    await safeDirectoryTree(root, directory);
+    names = await readdir(directory);
+  } catch (error) {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  }
+  const findings = [];
+  for (const name of names.filter((candidate) => candidate.endsWith(".json")).sort()) {
+    const target = path.join(directory, name);
+    try {
+      if (!(await regularFile(target))) continue;
+      const finding = JSON.parse(await readFile(target, "utf8"));
+      await assertContract("review-finding", finding);
+      if (runId && finding.run_id !== runId) continue;
+      if (headSha && finding.head_sha !== headSha) continue;
+      findings.push(finding);
+    } catch {
+      // Fail closed: malformed or schema-invalid finding files are ignored.
+    }
+  }
+  return findings;
+}
+

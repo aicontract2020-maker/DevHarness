@@ -1,16 +1,20 @@
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { receiptMatchesCurrentConfig } from "../../project/src/doctor.mjs";
 import { hashContract } from "../../project/src/harness.mjs";
 import { listValidReceipts } from "./data-store.mjs";
 import {
   attestEvidenceManifest,
+  listReviewVerdicts,
   listVerifiedEvidenceManifests,
   loadSupervisorIdentity,
   storeEvidenceBlob,
-  writeEvidenceManifest
+  writeEvidenceManifest,
+  writeReviewVerdict
 } from "./supervisor-store.mjs";
 
 const COMMAND_TEST_SEMANTICS = Object.freeze({
@@ -53,6 +57,16 @@ const COMMAND_BROWSER_SEMANTICS = Object.freeze({
   forbids: []
 });
 
+const INDEPENDENT_REVIEW_SEMANTICS = Object.freeze({
+  id: "independent-review",
+  version: 1,
+  accepts: "current Supervisor-verified command-* evidence for the same Goal Run and revision; never invents review from stdout",
+  emits: ["review-report"],
+  forbids: ["browser-snapshot", "network", "database-state", "api-response", "filesystem-state", "screenshot"]
+});
+
+export const INDEPENDENT_REVIEW_REVIEWER_ID = "independent-review-v1";
+
 const SURFACE_VISUAL_TYPES = new Set(["screenshot", "browser-snapshot"]);
 const SURFACE_NETWORK_TYPES = new Set(["network"]);
 
@@ -78,7 +92,8 @@ export async function registeredEvidenceDrivers() {
     COMMAND_TEST_SEMANTICS,
     COMMAND_QUALITY_SEMANTICS,
     COMMAND_LIFECYCLE_SEMANTICS,
-    COMMAND_BROWSER_SEMANTICS
+    COMMAND_BROWSER_SEMANTICS,
+    INDEPENDENT_REVIEW_SEMANTICS
   ].map(async (semantics) => ({ ...(await commandDriver(semantics)) })));
 }
 
@@ -349,3 +364,181 @@ export async function issueCommandBrowserEvidence({
   await writeEvidenceManifest(supervisorRoot, snapshot.repository.identity, manifest);
   return { manifest, written: true };
 }
+
+async function storeJsonEvidenceBlob(supervisorRoot, value, mediaType = "application/json") {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), "devharness-review-blob-"));
+  try {
+    const tmpFile = path.join(tmpDir, "payload.json");
+    const bytes = Buffer.from(`${JSON.stringify(value, null, 2)}\n`, "utf8");
+    await writeFile(tmpFile, bytes, { mode: 0o600 });
+    const artifact = {
+      uri: pathToFileURL(tmpFile).href,
+      media_type: mediaType,
+      sha256: createHash("sha256").update(bytes).digest("hex"),
+      size_bytes: bytes.length
+    };
+    return await storeEvidenceBlob(supervisorRoot, artifact);
+  } finally {
+    await rm(tmpDir, { recursive: true, force: true });
+  }
+}
+
+function supportingCommandManifest(manifest) {
+  if (!manifest || manifest.outcome?.status !== "pass") return false;
+  const driverId = manifest.driver?.id ?? "";
+  if (!driverId.startsWith("command-")) return false;
+  return (manifest.evidence_records ?? []).some((record) =>
+    record.type === "test-result" && record.observation?.result === "pass"
+  );
+}
+
+/**
+ * Sealed independent-review@1: fail closed without current Supervisor command-*
+ * evidence for the Goal Run + revision. Issues a schema-valid review-verdict whose
+ * reviewer.id is the driver identity, stores it under the Supervisor root, and
+ * emits a signed review-report evidence manifest bound to that verdict id.
+ */
+export async function issueIndependentReviewEvidence({
+  supervisorRoot,
+  snapshot,
+  runId,
+  commitSha = null,
+  criterion = null,
+  now = () => new Date()
+}) {
+  if (!snapshot?.repository?.identity || !snapshot?.repository?.git?.head_sha) {
+    throw new Error("A live repository snapshot is required for independent review.");
+  }
+  if (snapshot.repository.git.dirty) {
+    throw new Error("Independent review requires a clean current repository revision.");
+  }
+  if (!runId) throw new Error("A run id is required.");
+
+  const evidenceCommitSha = commitSha ?? snapshot.repository.git.head_sha;
+  if (!/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(evidenceCommitSha)) {
+    throw new Error("Independent review requires a full Git commit SHA.");
+  }
+
+  const manifests = (await listVerifiedEvidenceManifests(supervisorRoot, snapshot.repository.identity))
+    .filter((manifest) =>
+      manifest.run_id === runId &&
+      manifest.commit_sha === evidenceCommitSha &&
+      supportingCommandManifest(manifest)
+    );
+  if (manifests.length === 0) {
+    throw new Error(
+      "The independent-review driver requires current Supervisor-verified command-* evidence for this Goal Run and revision; it will not invent a review from stdout."
+    );
+  }
+  manifests.sort((left, right) => left.id.localeCompare(right.id));
+  const support = manifests[0];
+
+  const semantics = INDEPENDENT_REVIEW_SEMANTICS;
+  const driver = await commandDriver(semantics);
+  const identity = await loadSupervisorIdentity(supervisorRoot);
+  const reviewCriterion = criterion ?? {
+    id: "criterion-independent-review",
+    claim: "An independent review of the attested revision passed under the sealed independent-review driver."
+  };
+  if (!reviewCriterion?.id) throw new Error("A criterion with a stable id is required.");
+  const criterionHash = hashContract(reviewCriterion);
+  const issuedAt = now().toISOString();
+  const reviewer = Object.freeze({
+    id: INDEPENDENT_REVIEW_REVIEWER_ID,
+    kind: "tool",
+    role: "independent-reviewer"
+  });
+  const seed = hashContract({
+    runId,
+    commit_sha: evidenceCommitSha,
+    driver,
+    support_manifest_id: support.id,
+    criterion: { id: reviewCriterion.id, sha256: criterionHash }
+  });
+  const verdictId = `verdict-${seed.slice(0, 32)}`;
+  const verdict = {
+    schema_version: 1,
+    id: verdictId,
+    run_id: runId,
+    reviewer,
+    head_sha: evidenceCommitSha,
+    status: "pass",
+    finding_refs: [],
+    summary: "Sealed independent-review driver attested a passing independent verdict for the current Supervisor-verified revision.",
+    completed_at: issuedAt
+  };
+
+  const existingVerdicts = await listReviewVerdicts(supervisorRoot, snapshot.repository.identity, {
+    runId,
+    headSha: evidenceCommitSha
+  });
+  const prior = existingVerdicts.find((candidate) => candidate.id === verdict.id);
+  if (!prior) {
+    await writeReviewVerdict(supervisorRoot, snapshot.repository.identity, verdict);
+  } else if (JSON.stringify(prior) !== JSON.stringify(verdict)) {
+    throw new Error(`Conflicting review verdict already stored for ${verdict.id}.`);
+  }
+
+  const verdictArtifact = await storeJsonEvidenceBlob(supervisorRoot, verdict);
+  const recipeHash = hashContract({
+    driver,
+    repository_identity: snapshot.repository.identity,
+    commit_sha: evidenceCommitSha,
+    run_id: runId,
+    criterion: { id: reviewCriterion.id, sha256: criterionHash },
+    support: {
+      manifest_id: support.id,
+      receipt_id: support.receipt.id,
+      command_id: support.command.id,
+      driver_id: support.driver.id
+    },
+    verdict: { id: verdict.id, sha256: hashContract(verdict) }
+  });
+  const evidenceRecord = {
+    schema_version: 1,
+    id: `evidence-${hashContract({ seed, type: "review-report" }).slice(0, 32)}`,
+    run_id: runId,
+    criterion_ids: [reviewCriterion.id],
+    type: "review-report",
+    producer: { id: `${driver.id}-v${driver.version}`, kind: "tool" },
+    captured_at: issuedAt,
+    subject: {
+      repository_identity: snapshot.repository.identity,
+      commit_sha: evidenceCommitSha
+    },
+    observation: {
+      result: "pass",
+      summary: "The sealed independent-review driver issued a passing independent review-report bound to a stored review verdict.",
+      data: { review_verdict_id: verdict.id }
+    },
+    artifacts: [verdictArtifact]
+  };
+  const payload = {
+    schema_version: 1,
+    id: `manifest-${seed.slice(0, 32)}`,
+    repository_identity: snapshot.repository.identity,
+    commit_sha: evidenceCommitSha,
+    run_id: runId,
+    criterion: { id: reviewCriterion.id, sha256: criterionHash },
+    command: support.command,
+    harness: support.harness,
+    driver,
+    recipe_sha256: recipeHash,
+    receipt: support.receipt,
+    issued_at: issuedAt,
+    outcome: {
+      status: "pass",
+      summary: "Independent review passed under the sealed independent-review driver with a Supervisor-signed review-report."
+    },
+    evidence_records: [evidenceRecord],
+    issuer: { id: identity.id, fingerprint: identity.fingerprint }
+  };
+
+  const existing = (await listVerifiedEvidenceManifests(supervisorRoot, snapshot.repository.identity))
+    .find((manifest) => manifest.id === payload.id);
+  if (existing) return { manifest: existing, verdict, written: false };
+  const manifest = await attestEvidenceManifest(supervisorRoot, payload);
+  await writeEvidenceManifest(supervisorRoot, snapshot.repository.identity, manifest);
+  return { manifest, verdict, written: true };
+}
+

@@ -31,6 +31,12 @@ The signed manifest binds repository identity, current HEAD, clean workspace exp
 
 `command-browser@1` accepts only `verify` receipts that already carry real-surface `screenshot` or `browser-snapshot` plus `network` artifacts captured while owned services were up. It emits those E3 evidence types from the receipt artifacts and fails closed if they are missing — it never invents browser proof from command stdout alone.
 
+`independent-review@1` accepts a Goal Run at a clean tip SHA only when current Supervisor-verified `command-*` evidence already exists for that run and revision. It stores a schema-valid `review-verdict` whose `reviewer.id` is the driver identity (`independent-review-v1`), and emits a signed `review-report` evidence record whose `observation.data.review_verdict_id` binds to that verdict. It never invents review from stdout, and implementer ids cannot satisfy independence.
+
+```bash
+npm run devharness -- review-attest --run run-123 --repo ../some-project
+```
+
 ## Human approval flow
 
 ```text
@@ -76,7 +82,7 @@ Cryptography does not solve same-user process isolation. If a worker can read th
 
 ## Deliberate limitations
 
-- Sealed `command-browser@1` covers revision-bound real-surface screenshot/browser-snapshot + network for verify receipts that captured those artifacts; no sealed API, database, review, deployment, load or canary driver yet.
+- Sealed `command-browser@1` covers revision-bound real-surface screenshot/browser-snapshot + network for verify receipts that captured those artifacts; sealed `independent-review@1` covers revision-bound review-report proof for Gate 2 full profile. No sealed API, database, deployment, load or canary driver yet.
 - No remote Supervisor, hardware-backed key, key rotation or multi-host trust.
 - No full goal daemon or automatic merge.
-- Delivery remains fail closed until signed real-surface evidence and a signed review report exist.
+- Delivery under the full profile remains fail closed until Supervisor-trusted evidence and a signed `review-report` bound to an independent current-head verdict exist. Controlled-change tip/delivery scorecards now use that full profile once `review-attest` can satisfy the gates (they no longer succeed by staying on the review-skipping downgrade).

@@ -720,7 +720,7 @@ test("sealed command-test driver issues only signed current test-result evidence
   assert.equal(receipt.outcome.status, "pass");
 
   await initializeSupervisorIdentity(fixture.dataRoot);
-  assert.deepEqual((await registeredEvidenceDrivers()).map((driver) => driver.id), ["command-system", "command-test", "command-quality", "command-lifecycle", "command-browser"]);
+  assert.deepEqual((await registeredEvidenceDrivers()).map((driver) => driver.id), ["command-system", "command-test", "command-quality", "command-lifecycle", "command-browser", "independent-review"]);
   const issued = await issueCommandTestEvidence({
     supervisorRoot: fixture.dataRoot,
     receiptRoot: fixture.dataRoot,

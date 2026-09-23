@@ -71,13 +71,17 @@ export function inventoryFromSnapshot(snapshot, goalImpact = {}) {
   return derivedInventory(snapshot, goalImpact);
 }
 
-export async function loadTrustedEvaluationContext({ snapshot, goalImpact = {} }) {
+export async function loadTrustedEvaluationContext({ snapshot, goalImpact = {}, commitSha = null }) {
   if (!snapshot?.repository?.identity || !snapshot?.repository?.git?.head_sha) throw new Error("A live repository snapshot with identity and head is required.");
+  const evaluationHeadSha = commitSha ?? snapshot.repository.git.head_sha;
+  if (!/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(evaluationHeadSha)) {
+    throw new Error("Trusted evaluation requires a full Git commit SHA.");
+  }
   const supervisorRoot = defaultSupervisorRoot();
   const manifests = (await listVerifiedEvidenceManifests(supervisorRoot, snapshot.repository.identity))
-    .filter((manifest) => manifest.commit_sha === snapshot.repository.git.head_sha);
+    .filter((manifest) => manifest.commit_sha === evaluationHeadSha);
   const approvals = (await listVerifiedApprovalReceipts(supervisorRoot, snapshot.repository.identity))
-    .filter((receipt) => receipt.relevant_head_sha === snapshot.repository.git.head_sha);
+    .filter((receipt) => receipt.relevant_head_sha === evaluationHeadSha);
   // Isolation proofs are host-scoped (Supervisor boundary), not revision-bound to the consumer tip.
   const isolationProofs = await listVerifiedIsolationProofs(supervisorRoot);
   let supervisorIdentity = null;
@@ -86,8 +90,10 @@ export async function loadTrustedEvaluationContext({ snapshot, goalImpact = {} }
   } catch {
     supervisorIdentity = null;
   }
+  const inventory = derivedInventory(snapshot, goalImpact);
+  inventory.currentHeadSha = evaluationHeadSha;
   const context = deepFreeze({
-    inventory: derivedInventory(snapshot, goalImpact),
+    inventory,
     manifests,
     evidence: manifests.flatMap((manifest) => manifest.evidence_records),
     approvals,
