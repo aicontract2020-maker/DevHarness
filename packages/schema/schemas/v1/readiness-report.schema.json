@@ -18,7 +18,29 @@
       "properties": {
         "verdict": { "enum": ["ready", "needs_work", "unsupported"] },
         "score": { "type": "integer", "minimum": 0 },
-        "level": { "type": "integer", "minimum": 0 }
+        "level": { "type": "integer", "minimum": 0, "maximum": 5 },
+        "next_level_gap": {
+          "description": "Deterministic next rung on the autonomy ladder, or null when level is already 5.",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["next_level", "missing", "summary"],
+              "properties": {
+                "next_level": { "type": "integer", "minimum": 1, "maximum": 5 },
+                "missing": {
+                  "type": "array",
+                  "uniqueItems": true,
+                  "items": {
+                    "$ref": "https://devharness.dev/schemas/v1/common.schema.json#/$defs/identifier"
+                  }
+                },
+                "summary": { "type": "string", "minLength": 1 }
+              }
+            }
+          ]
+        }
       }
     },
     "capabilities": {

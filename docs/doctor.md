@@ -47,6 +47,22 @@ Schema-valid command receipts are also insufficient. Doctor ignores caller recei
 
 The score is a deterministic summary of weighted capabilities. It is diagnostic, not a completion verdict. The capability list and remediations are the source of truth.
 
+## Autonomy levels
+
+`overall.level` is a 0–5 maturity ladder for unattended agent work. It is computed only from capability statuses (never from the score):
+
+| Level | Meaning |
+| --- | --- |
+| 0 | Not a usable Git repository |
+| 1 | Repository identity only |
+| 2 | Sealed build + automated tests |
+| 3 | Sealed real-surface behavior + service launch (or N/A) |
+| 4 | CI feedback + pull-request delivery detectable |
+| 5 | Supervisor isolation proved (host-scoped Seatbelt) — workers cannot read Supervisor key, state, environment, or control channel |
+
+When level is below 5, `overall.next_level_gap` names the missing capability ids and a one-line remediation (for example `devharness prove-isolation` for level 5). At level 5 the gap is `null`. Level 5 is the measurable prerequisite for unattended mid-gate Goal Run work between the two human gates; it does not remove those gates.
+
+
 ## Init safety
 
 `devharness init` performs the same discovery and prints a proposed `devharness.yaml`:

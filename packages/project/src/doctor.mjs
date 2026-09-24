@@ -271,14 +271,58 @@ function evaluateSubmodules(snapshot) {
   });
 }
 
-function readinessLevel(capabilities) {
+/**
+ * Autonomy maturity ladder (doctor overall.level, out of 5).
+ *
+ * 0 — not a usable Git repository
+ * 1 — repository identity only
+ * 2 — sealed build + automated tests
+ * 3 — sealed real-surface behavior + service launch (or N/A)
+ * 4 — CI feedback + pull-request delivery detectable
+ * 5 — Supervisor isolation proved (host-scoped Seatbelt): agents can run
+ *     without leaking Supervisor key/state/env/control — prerequisite for
+ *     unattended mid-gate Goal Run work between the two human gates
+ */
+export function computeAutonomyLevel(capabilities) {
   const status = new Map(capabilities.map((item) => [item.id, item.status]));
   if (status.get("git-repository") !== "pass") return 0;
   let level = 1;
   if (status.get("build-command") === "pass" && status.get("automated-tests") === "pass") level = 2;
   if (level >= 2 && status.get("behavior-verification") === "pass" && ["pass", "not_applicable"].includes(status.get("service-launch"))) level = 3;
   if (level >= 3 && status.get("ci-feedback") === "pass" && status.get("pull-request-delivery") === "pass") level = 4;
+  if (level >= 4 && status.get("supervisor-isolation") === "pass") level = 5;
   return level;
+}
+
+/** @deprecated use computeAutonomyLevel */
+function readinessLevel(capabilities) {
+  return computeAutonomyLevel(capabilities);
+}
+
+export function nextAutonomyLevelGap(capabilities) {
+  const status = new Map(capabilities.map((item) => [item.id, item.status]));
+  const level = computeAutonomyLevel(capabilities);
+  if (level >= 5) return null;
+  if (level < 1) return { next_level: 1, missing: ["git-repository"], summary: "Initialize a Git repository with a baseline commit." };
+  if (level < 2) {
+    const missing = ["build-command", "automated-tests"].filter((id) => status.get(id) !== "pass");
+    return { next_level: 2, missing, summary: "Seal Supervisor-attested build and automated-test evidence at the current revision." };
+  }
+  if (level < 3) {
+    const missing = [];
+    if (status.get("behavior-verification") !== "pass") missing.push("behavior-verification");
+    if (!["pass", "not_applicable"].includes(status.get("service-launch"))) missing.push("service-launch");
+    return { next_level: 3, missing, summary: "Seal real-surface behavior verification and service launch (or mark launch N/A)." };
+  }
+  if (level < 4) {
+    const missing = ["ci-feedback", "pull-request-delivery"].filter((id) => status.get(id) !== "pass");
+    return { next_level: 4, missing, summary: "Add CI feedback and a supported pull-request delivery remote (e.g. GitHub)." };
+  }
+  return {
+    next_level: 5,
+    missing: ["supervisor-isolation"],
+    summary: "Prove Supervisor-owned macOS Seatbelt isolation (`devharness prove-isolation`) so agents cannot read Supervisor key, state, environment, or control channel."
+  };
 }
 
 export function evaluateReadiness(snapshot, { receipts = [], trustContext, config = null, configError = null, configSource = "tracked" } = {}) {
@@ -448,7 +492,8 @@ export function evaluateReadiness(snapshot, { receipts = [], trustContext, confi
     overall: {
       verdict,
       score,
-      level: readinessLevel(capabilities)
+      level: computeAutonomyLevel(capabilities),
+      next_level_gap: nextAutonomyLevelGap(capabilities)
     },
     capabilities,
     biggest_blockers: biggestBlockers
@@ -474,6 +519,11 @@ export function formatReadinessReport(report) {
       const item = report.capabilities.find((candidate) => candidate.id === id);
       lines.push(`- ${id}: ${item.remediation[0] ?? item.summary}`);
     }
+  }
+
+  const gap = report.overall.next_level_gap;
+  if (gap) {
+    lines.push("", `Next autonomy level (${gap.next_level}/5): ${gap.summary}`);
   }
 
   return lines.join("\n");
