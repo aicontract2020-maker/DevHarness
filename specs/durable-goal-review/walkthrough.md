@@ -54,5 +54,5 @@ Runtime, connecting, offline and sample states are visually distinct.
 
 ## Unrequested behavior
 
-None. The slice writes no framework files or runtime state into AIedu_demo, starts no consumer
+None. The slice writes no framework files or runtime state into example-consumer, starts no consumer
 process, calls no agent, performs no approval, and changes no delivery state.

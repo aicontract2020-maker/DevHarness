@@ -36,7 +36,7 @@ test("validateChangeProposal accepts replace-in-file and ensure-file", () => {
         kind: "replace-in-file",
         relative_path: "backend/src/main.py",
         old_string: 'return {"status": "healthy"}',
-        new_string: 'return {"status": "healthy", "service": "aiedu-backend"}'
+        new_string: 'return {"status": "healthy", "service": "example-backend"}'
       },
       {
         kind: "ensure-file",

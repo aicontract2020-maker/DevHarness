@@ -1,6 +1,0 @@
-{
-  "id": "root-cy-run-ordered",
-  "kind": "verify",
-  "run": "npx cypress run --config-file cypress.config.js --spec 'cypress/e2e/xxOther/**/*.cy.js,cypress/e2e/02update/**/*.cy.js,cypress/e2e/03readOnly/**/*.cy.js,cypress/e2e/01admin/**/*.cy.js'",
-  "source": "DevHarness recipe: update before readOnly (consumer untouched)"
-}

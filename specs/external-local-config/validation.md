@@ -5,12 +5,12 @@ Validated: 2026-08-31
 
 ## Acceptance results
 
-- AC-1 PASS: AIedu_demo remains Git-clean and contains no generated DevHarness configuration.
+- AC-1 PASS: example-consumer remains Git-clean and contains no generated DevHarness configuration.
 - AC-2 PASS: `onboard`, `doctor`, `build`, `verify`, `review` and `advance` accept one explicit
   external configuration path; the path is resolved and schema-validated before use.
 - AC-3 PASS: the default tracked `devharness.yaml` behavior remains covered by regression tests.
-- AC-4 PASS: the AIedu declaration and run state exist only under DevHarness's ignored
-  `local-projects/aiedu-demo/` directory.
+- AC-4 PASS: the example-consumer declaration and run state exist only under DevHarness's ignored
+  `local-projects/example-consumer/` directory.
 
 ## Quantitative evidence
 

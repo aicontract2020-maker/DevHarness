@@ -27,4 +27,4 @@ The lifecycle integration tests start and terminate real detached service proces
 
 ## Consumer dogfood
 
-AIedu_demo remained clean. `doctor` stayed at 67/100 and Level 1. `build` correctly stopped before compilation because no accepted declaration exists, and `init` remained a dry run.
+example-consumer remained clean. `doctor` stayed at 67/100 and Level 1. `build` correctly stopped before compilation because no accepted declaration exists, and `init` remained a dry run.

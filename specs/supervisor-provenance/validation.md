@@ -4,7 +4,7 @@ Date: 2026-09-04
 Commit: uncommitted workspace
 
 This milestone is validated by targeted tests, the read-only doctor path, and an
-AIedu_demo dogfood run that stayed fail-closed when the consumer repository was not
+example-consumer dogfood run that stayed fail-closed when the consumer repository was not
 in a clean committed baseline.
 
 ## Traceability matrix
@@ -37,9 +37,9 @@ in a clean committed baseline.
 - Verification review only promotes current-revision evidence when a verified
   manifest exists for the same repository and receipt.
 
-## AIedu_demo dogfood result
+## example-consumer dogfood result
 
-The current read-only doctor run against `../AIedu_demo` returned `needs_work`
+The current read-only doctor run against `../example-consumer` returned `needs_work`
 at 75/100. That is expected fail-closed behavior:
 
 - the repository currently has 7 local changes outside the committed baseline;

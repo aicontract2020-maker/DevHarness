@@ -14,9 +14,13 @@ import { hashContract } from "./harness.mjs";
 
 const SKIP_DIRS = new Set([
   ".git", "node_modules", ".venv", "venv", "dist", "build", "coverage",
-  "__pycache__", ".next", ".turbo", "playwright-results", "aiedu_backend.egg-info",
+  "__pycache__", ".next", ".turbo", "playwright-results",
   "uploads", "pilot", "loadtest", "docs", "deployments", ".cursor", "out"
 ]);
+
+function shouldSkipDir(name) {
+  return SKIP_DIRS.has(name) || name.endsWith(".egg-info");
+}
 const MAX_ENTITIES = 32;
 const MAX_FILES_SCAN = 4000;
 
@@ -66,7 +70,7 @@ function walkFiles(root, { maxFiles = MAX_FILES_SCAN } = {}) {
         if (entry.isDirectory() && entry.name !== ".github") continue;
       }
       if (entry.isDirectory()) {
-        if (SKIP_DIRS.has(entry.name)) continue;
+        if (shouldSkipDir(entry.name)) continue;
         stack.push(path.join(current, entry.name));
         continue;
       }
@@ -133,7 +137,7 @@ export function deriveEntitiesFromRepositoryRoot(root, {
       if (entry.name.startsWith(".") && entry.isDirectory() && entry.name !== ".github") continue;
       const full = path.join(current, entry.name);
       if (entry.isDirectory()) {
-        if (SKIP_DIRS.has(entry.name)) continue;
+        if (shouldSkipDir(entry.name)) continue;
         // Avoid scanning bulky database content except migration trees.
         if (entry.name === "database") {
           const versions = path.join(full, "migrations", "versions");
@@ -271,7 +275,7 @@ export function deriveRolesFromRepositoryRoot(root) {
       if (entry.name.startsWith(".") && entry.isDirectory() && entry.name !== ".github") continue;
       const full = path.join(current, entry.name);
       if (entry.isDirectory()) {
-        if (SKIP_DIRS.has(entry.name)) continue;
+        if (shouldSkipDir(entry.name)) continue;
         if (entry.name === "database") continue;
         if (["api", "services", "models", "middleware", "auth", "security"].includes(entry.name)) {
           candidateDirs.push(full);

@@ -113,7 +113,7 @@ another suite created). Ideal fix is consumer-side self-sufficient seeds. When p
 3. Treat failures only under an unsafe order as recipe bugs, not product bugs, until they
    reproduce under the declared safe recipe.
 
-Dogfood example: [sunrise-cms-verification-recipe.md](./dogfood/sunrise-cms-verification-recipe.md).
+Dogfood example: [example-cms-verification-recipe.md](./dogfood/example-cms-verification-recipe.md).
 
 ## Anti-patterns
 

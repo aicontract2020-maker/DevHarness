@@ -144,7 +144,7 @@ export function buildLocalReadonlyGoalAnalysis({
     conflicts: [],
     boundaries: [{
       id: "boundary-no-consumer-edits",
-      text: "Do not edit the consumer repository, including sunrise-cms.",
+      text: "Do not edit the consumer repository.",
       source_refs: [sourceRef(id, analysisSha256, "/boundaries/0")]
     }],
     non_goals: [{

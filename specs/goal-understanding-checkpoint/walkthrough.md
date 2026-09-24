@@ -55,4 +55,4 @@ developer sees one current decision surface. `apps/review-ui/app/page.tsx:130`,
 
 ## Unrequested behavior
 
-None. The real AIedu_demo dogfood run remained clean and the page remained read-only.
+None. The real example-consumer dogfood run remained clean and the page remained read-only.

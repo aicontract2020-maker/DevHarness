@@ -22,11 +22,11 @@ Date: 2026-08-31 · Working tree: uncommitted framework prototype
 - Review UI client tests: **2/2 PASS**.
 - Review UI lint: **PASS**.
 - Review UI production build: **PASS**.
-- Real temporary AIedu_demo Goal Run: created and restored at revision `49a4c5dfd344`.
+- Real temporary example-consumer Goal Run: created and restored at revision `49a4c5dfd344`.
 - Real loopback API: returned the repository-scoped run index with the issued token and origin.
 - Real browser: displayed `LIVE RUNTIME`, the exact run ID, `0/100`, seven blockers and no criteria;
   a second run appeared after polling, switched successfully, and opened a blocker detail dialog.
-- AIedu_demo Git working tree remained clean before and after the workflow.
+- example-consumer Git working tree remained clean before and after the workflow.
 
 ## Drift report
 

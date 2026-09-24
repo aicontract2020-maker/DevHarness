@@ -5,7 +5,7 @@ Validated: 2026-08-31
 
 ## Outcome
 
-All framework acceptance criteria passed. The real AIedu run stopped honestly before Playwright
+All framework acceptance criteria passed. The real example-consumer run stopped honestly before Playwright
 because one declared route failed warmup; this is a consumer finding, not a framework pass claim.
 
 ## Quantitative evidence
@@ -15,7 +15,7 @@ because one declared route failed warmup; this is a consumer finding, not a fram
 - Review UI: 6/6 tests, lint and production build passed.
 - Browser review: the live page rendered receipt totals, current/stale status, latest outcome,
   readiness, cleanup and five recent runs without opening logs.
-- AIedu receipt `verify-1788214709418-344e849b`:
+- example-consumer receipt `verify-1788214709418-344e849b`:
   - Goal Run binding: `run-b95fdcb8-d0a2-47c8-a32f-655a49a7a6b0`.
   - Revision-pinned submodules: 1/1 materialized at the declared commit.
   - Full-stack readiness: 2/2 passed.
@@ -24,13 +24,13 @@ because one declared route failed warmup; this is a consumer finding, not a fram
   - `/subject-selection` and `/profiling`: returned 200 immediately afterward.
   - Teardown: passed; isolated containers, network, volumes and worktree removed.
   - Passing attestation: correctly not issued.
-- AIedu_demo working tree: clean before and after all runs.
+- example-consumer working tree: clean before and after all runs.
 
 ## Acceptance trace
 
 | Criterion | Result | Evidence |
 |---|---|---|
-| AC-1 Goal-bound receipt | PASS | receipt schema/runtime tests and real AIedu Goal Run id |
+| AC-1 Goal-bound receipt | PASS | receipt schema/runtime tests and real example-consumer Goal Run id |
 | AC-2 Compact projection | PASS | deterministic projection, corruption omission and cap tests |
 | AC-3 Review panel | PASS | API/client/UI tests plus live in-app browser inspection |
 | AC-4 Submodule preparation | PASS | exact-commit lifecycle test plus real `database/course` materialization |
@@ -46,14 +46,14 @@ because one declared route failed warmup; this is a consumer finding, not a fram
    server. The external-only overlay now requires the final PID 1 postmaster plus a real SQL query.
 2. Importing 418,291 assessment records and building the production frontend exceeded the original
    ten-minute startup ceiling. Framework schemas now permit a project-declared maximum of thirty
-   minutes; AIedu declares twenty minutes. The wait remains bounded.
+   minutes; example-consumer declares twenty minutes. The wait remains bounded.
 3. Production readiness completed, but `/signup` repeatedly terminated the HTTP request while ten
    other declared pages returned 200. Playwright did not start, so later failures were not invented.
 
 ## Evidence boundary
 
 The command-system driver can seal a current passing `verify` receipt as E2. It does not claim a
-browser snapshot, network response or database-state proof. The real AIedu run failed before test
+browser snapshot, network response or database-state proof. The real example-consumer run failed before test
 execution and therefore produced no passing evidence.
 
 ## Drift and compatibility
@@ -62,5 +62,5 @@ execution and therefore produced no passing evidence.
   an empty list.
 - Older receipts remain reviewable because new preparation, warmup, reason and Goal Run fields are
   additive.
-- AIedu_demo contains no DevHarness configuration or generated file.
+- example-consumer contains no DevHarness configuration or generated file.
 

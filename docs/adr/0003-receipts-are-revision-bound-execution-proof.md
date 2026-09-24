@@ -7,7 +7,7 @@
 
 Repository discovery can find scripts, test frameworks, browser drivers, and launch files. Their presence does not prove that they run, target the intended application, leave the repository clean, or still apply to the current revision.
 
-Treating detection as proof produced an unrealistically high first AIedu_demo readiness score. The result contradicted DevHarness's central rule that agent or tool claims are not completion evidence.
+Treating detection as proof produced an unrealistically high first example-consumer readiness score. The result contradicted DevHarness's central rule that agent or tool claims are not completion evidence.
 
 ## Decision
 
