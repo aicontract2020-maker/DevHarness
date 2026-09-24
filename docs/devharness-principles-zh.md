@@ -10,7 +10,7 @@
 
 **DevHarness 是一个面向编码智能体（coding agents）的「目标级工程运行时」（goal-oriented engineering runtime）。**
 
-你给它一个软件目标（例如「证明 sunrise-cms 能在 localhost:9000 启动，并用 Cypress 冒烟」），它负责把这条目标跑成一个**可恢复、可观察、以证据为准**的工程过程，最终诚实落在三种结果之一：
+你给它一个软件目标（例如「证明 example-cms 能在 localhost:9000 启动，并用 Cypress 冒烟」），它负责把这条目标跑成一个**可恢复、可观察、以证据为准**的工程过程，最终诚实落在三种结果之一：
 
 1. **带证据的交付**（通常是 PR / Delivery Brief）——验收标准被证明，而不是「模型说做完了」；
 2. **明确的阻塞**——缺权限、缺环境、缺证明能力，需要人拍板；
@@ -77,11 +77,11 @@ DevHarness 被设计成 **LLM 自主开发任意项目** 的工程运行时：�
 
 Phase 2 常会撞上 **测试顺序 / 缺 seed**（A 套件假定 B 套件已造好数据）。理想是消费者侧自给自足；若约束是 **只改 DevHarness**：
 
-1. 优先用消费者已安全的全量 verify（例如 sunrise 的 `npm run cy:run`）；
+1. 优先用消费者已安全的全量 verify（例如消费者自己的 `npm run cy:run`）；
 2. 否则在 **外部** project 配置 / dogfood 配方里声明有序 `--spec` 或 harness 自有 seed，不要在对话里临时发明跑序；
 3. 只有「在声明过的安全配方下仍失败」才按产品 bug 升级。
 
-示例：[sunrise-cms-verification-recipe.md](./dogfood/sunrise-cms-verification-recipe.md)。
+示例：[example-cms-verification-recipe.md](./dogfood/example-cms-verification-recipe.md)。
 
 ### 与当前命令的对应（v0）
 

@@ -7,16 +7,16 @@
 - The read-only review API exposes run, interaction and capability data, but no project-declaration assessment (`packages/runtime/src/review-server.mjs:64`, `packages/runtime/src/review-server.mjs:77`, `packages/runtime/src/review-server.mjs:87`).
 - The review page already compresses runtime artifacts and capability decisions into one screen (`apps/review-ui/app/page.tsx:137`, `apps/review-ui/app/page.tsx:172`).
 
-## AIedu_demo evidence
+## example-consumer evidence
 
-- The base Compose file explicitly says the app services require the development overlay and gives the two-file launch recipe (`../AIedu_demo/docker-compose.yml:1`, `../AIedu_demo/docker-compose.yml:6`).
-- The development overlay defines backend and frontend, depends on healthy Postgres/Redis, and exposes frontend port 3000 (`../AIedu_demo/docker-compose.dev.yml:11`, `../AIedu_demo/docker-compose.dev.yml:38`, `../AIedu_demo/docker-compose.dev.yml:46`, `../AIedu_demo/docker-compose.dev.yml:54`).
-- Playwright targets `http://localhost:3000` by default (`../AIedu_demo/frontend/playwright.config.ts:3`, `../AIedu_demo/frontend/playwright.config.ts:15`).
+- The base Compose file explicitly says the app services require the development overlay and gives the two-file launch recipe (`../example-consumer/docker-compose.yml:1`, `../example-consumer/docker-compose.yml:6`).
+- The development overlay defines backend and frontend, depends on healthy Postgres/Redis, and exposes frontend port 3000 (`../example-consumer/docker-compose.dev.yml:11`, `../example-consumer/docker-compose.dev.yml:38`, `../example-consumer/docker-compose.dev.yml:46`, `../example-consumer/docker-compose.dev.yml:54`).
+- Playwright targets `http://localhost:3000` by default (`../example-consumer/frontend/playwright.config.ts:3`, `../example-consumer/frontend/playwright.config.ts:15`).
 
 ## Findings
 
 1. [CONFIRMED] The current proposal is structurally incomplete, not merely unapproved.
 2. [CONFIRMED] A numeric structural-coverage result can be derived without executing consumer code.
-3. [CONFIRMED] AIedu_demo needs one developer decision about the owned full-stack recipe before execution can be trusted.
+3. [CONFIRMED] example-consumer needs one developer decision about the owned full-stack recipe before execution can be trusted.
 4. [VERIFY] The two-file Docker recipe is the intended autonomous test runtime; repository evidence supports it, but a developer must confirm its authority and isolation policy.
 

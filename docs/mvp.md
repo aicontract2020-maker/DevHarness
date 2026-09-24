@@ -115,11 +115,11 @@ Capabilities:
 - Adapter and pack compatibility matrix.
 - GitHub pull-request and CI feedback loop.
 
-Exit criterion: neither the runtime nor artifact contracts contain assumptions specific to the first agent or AIedu_demo.
+Exit criterion: neither the runtime nor artifact contracts contain assumptions specific to the first agent or example-consumer.
 
-## First dogfood consumer: AIedu_demo
+## First dogfood consumer: example-consumer
 
-AIedu_demo is intentionally external to this repository. It exercises a realistic web stack with frontend, backend, PostgreSQL, authentication, browser automation, and API behavior.
+example-consumer is intentionally external to this repository. It exercises a realistic web stack with frontend, backend, PostgreSQL, authentication, browser automation, and API behavior.
 
 The first golden goal should target a bounded flow that does not require nondeterministic model output. A note-creation persistence flow is a useful harness-validation scenario because it can prove:
 

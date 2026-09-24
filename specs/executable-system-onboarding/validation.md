@@ -6,7 +6,7 @@ Date: 2026-08-30 · Working tree: uncommitted framework prototype
 |----|----------|-----------------|----------------|--------|
 | AC-1 | MUST | `packages/cli/test/cli.test.mjs` | `packages/cli/src/cli.mjs` | ✓ PASS |
 | AC-2 | MUST | project + CLI onboarding tests | `packages/project/src/onboard.mjs`, onboarding schema | ✓ PASS |
-| AC-3 | MUST | project onboarding test; AIedu_demo dry run | compact brief formatter | ✓ PASS |
+| AC-3 | MUST | project onboarding test; example-consumer dry run | compact brief formatter | ✓ PASS |
 | AC-4 | MUST | `system-contracts.test.mjs`, governance policy tests | capability-request schema + authority policy | ✓ PASS |
 | AC-5 | MUST | `system-contracts.test.mjs` | understanding baseline + system-model schemas | ✓ PASS |
 | AC-6 | MUST | `understanding-policy.test.mjs` | understanding policy | ✓ PASS |
@@ -17,7 +17,7 @@ Date: 2026-08-30 · Working tree: uncommitted framework prototype
 | AC-11 | MUST | `npm test`: 80/80 | schema/core/project/CLI/runtime tests | ✓ PASS |
 | AC-12 | MUST | CLI external-write test | path policy + external data store | ✓ PASS |
 | AC-13 | SHOULD | CLI external-write test | `onboardingPlanPath`, atomic plan write | ✓ PASS |
-| AC-14 | SHOULD | AIedu_demo dry run | database/security-first blocker ordering | ✓ PASS |
+| AC-14 | SHOULD | example-consumer dry run | database/security-first blocker ordering | ✓ PASS |
 | AC-15 | SHOULD | documentation/link validation | README, architecture, milestone and focused docs | ✓ PASS |
 | AC-16 | WONT | scope declaration | no installer/browser/simulator/database execution | ○ OUT OF SCOPE |
 | AC-17 | WONT | capability request remains declarative | no action execution from onboarding | ○ OUT OF SCOPE |
@@ -28,7 +28,7 @@ Date: 2026-08-30 · Working tree: uncommitted framework prototype
 ## Validation commands
 
 - `npm test` — 80 passed, 0 failed.
-- `npm run devharness -- onboard --repo ../AIedu_demo` — honest `needs-evidence`, database/security first, no writes.
+- `npm run devharness -- onboard --repo ../example-consumer` — honest `needs-evidence`, database/security first, no writes.
 - Markdown relative-link scan — all links resolve.
 
 Independent adversarial review found and the implementation now rejects: generic successful

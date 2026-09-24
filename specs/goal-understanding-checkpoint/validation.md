@@ -11,7 +11,7 @@ Date: 2026-08-31 · Working tree: uncommitted framework prototype
 | AC-5 | MUST | append/replay and orphan-checkpoint tests | `packages/runtime/src/goal-run-store.mjs:202` | ✓ PASS |
 | AC-6 | MUST | client test and real in-app browser walkthrough | `apps/review-ui/app/page.tsx:130`, `apps/review-ui/app/page.tsx:255` | ✓ PASS |
 | AC-7 | MUST | authenticated interaction endpoint tests | `packages/runtime/src/review-server.mjs:75` | ✓ PASS |
-| AC-8 | MUST | CLI test plus AIedu_demo before/after clean status | external storage boundary | ✓ PASS |
+| AC-8 | MUST | CLI test plus example-consumer before/after clean status | external storage boundary | ✓ PASS |
 | AC-9 | SHOULD | pointerless legacy run test | `packages/runtime/src/goal-run-store.mjs:142` | ✓ PASS |
 
 **MUST coverage: 8/8. SHOULD coverage: 1/1.**
@@ -22,13 +22,13 @@ Date: 2026-08-31 · Working tree: uncommitted framework prototype
 - Review UI client tests: **3/3 PASS**.
 - Review UI lint: **PASS**.
 - Review UI production build: **PASS**.
-- Real AIedu_demo run advanced from `received` to `clarifying` at revision `49a4c5dfd344`.
+- Real example-consumer run advanced from `received` to `clarifying` at revision `49a4c5dfd344`.
 - Real checkpoint contained seven total events, three hashed source artifacts, ten surfaced items and
   25 compressed lower-priority details.
 - Real browser showed the live Alignment Brief, three highest-priority understanding gaps, explicit
   browser/database capability requests, `Scope approval unavailable`, `0/100`, ten blocking gaps and
   the locked-later-phases notice.
-- AIedu_demo Git working tree remained clean after goal intake, advance, status and browser reads.
+- example-consumer Git working tree remained clean after goal intake, advance, status and browser reads.
 
 ## Drift report
 

@@ -88,12 +88,12 @@ test("replace-in-file applies an exact single substitution", async (t) => {
       kind: "replace-in-file",
       relative_path: "backend/src/main.py",
       old_string: "return {\"status\": \"healthy\"}\n",
-      new_string: "return {\"status\": \"healthy\", \"service\": \"aiedu-backend\"}\n"
+      new_string: "return {\"status\": \"healthy\", \"service\": \"example-backend\"}\n"
     },
     runId: "run-replace-1"
   });
   assert.equal(applied.kind, "replace-in-file");
   const body = await readFile(path.join(worktreePath, "backend", "src", "main.py"), "utf8");
-  assert.match(body, /aiedu-backend/);
-  assert.equal(await readFile(path.join(root, "backend", "src", "main.py"), "utf8").then((t) => t.includes("aiedu-backend")), false);
+  assert.match(body, /example-backend/);
+  assert.equal(await readFile(path.join(root, "backend", "src", "main.py"), "utf8").then((t) => t.includes("example-backend")), false);
 });

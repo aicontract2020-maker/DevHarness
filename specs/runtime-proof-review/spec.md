@@ -24,7 +24,7 @@ record preparation, warmup, unexpected service exit and teardown independently.
 authority; treating direct browser/network/database observation as proved.
 
 **Never do:** expose secrets or raw environment values; trust arbitrary project-authored summaries;
-turn failed, stale or partial execution into passing evidence; change AIedu_demo product code.
+turn failed, stale or partial execution into passing evidence; change example-consumer product code.
 
 ## Acceptance Criteria
 

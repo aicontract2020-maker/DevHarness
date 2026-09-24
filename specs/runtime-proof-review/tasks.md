@@ -21,5 +21,5 @@
 ## Integration
 
 - [x] **RPR-010 [M]** Run full schemas, CLI, runtime, review UI and scheduling regressions — AC-1 through AC-8.
-- [x] **RPR-011 [M]** Re-run the external AIedu_demo declaration and browser proof locally without consumer changes.
+- [x] **RPR-011 [M]** Re-run the external example-consumer declaration and browser proof locally without consumer changes.
 - [x] **RPR-012 [S]** Produce traceability, drift and developer walkthrough artifacts.

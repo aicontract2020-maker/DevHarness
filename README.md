@@ -6,7 +6,7 @@ Give it a software goal. It helps clarify the outcome, researches relevant pract
 
 > Turn a repository into an environment where agents can pursue goals autonomously without asking developers to trust agent self-reporting.
 
-DevHarness is in an executable local-first prototype phase. The first consumer is the separate `AIedu_demo` repository; no framework source code lives in that repository.
+DevHarness is in an executable local-first prototype phase. Consumers are separate repositories; no framework source code lives in those repositories.
 
 Milestones 0 and the first repository-readiness/runtime slices are executable: versioned contracts, durable event-backed Goal Run intake, discovery, proof-led onboarding, doctor, external project-harness compilation, isolated verification, owned local-service lifecycle, signed Supervisor provenance, foreground human approvals, a live local review surface, verification-ladder policy, and safe scheduling policy live under `packages/`.
 
@@ -36,25 +36,25 @@ devharness goal --goal "Add password reset"
 During source development, the implemented Milestone 1 commands run as:
 
 ```bash
-npm run devharness -- onboard --repo ../AIedu_demo
-npm run devharness -- init --repo ../AIedu_demo
-npm run devharness -- doctor --repo ../AIedu_demo
-npm run devharness -- build --repo ../AIedu_demo
+npm run devharness -- onboard --repo ../example-consumer
+npm run devharness -- init --repo ../example-consumer
+npm run devharness -- doctor --repo ../example-consumer
+npm run devharness -- build --repo ../example-consumer
 npm run devharness -- supervisor-init
-npm run devharness -- verify --repo ../AIedu_demo --command COMMAND_ID
-npm run devharness -- goal --repo ../AIedu_demo --goal "Add password reset"
-npm run devharness -- advance --repo ../AIedu_demo --run RUN_ID
-npm run devharness -- request-capability --repo ../AIedu_demo --run RUN_ID --capability browser-runtime
-npm run devharness -- approve --repo ../AIedu_demo --request REQUEST_ID
-npm run devharness -- status --repo ../AIedu_demo --run RUN_ID
+npm run devharness -- verify --repo ../example-consumer --command COMMAND_ID
+npm run devharness -- goal --repo ../example-consumer --goal "Add password reset"
+npm run devharness -- advance --repo ../example-consumer --run RUN_ID
+npm run devharness -- request-capability --repo ../example-consumer --run RUN_ID --capability browser-runtime
+npm run devharness -- approve --repo ../example-consumer --request REQUEST_ID
+npm run devharness -- status --repo ../example-consumer --run RUN_ID
 ```
 
 To test DevHarness locally without adding any file to the consumer repository, keep the declaration
 outside it and pass the path explicitly:
 
 ```bash
-npm run devharness -- doctor --repo ../AIedu_demo --config ./local-projects/aiedu-demo/devharness.yaml
-npm run devharness -- build --repo ../AIedu_demo --config ./local-projects/aiedu-demo/devharness.yaml
+npm run devharness -- doctor --repo ../example-consumer --config ./local-projects/example-consumer/devharness.yaml
+npm run devharness -- build --repo ../example-consumer --config ./local-projects/example-consumer/devharness.yaml
 ```
 
 Explicit external configs use the same validated contract and remain bound to the consumer's clean
@@ -123,7 +123,7 @@ connection, the bundled document remains visibly labeled sample data.
 ```bash
 npm run review-ui
 # Use the exact origin printed above if the development server chooses another port.
-npm run devharness -- review --repo ../AIedu_demo --ui-origin http://localhost:3000
+npm run devharness -- review --repo ../example-consumer --ui-origin http://localhost:3000
 ```
 
 Open the URL printed by `review`. The access token stays in the URL fragment, the service binds only
@@ -206,7 +206,6 @@ Not present in the tree yet (mentioned in older plans or product prose only): to
 - [Comparison: DevHarness vs Devin vs OpenHands](docs/blog/devharness-vs-devin-vs-openhands-evidence-backed-autonomous-coding.md)
 - [Principles (中文)](docs/devharness-principles-zh.md)
 - [Existing-project three phases](docs/existing-project-onboarding-phases.md)
-- [Sunrise CMS verification recipe (dogfood)](docs/dogfood/sunrise-cms-verification-recipe.md)
 - [Product definition](docs/product.md)
 - [Architecture](docs/architecture.md)
 - [Runtime contracts](docs/contracts.md)
@@ -225,9 +224,8 @@ Not present in the tree yet (mentioned in older plans or product prose only): to
 - [Autonomy roadmap](docs/devharness-autonomy-roadmap.md)
 - [Quickstart](docs/devharness-quickstart.md)
 - [Agent-runtime approval dogfood](docs/dogfood/agent-runtime-approval-dogfood.md)
-- [AIedu_demo current understanding (dogfood)](docs/dogfood/aiedu-demo-current-understanding.md)
-- [AIedu_demo Phase 2 baseline (dogfood)](docs/dogfood/aiedu-demo-phase2-baseline.md)
-- [AIedu_demo Phase 2 python-tests triage (dogfood)](docs/dogfood/aiedu-demo-phase2-python-tests-triage.md)
+- [Discovery/doctor dogfood (generic)](docs/dogfood/discovery-doctor-dogfood.md)
+- [Example CMS verification recipe (dogfood placeholder)](docs/dogfood/example-cms-verification-recipe.md)
 - [MVP plan](docs/mvp.md)
 - [Framework/consumer separation decision](docs/adr/0001-framework-consumer-separation.md)
 - [Adopted patterns from gstack, pstack, and Noodle](docs/adr/0002-adopt-runtime-patterns-without-copying-products.md)
@@ -236,7 +234,6 @@ Not present in the tree yet (mentioned in older plans or product prose only): to
 - [Decision Surface over rich artifacts](docs/adr/0005-use-a-decision-surface-over-rich-artifacts.md)
 - [Proof-led executable onboarding](docs/adr/0006-proof-led-executable-onboarding.md)
 - [Supervisor-issued evidence and approvals](docs/adr/0007-supervisor-issued-provenance.md)
-- [AIedu_demo discovery/doctor dogfood](docs/dogfood/aiedu-demo-2026-08-29.md)
 
 ## Development
 

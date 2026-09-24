@@ -40,4 +40,4 @@ review checkpoint, and let the page select a run and refresh its trusted result.
 ## Unrequested behavior
 
 None. This milestone does not start agents, execute consumer projects, approve delivery, merge,
-deploy, or write into AIedu_demo.
+deploy, or write into example-consumer.

@@ -1,7 +1,7 @@
 # Agent-runtime capability approval dogfood (DevHarness-only)
 
 Stabilize multi-hour Alignment / goal loops without touching consumer repos
-(especially **sunrise-cms**). Last updated: 2026-09-15.
+(especially **example-cms**). Last updated: 2026-09-15.
 
 ## Root cause (why approvals died mid-run)
 
@@ -29,16 +29,16 @@ Stabilize multi-hour Alignment / goal loops without touching consumer repos
 
 ```bash
 export PATH="/usr/bin:/bin:/usr/sbin:/sbin:$HOME/.nvm/versions/node/v24.18.0/bin:$HOME/homebrew/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
-cd /Users/kaimaplespark/GAC/git/film-making/DevHarness
-DH_ROOT="/Users/kaimaplespark/GAC/git/film-making/DevHarness"
+cd /path/to/DevHarness
+DH_ROOT="/path/to/DevHarness"
 ```
 
-Use a **clean committed** consumer or demo tree. Prefer **AIedu_demo** with the
-external config (never edit sunrise-cms for this loop):
+Use a **clean committed** consumer or demo tree. Prefer **example-consumer** with the
+external config (never edit example-cms for this loop):
 
 ```bash
-REPO="/Users/kaimaplespark/GAC/git/film-making/AIedu_demo"
-CONFIG="/Users/kaimaplespark/GAC/git/film-making/DevHarness/local-projects/aiedu-demo/devharness.yaml"
+REPO="/path/to/example-consumer"
+CONFIG="./local-projects/example-consumer/devharness.yaml"
 DH="node packages/cli/src/cli.mjs"
 ```
 
@@ -119,7 +119,7 @@ $DH answer --repo "$REPO" --config "$CONFIG" --run "$RUN_ID"   --decision decisi
 # One APPROVE phrase naming every alignment-answer request id
 ```
 
-### 4. Exercise Alignment / status (no sunrise edits)
+### 4. Exercise Alignment / status (no consumer edits)
 
 ```bash
 $DH align --repo "$REPO" --config "$CONFIG" --run "$RUN_ID"
@@ -152,21 +152,20 @@ $DH status --repo "$REPO" --config "$CONFIG" --run "$RUN_ID"
 4. Refresh status so unanswered decisions are counted separately from the
    original packet.
 
-### Exact HTTPS research recipes (AIedu dogfood)
+### Exact HTTPS research recipes (dogfood)
 
 Continue accepts exact public HTTPS GET recipes via:
 
 - `--research-recipes PATH`, or
 - auto-load of `<config-dir>/research-recipes.json` next to `--config`
 
-Tracked copy: `docs/dogfood/aiedu-demo-research-recipes.json`  
-Dogfood path (next to external config): `local-projects/aiedu-demo/research-recipes.json`
+Dogfood path (next to external config, gitignored): `local-projects/example-consumer/research-recipes.json`
 
 ```bash
 $DH align --continue --repo "$REPO" --config "$CONFIG" --run "$RUN_ID"
 # or explicitly:
 $DH align --continue --repo "$REPO" --config "$CONFIG" --run "$RUN_ID" \
-  --research-recipes /Users/kaimaplespark/GAC/git/film-making/DevHarness/docs/dogfood/aiedu-demo-research-recipes.json
+  --research-recipes ./local-projects/example-consumer/research-recipes.json
 ```
 
 Recipes are official public docs for the demo stack (PostgreSQL, Docker security,
@@ -283,8 +282,8 @@ instead of inventing credentials, origins, or a Codex session.
 
 `--tick` is an alias for `--continue`.
 
-Optional bounded verify owned by the external config (AIedu), still without
-editing sunrise-cms:
+Optional bounded verify owned by the external config (example-consumer), still without
+editing example-cms:
 
 ```bash
 $DH doctor --repo "$REPO" --config "$CONFIG"
@@ -312,7 +311,7 @@ Goal Run (clarifying/planning/staffing/executing → `verifying`), writes a
 **docs-only readiness summary outside the consumer repo**, and probes verify:
 
 ```bash
-ARTIFACT_DIR="$DH_ROOT/local-projects/aiedu-demo/artifacts"
+ARTIFACT_DIR="$DH_ROOT/local-projects/example-consumer/artifacts"
 mkdir -p "$ARTIFACT_DIR"
 $DH advance --repo "$REPO" --config "$CONFIG" --run "$RUN_ID" \
   --artifact-dir "$ARTIFACT_DIR" --command docs-readiness-summary --format json
@@ -326,15 +325,15 @@ $DH verify --repo "$REPO" --config "$CONFIG" --run "$RUN_ID" \
 
 Dogfood on `run-a4118507-2ea5-44ec-b5df-09a0e368dd28` (2026-09-15):
 - advance succeeded → `verifying`, wrote
-  `local-projects/aiedu-demo/artifacts/readiness-summary.md`
-- worktree stayed clean (no AIedu product edits; sunrise untouched)
+  `local-projects/example-consumer/artifacts/readiness-summary.md`
+- worktree stayed clean (no consumer product edits; example-cms untouched)
 - verify stopped with a **precise remaining gate**:
   `Verification requires initialized submodules: database/course`
   (after that, capability authority for `service-runtime` / TTY approve remains
   the next possible gate before attestation)
 
 The external config declares `docs-readiness-summary` as a lightweight `test`
-command (no service lifecycle) under `local-projects/aiedu-demo/devharness.yaml`.
+command (no service lifecycle) under `local-projects/example-consumer/devharness.yaml`.
 
 ### 5. If a grant expires mid-session (renew without losing run state)
 
@@ -349,7 +348,7 @@ $DH approve --repo "$REPO" --config "$CONFIG" --request <new-request-id>
 ## Unit verification (no consumer required)
 
 ```bash
-cd /Users/kaimaplespark/GAC/git/film-making/DevHarness
+cd /path/to/DevHarness
 node --test packages/runtime/test/capability-authorization.test.mjs packages/runtime/test/supervisor-approval-batch.test.mjs packages/runtime/test/alignment-answer.test.mjs packages/runtime/test/live-alignment-authority.test.mjs packages/runtime/test/live-alignment-continue.test.mjs packages/runtime/test/post-scope-advance.test.mjs packages/cli/test/cli.test.mjs
 # scope gate + post-scope regression:
 node --test --test-name-pattern "request-scope then approve|post-scope advance" packages/cli/test/cli.test.mjs packages/runtime/test/post-scope-advance.test.mjs
@@ -357,6 +356,6 @@ node --test --test-name-pattern "request-scope then approve|post-scope advance" 
 
 ## Out of scope
 
-- Do **not** modify `/Users/kaimaplespark/GAC/git/sunrise-cms` for this dogfood.
-- Consumer-specific Cypress recipes stay in `docs/dogfood/sunrise-cms-verification-recipe.md`
-  and gitignored `local-projects/sunrise-cms/`.
+- Do **not** modify `/path/to/example-cms` for this dogfood.
+- Consumer-specific Cypress recipes stay in `docs/dogfood/example-cms-verification-recipe.md`
+  and gitignored `local-projects/example-cms/`.

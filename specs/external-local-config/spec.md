@@ -24,12 +24,12 @@ when it resolves outside, DevHarness parses and validates the normal public proj
 Given no `--config`, when a command needs configuration, then DevHarness continues to use the tracked
 consumer `devharness.yaml` behavior.
 
-### AC-4: AIedu local candidate is external [MUST]
-Given the approved AIedu declaration, when this change is complete, then AIedu_demo is Git-clean and
+### AC-4: example-consumer local candidate is external [MUST]
+Given the approved example-consumer declaration, when this change is complete, then example-consumer is Git-clean and
 the candidate exists only in DevHarness's ignored local-projects area.
 
 ## Out of scope
 
 - Starting Docker, databases, application services or Playwright in this change.
-- Committing or pushing AIedu_demo changes.
+- Committing or pushing example-consumer changes.
 - Weakening clean-code-revision or signed-capability requirements.

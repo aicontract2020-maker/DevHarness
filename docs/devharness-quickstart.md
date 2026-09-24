@@ -41,7 +41,7 @@ Do this once per consumer repo before goal runs. From the DevHarness repository:
    Creates `/path/to/your-project/devharness.yaml` only if it does not already exist
    (will not overwrite).
 
-   **External file** (leave the consumer working tree untouched, as with AIedu_demo):
+   **External file** (leave the consumer working tree untouched, as with example-consumer):
 
    ```bash
    mkdir -p ./local-projects/my-project
@@ -93,7 +93,7 @@ You will usually still hand-edit launch commands, readiness URLs, and command ID
    Example:
 
    ```bash
-   npm run devharness -- goal --repo ../AIedu_demo --goal "Add password reset"
+   npm run devharness -- goal --repo ../example-consumer --goal "Add password reset"
    ```
 
 3. Read the compact brief.

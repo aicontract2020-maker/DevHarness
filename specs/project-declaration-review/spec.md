@@ -42,11 +42,11 @@ mapped counts, top blockers and one precise next decision without opening genera
 
 ### AC-5: Consumer remains unchanged [MUST]
 
-Given AIedu_demo dogfood, when the declaration is assessed, then no file is written and no project
+Given example-consumer dogfood, when the declaration is assessed, then no file is written and no project
 command is executed.
 
 ## Out of scope
 
 - Approving or writing `devharness.yaml` from the browser.
-- Inferring that the AIedu_demo Docker recipe is safe without developer confirmation.
+- Inferring that the example-consumer Docker recipe is safe without developer confirmation.
 - Starting containers, services, browsers or databases.

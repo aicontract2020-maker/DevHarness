@@ -18,7 +18,7 @@ Date: 2026-08-31 · Working tree: uncommitted framework prototype
 - Full DevHarness suite: **99/99 PASS**.
 - Review UI lint: **PASS**.
 - Review UI production build: **PASS**.
-- AIedu_demo working tree: unchanged by this milestone.
+- example-consumer working tree: unchanged by this milestone.
 
 ## Trust boundary
 

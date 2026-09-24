@@ -93,12 +93,12 @@ validating dependencies and integration ownership — `packages/core/src/schedul
 ## Open Questions for the Spec
 
 None. The developer approved the four bounded outcomes in
-`specs/aiedu-local-dogfood/validation.md`; direct browser/network/database observation remains a
+`docs/dogfood/discovery-doctor-dogfood.md`; direct browser/network/database observation remains a
 later proof-driver increment rather than an implicit claim.
 
 ## Not Investigated
 
-- Automatic product repair in AIedu_demo.
+- Automatic product repair in example-consumer.
 - Hosted review services or remote artifact URLs.
 - Multi-agent worker execution; this increment uses the existing scheduler only as the safety gate.
 

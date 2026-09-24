@@ -8,8 +8,8 @@ Verdict: Pass
 | AC-1 Quantitative assessment | Pass | Pure assessment test produces deterministic dimensions, counts, blockers and 55/100 fixture coverage. |
 | AC-2 Fail-closed interactive verification | Pass | Compiler marks service-free browser verification blocking; planner stops before command execution. |
 | AC-3 Compact review endpoint | Pass | Authenticated exact-origin GET returns the revision-bound assessment; POST is denied. |
-| AC-4 One-screen review | Pass | Live AIedu_demo page shows score, five dimensions, mapping counts, top blockers and one decision. |
-| AC-5 Consumer unchanged | Pass | AIedu_demo was rescanned and rendered with an empty Git status; no project command ran. |
+| AC-4 One-screen review | Pass | Live example-consumer page shows score, five dimensions, mapping counts, top blockers and one decision. |
+| AC-5 Consumer unchanged | Pass | example-consumer was rescanned and rendered with an empty Git status; no project command ran. |
 
 ## Automated verification
 
@@ -19,7 +19,7 @@ Verdict: Pass
 - Review UI production build: passed.
 - Live browser: runtime data loaded, project declaration visible, no console errors.
 
-## AIedu_demo result
+## example-consumer result
 
 - Structural coverage: 55/100 (not runtime proof).
 - Commands detected: 12.

@@ -53,7 +53,7 @@ exists for the same receipt. See `packages/runtime/test/verification-review.test
 `compileProjectHarness()` — `packages/project/src/harness.mjs:53-60`  
 `createVerificationPlan()` — `packages/runtime/src/verify.mjs:54-66`
 
-The AIedu_demo dogfood run on 2026-09-04 reported `needs_work` because the
+The example-consumer dogfood run on 2026-09-04 reported `needs_work` because the
 consumer repo currently has local changes outside the committed baseline. That
 is the correct behavior: DevHarness should explain the blocker, not normalize it
 away.

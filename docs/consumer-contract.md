@@ -11,7 +11,7 @@ For the first dogfood setup:
 ```text
 film-making/
   DevHarness/     independent framework repository
-  AIedu_demo/     independent consumer repository
+  example-consumer/     independent consumer repository
 ```
 
 ## Consumer-owned files
@@ -120,9 +120,9 @@ Generated output is reproducible from the tracked declaration, repository commit
 During local framework development, the CLI receives the consumer path explicitly:
 
 ```bash
-devharness doctor --repo ../AIedu_demo
-devharness goal --repo ../AIedu_demo "..."
-devharness doctor --repo ../AIedu_demo --config ../DevHarness/local-projects/aiedu-demo/devharness.yaml
+devharness doctor --repo ../example-consumer
+devharness goal --repo ../example-consumer "..."
+devharness doctor --repo ../example-consumer --config ../DevHarness/local-projects/example-consumer/devharness.yaml
 ```
 
 This path is development-time input, not a permanent coupling between repositories.

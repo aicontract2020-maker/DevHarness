@@ -5,7 +5,7 @@
 
 ## Context
 
-DevHarness will be developed using real repositories, beginning with AIedu_demo. Putting framework implementation inside the consumer would make early experimentation convenient but would blur ownership, encourage project-specific assumptions, and make extraction into a reusable open-source framework harder.
+DevHarness will be developed using real repositories, beginning with example-consumer. Putting framework implementation inside the consumer would make early experimentation convenient but would blur ownership, encourage project-specific assumptions, and make extraction into a reusable open-source framework harder.
 
 ## Decision
 

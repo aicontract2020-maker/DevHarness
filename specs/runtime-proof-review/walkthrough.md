@@ -14,7 +14,7 @@ review:
 Only the five newest executions are expanded. Detailed receipts and logs stay available for an
 exception investigation, not as mandatory reading.
 
-## How to interpret the latest AIedu result
+## How to interpret the latest example-consumer result
 
 - `preparation pass` means the course submodule was copied from the developer's already-initialized
   checkout into an independent disposable checkout at the exact Gitlink commit.
@@ -25,6 +25,6 @@ exception investigation, not as mandatory reading.
 
 ## Review decision
 
-The DevHarness increment itself is ready for review. A separate AIedu goal would be required to
-diagnose or fix `/signup`; this increment has no authority to change AIedu_demo product code.
+The DevHarness increment itself is ready for review. A separate example-consumer goal would be required to
+diagnose or fix `/signup`; this increment has no authority to change example-consumer product code.
 

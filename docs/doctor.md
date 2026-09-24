@@ -7,8 +7,8 @@
 From DevHarness development source:
 
 ```bash
-npm run devharness -- doctor --repo ../AIedu_demo
-npm run devharness -- doctor --repo ../AIedu_demo --format json
+npm run devharness -- doctor --repo ../example-consumer
+npm run devharness -- doctor --repo ../example-consumer --format json
 ```
 
 The JSON form returns both the versioned repository snapshot and readiness report.
@@ -68,13 +68,13 @@ When level is below 5, `overall.next_level_gap` names the missing capability ids
 `devharness init` performs the same discovery and prints a proposed `devharness.yaml`:
 
 ```bash
-npm run devharness -- init --repo ../AIedu_demo
+npm run devharness -- init --repo ../example-consumer
 ```
 
 It is a dry run by default. Writing requires an explicit flag:
 
 ```bash
-npm run devharness -- init --repo ../AIedu_demo --write
+npm run devharness -- init --repo ../example-consumer --write
 ```
 
 The write uses create-only semantics and refuses to overwrite an existing declaration. Detected commands remain proposals until reviewed and verified.

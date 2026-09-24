@@ -8,7 +8,7 @@ Build a portable, open-source autonomous engineering runtime that turns approved
 
 - This repository owns framework code, contracts, adapters, packs, templates, and framework tests.
 - Consumer repositories are external. Never add DevHarness framework source to a consumer.
-- Do not hardcode `AIedu_demo`, its paths, users, ports, commands, features, or stack into core packages.
+- Do not hardcode a named consumer repository, its paths, users, ports, commands, features, or stack into core packages.
 - Consumer-specific behavior belongs in a declarative project configuration or a generated project harness.
 - Runtime state, worktrees, generated agent files, and evidence must be stored outside consumer repositories by default.
 - Local sibling paths may be used only as explicit development inputs and must never become portable configuration defaults.
@@ -39,4 +39,4 @@ Build a portable, open-source autonomous engineering runtime that turns approved
 
 Until the architecture contracts are approved, prioritize documentation, schemas, fixtures, and deterministic contract tests. Do not build a hosted control plane, automatic merge, or broad platform support in v0.
 
-The first external dogfood consumer is `AIedu_demo`. A structurally different CLI or API consumer must be added before core interfaces are considered portable.
+Dogfood against at least one external consumer repository. A structurally different CLI or API consumer must be added before core interfaces are considered portable.
