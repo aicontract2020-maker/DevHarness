@@ -206,6 +206,8 @@ Not present in the tree yet (mentioned in older plans or product prose only): to
 - [Comparison: DevHarness vs Devin vs OpenHands](docs/blog/devharness-vs-devin-vs-openhands-evidence-backed-autonomous-coding.md)
 - [Principles (中文)](docs/devharness-principles-zh.md)
 - [Existing-project three phases](docs/existing-project-onboarding-phases.md)
+- [Ops: autonomy maturity map](docs/ops/autonomy-maturity-map.md)
+- [Ops: existing-project takeover path](docs/ops/existing-project-takeover-path.md)
 - [Product definition](docs/product.md)
 - [Architecture](docs/architecture.md)
 - [Runtime contracts](docs/contracts.md)
