@@ -8,3 +8,12 @@ local-projects/
 .env
 .env.*
 !.env.example
+
+# Local credentials / agent state (never ship)
+auth.json
+**/auth.json
+*.pem
+*.key
+.codex/
+**/.devharness/
+**/state/
