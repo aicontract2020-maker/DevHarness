@@ -181,30 +181,29 @@ DevHarness is not:
 
 ## Repository map
 
-The planned source layout is:
+Layout that exists in this repository today (aligned with `constitution.md`):
 
 ```text
 packages/
   cli/          command-line user experience
   core/         goal state machine and policies
   project/      repository discovery, init, and readiness
-  runtime/      orchestration, recovery, workspaces, and budgets
+  runtime/      orchestration, recovery, workspaces, evidence storage, and budgets
   schema/       configuration and artifact contracts
-  evidence/     verification evidence and verdicts
 adapters/
-  agents/       Codex, Claude Code, Cursor, and future agents
-  research/     web and documentation research providers
-  vcs/          GitHub and future source-control providers
-packs/
-  web/          browser-based applications
-  api/          HTTP and service applications
-  cli/          command-line applications
-templates/      generated project-harness templates
-docs/           product, architecture, decisions, and roadmap
+  agents/       agent adapters
+apps/
+  review-ui/    local developer review surface
+docs/           product, architecture, ADR, and operator documentation
+  templates/    shared doc templates (for example review assessment)
+specs/          feature research, requirements, plans, tasks, validation
 ```
+
+Not present in the tree yet (mentioned in older plans or product prose only): top-level `packs/`, `packages/evidence/`, and root `templates/`. Platform packs remain a deferred specialization surface per `constitution.md`.
 
 ## Design documents
 
+- [Comparison: DevHarness vs Devin vs OpenHands](docs/blog/devharness-vs-devin-vs-openhands-evidence-backed-autonomous-coding.md)
 - [Principles (中文)](docs/devharness-principles-zh.md)
 - [Existing-project three phases](docs/existing-project-onboarding-phases.md)
 - [Sunrise CMS verification recipe (dogfood)](docs/dogfood/sunrise-cms-verification-recipe.md)
@@ -222,6 +221,13 @@ docs/           product, architecture, decisions, and roadmap
 - [Supervisor provenance and human gates](docs/supervisor-provenance.md)
 - [Project harness compilation](docs/project-harness.md)
 - [Consumer contract](docs/consumer-contract.md)
+- [Durable Goal Runs](docs/goal-runs.md)
+- [Autonomy roadmap](docs/devharness-autonomy-roadmap.md)
+- [Quickstart](docs/devharness-quickstart.md)
+- [Agent-runtime approval dogfood](docs/dogfood/agent-runtime-approval-dogfood.md)
+- [AIedu_demo current understanding (dogfood)](docs/dogfood/aiedu-demo-current-understanding.md)
+- [AIedu_demo Phase 2 baseline (dogfood)](docs/dogfood/aiedu-demo-phase2-baseline.md)
+- [AIedu_demo Phase 2 python-tests triage (dogfood)](docs/dogfood/aiedu-demo-phase2-python-tests-triage.md)
 - [MVP plan](docs/mvp.md)
 - [Framework/consumer separation decision](docs/adr/0001-framework-consumer-separation.md)
 - [Adopted patterns from gstack, pstack, and Noodle](docs/adr/0002-adopt-runtime-patterns-without-copying-products.md)
