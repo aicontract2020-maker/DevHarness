@@ -4,6 +4,7 @@ import { access, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { hashContract } from "../../project/src/harness.mjs";
+import { ensureFreshChatgptSessionCredential } from "./chatgpt-session-refresh.mjs";
 import { startProviderProxyServer } from "./provider-proxy.mjs";
 
 export const CODEX_ADAPTER_ID = "codex";
@@ -109,11 +110,17 @@ export function loadProviderCredentialFromCodexAuthFile(environment = process.en
     const accountId = typeof accountIdRaw === "string" && accountIdRaw.trim().length > 0
       ? accountIdRaw.trim()
       : undefined;
+    const hasRefreshToken = typeof tokens.refresh_token === "string" && tokens.refresh_token.trim().length > 0;
+    const lastRefresh = typeof parsed.last_refresh === "string" && parsed.last_refresh.trim().length > 0
+      ? parsed.last_refresh.trim()
+      : null;
     return {
       key: "codex-auth.json:tokens.access_token",
       value: value.trim(),
       source: "codex-auth.json",
       authMode: "chatgpt",
+      hasRefreshToken,
+      ...(lastRefresh ? { lastRefresh } : {}),
       ...(accountId ? { accountId } : {})
     };
   }
@@ -173,8 +180,8 @@ export function codexAuthUnavailableMessage({ executable = null, credential = nu
   return [
     "Codex adapter is not ready for a live provider call.",
     missing.length ? `Missing: ${missing.join("; ")}.` : "Provider proxy could not start.",
-    "Parent may load credentials from ~/.codex/auth.json when env is unset: auth_mode=apikey (OPENAI_API_KEY) or auth_mode=chatgpt (tokens.access_token + optional tokens.account_id).",
-    "ChatGPT session tokens are used only by the parent-owned loopback proxy (origin https://chatgpt.com, path prefix /backend-api/codex).",
+    "Parent may load credentials from ~/.codex/auth.json when env is unset: auth_mode=apikey (OPENAI_API_KEY) or auth_mode=chatgpt (tokens.access_token + optional tokens.account_id / tokens.refresh_token).",
+    "ChatGPT session tokens are used only by the parent-owned loopback proxy (origin https://chatgpt.com, path prefix /backend-api/codex); parent refreshes access_token via auth.openai.com oauth when needed.",
     "DevHarness does not mount login/session files into the Agent (`--ignore-user-config`).",
     "Example:",
     "  export DEVHARNESS_CODEX_PATH=\"/Applications/ChatGPT.app/Contents/Resources/codex\"",
@@ -290,15 +297,34 @@ export async function prepareCodexExecutionContext({
     }
     return resolveProviderCredential(environment);
   })();
-  const credential = resolvedCredential?.value ?? null;
-  const authMode = String(
-    resolvedCredential?.authMode
+  let activeCredential = resolvedCredential;
+  const initialAuthMode = String(
+    activeCredential?.authMode
       ?? profile?.authMode
       ?? environment.DEVHARNESS_CODEX_AUTH_MODE
       ?? ""
   ).trim().toLowerCase() || null;
-  const accountId = typeof resolvedCredential?.accountId === "string" && resolvedCredential.accountId.trim().length > 0
-    ? resolvedCredential.accountId.trim()
+  // Env API keys keep winning; only chatgpt auth.json sessions are refreshed.
+  if (
+    activeCredential
+    && activeCredential.source === "codex-auth.json"
+    && (activeCredential.authMode === "chatgpt" || initialAuthMode === "chatgpt")
+  ) {
+    activeCredential = await ensureFreshChatgptSessionCredential({
+      environment,
+      credential: activeCredential,
+      forceRefresh: String(environment.DEVHARNESS_CHATGPT_FORCE_REFRESH ?? "").trim() === "1"
+    });
+  }
+  const credential = activeCredential?.value ?? null;
+  const authMode = String(
+    activeCredential?.authMode
+      ?? profile?.authMode
+      ?? environment.DEVHARNESS_CODEX_AUTH_MODE
+      ?? ""
+  ).trim().toLowerCase() || null;
+  const accountId = typeof activeCredential?.accountId === "string" && activeCredential.accountId.trim().length > 0
+    ? activeCredential.accountId.trim()
     : null;
   const resolvedProfile = profile ?? defaultCodexProfile(environment, { authMode });
   const executable = await resolveCodexExecutable(environment);
@@ -313,13 +339,27 @@ export async function prepareCodexExecutionContext({
   const chatgptMode = authMode === "chatgpt" || isChatgptCodexOrigin(targetOrigin);
   const outputSchemaPath = await writeCodexOutputSchema(attemptRoot);
   const childToken = ephemeralProxyToken();
+  const credentialHolder = { value: credential };
+  const refreshParentCredential = chatgptMode && activeCredential?.source === "codex-auth.json"
+    ? async () => {
+        const refreshed = await ensureFreshChatgptSessionCredential({
+          environment,
+          credential: activeCredential,
+          forceRefresh: true
+        });
+        activeCredential = refreshed;
+        credentialHolder.value = refreshed.value;
+        return refreshed.value;
+      }
+    : null;
   const proxy = await startProxy({
     exactOrigins: resolvedProfile.controlPlaneOrigins,
     targetOrigin,
     childToken,
-    parentCredential: credential,
+    parentCredential: () => credentialHolder.value,
     chatgptAccountId: accountId,
     chatgptMode,
+    refreshParentCredential,
     operationId,
     attemptId,
     targetDescriptorSha256: hashContract({ adapterName: CODEX_ADAPTER_ID, kind: "target-descriptor" }),
@@ -359,3 +399,12 @@ export async function closeProviderProxy(proxyServer) {
     });
   } catch {}
 }
+
+export {
+  accessTokenNeedsRefresh,
+  ensureFreshChatgptSessionCredential,
+  persistCodexAuthTokens,
+  refreshChatgptAccessToken,
+  CHATGPT_OAUTH_CLIENT_ID,
+  CHATGPT_REFRESH_TOKEN_URL
+} from "./chatgpt-session-refresh.mjs";

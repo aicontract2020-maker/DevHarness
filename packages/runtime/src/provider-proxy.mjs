@@ -234,6 +234,20 @@ function isChatgptProxyOrigin(origin) {
   }
 }
 
+function resolveParentCredentialValue(parentCredential) {
+  if (typeof parentCredential === "function") {
+    const value = parentCredential();
+    if (typeof value !== "string" || value.length < 1 || value.length > 4096) {
+      throw new Error("Parent provider credential is invalid.");
+    }
+    return value;
+  }
+  if (typeof parentCredential !== "string" || parentCredential.length < 1 || parentCredential.length > 4096) {
+    throw new Error("Parent provider credential is invalid.");
+  }
+  return parentCredential;
+}
+
 function upstreamHeaders({
   parentCredential,
   includeJsonContentType = false,
@@ -241,7 +255,7 @@ function upstreamHeaders({
   upstreamExtraHeaders = null
 }) {
   const headers = {
-    authorization: `Bearer ${parentCredential}`,
+    authorization: `Bearer ${resolveParentCredentialValue(parentCredential)}`,
     ...(includeJsonContentType ? { "content-type": "application/json" } : {})
   };
   if (typeof chatgptAccountId === "string" && chatgptAccountId.trim().length > 0) {
@@ -295,6 +309,7 @@ export function createProviderProxyResponder({
   chatgptAccountId = null,
   chatgptMode = null,
   upstreamExtraHeaders = null,
+  refreshParentCredential = null,
   operationId,
   attemptId,
   targetDescriptorSha256 = null,
@@ -313,7 +328,11 @@ export function createProviderProxyResponder({
   if (!allowedOrigins.includes(selectedOrigin)) throw new Error("Target origin must be one of the allowed origins.");
   if (!IDENTIFIER.test(operationId ?? "") || !IDENTIFIER.test(attemptId ?? "")) throw new Error("Provider proxy requires stable operation and attempt identifiers.");
   if (typeof childToken !== "string" || childToken.length < 1 || childToken.length > 512) throw new Error("Child proxy token is invalid.");
-  if (typeof parentCredential !== "string" || parentCredential.length < 1 || parentCredential.length > 4096) throw new Error("Parent provider credential is invalid.");
+  // Validate credential shape once; getters are re-resolved per upstream call.
+  resolveParentCredentialValue(parentCredential);
+  if (refreshParentCredential !== null && refreshParentCredential !== undefined && typeof refreshParentCredential !== "function") {
+    throw new Error("refreshParentCredential must be a function when provided.");
+  }
   if (proxyPolicySha256 !== null && !SHA256.test(proxyPolicySha256)) throw new Error("Proxy policy digest is invalid.");
   if (targetDescriptorSha256 !== null && !SHA256.test(targetDescriptorSha256)) throw new Error("Target descriptor digest is invalid.");
   if (chatgptAccountId !== null && chatgptAccountId !== undefined) {
@@ -367,6 +386,7 @@ export function createProviderProxyResponder({
 
     let currentUrl = upstreamUrl(selectedOrigin, url);
     let redirectCount = 0;
+    let refreshAttempted = false;
     while (true) {
       let upstreamResponse;
       try {
@@ -430,6 +450,36 @@ export function createProviderProxyResponder({
         }
         currentUrl = nextUrl.toString();
         continue;
+      }
+
+      // ChatGPT session: one reactive refresh+retry on upstream 401 (Codex-style).
+      if (
+        useChatgptMode
+        && upstreamResponse.status === 401
+        && typeof refreshParentCredential === "function"
+        && !refreshAttempted
+      ) {
+        refreshAttempted = true;
+        try {
+          await refreshParentCredential();
+          continue;
+        } catch (refreshError) {
+          const receipt = requestReceipt({
+            reservation,
+            status: "failed",
+            responseStatus: 401,
+            responseBytes: 0,
+            responseSha256: null,
+            usage: null,
+            finalUrl: currentUrl,
+            diagnosticCode: "AUTH_UNAVAILABLE"
+          });
+          await publishReceipt(receipt);
+          return response(401, {
+            error: "auth_unavailable",
+            detail: String(refreshError?.message ?? refreshError).slice(0, 300)
+          });
+        }
       }
 
       const upstreamContentType = upstreamResponse.headers?.get?.("content-type") ?? "";

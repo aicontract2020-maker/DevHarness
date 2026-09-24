@@ -147,7 +147,7 @@ test("parent loads chatgpt session tokens from ~/.codex/auth.json", async (t) =>
     tokens: {
       access_token: "fake-chatgpt-access-token-for-unit-test",
       account_id: "acct-unit-test-1234",
-      refresh_token: "fake-refresh-ignored-by-loader"
+      refresh_token: "fake-refresh-present-for-loader-flag"
     }
   }, null, 2)}\n`, { mode: 0o600 });
 
@@ -157,6 +157,7 @@ test("parent loads chatgpt session tokens from ~/.codex/auth.json", async (t) =>
   assert.equal(fromFile.key, "codex-auth.json:tokens.access_token");
   assert.equal(fromFile.value, "fake-chatgpt-access-token-for-unit-test");
   assert.equal(fromFile.accountId, "acct-unit-test-1234");
+  assert.equal(fromFile.hasRefreshToken, true);
 
   const resolved = resolveProviderCredential({ HOME: home, PATH: "/usr/bin" });
   assert.equal(resolved.authMode, "chatgpt");
@@ -254,7 +255,8 @@ test("prepareCodexExecutionContext starts an injected proxy and writes an output
     }
   });
   assert.equal(calls.length, 1);
-  assert.equal(calls[0].parentCredential, "sk-test-credential");
+  const parentCredential = typeof calls[0].parentCredential === "function" ? calls[0].parentCredential() : calls[0].parentCredential;
+  assert.equal(parentCredential, "sk-test-credential");
   assert.equal(calls[0].exactOrigins[0], DEFAULT_CODEX_ORIGIN);
   assert.equal(prepared.context.proxy.port, 43199);
   assert.equal(prepared.context.proxy.token, calls[0].childToken);
@@ -319,7 +321,8 @@ test("prepareCodexExecutionContext accepts parent credential from auth.json fall
     }
   });
   assert.equal(calls.length, 1);
-  assert.equal(calls[0].parentCredential, "sk-fake-authjson-parent-only");
+  const parentCredential = typeof calls[0].parentCredential === "function" ? calls[0].parentCredential() : calls[0].parentCredential;
+  assert.equal(parentCredential, "sk-fake-authjson-parent-only");
   assert.equal(prepared.context.proxy.port, 43201);
 });
 
@@ -351,8 +354,10 @@ test("prepareCodexExecutionContext wires chatgpt account id, origin, and apiPath
     }
   });
   assert.equal(calls.length, 1);
-  assert.equal(calls[0].parentCredential, "fake-chatgpt-access-token-for-context");
+  const parentCredential = typeof calls[0].parentCredential === "function" ? calls[0].parentCredential() : calls[0].parentCredential;
+  assert.equal(parentCredential, "fake-chatgpt-access-token-for-context");
   assert.equal(calls[0].chatgptAccountId, "acct-context-9");
+  assert.equal(typeof calls[0].refreshParentCredential, "function");
   assert.equal(calls[0].chatgptMode, true);
   assert.equal(calls[0].exactOrigins[0], DEFAULT_CHATGPT_CODEX_ORIGIN);
   assert.equal(prepared.context.proxy.apiPathPrefix, CHATGPT_CODEX_API_PATH_PREFIX);
